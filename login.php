@@ -1,8 +1,9 @@
 <?php
 /**
  * ═══════════════════════════════════════════════════════
- *  DEVIL AI — Sign in / Create account (login.php) • v1.0.0.0
- *  Already signed in → straight to the app.
+ *  DEVIL AI — Passwordless Sign-in (login.php) • v1.0.0.0
+ *  Email → one-time code OR magic link. No passwords.
+ *  Magic link: login.php?token=… (auto sign-in + redirect)
  * ═══════════════════════════════════════════════════════
  */
 if (session_status() === PHP_SESSION_NONE) {
@@ -11,7 +12,52 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 if (isset($_SESSION['devil_uid'])) { header('Location: app.php'); exit; }
 require_once __DIR__ . '/inc/icons.php';
-$mode = (isset($_GET['mode']) && $_GET['mode'] === 'register') ? 'register' : 'login';
+
+/* ── magic link (?token=…) — server-side verify + sign-in ── */
+$tokenNote = null;
+if (isset($_GET['token']) && is_string($_GET['token'])) {
+    $token = trim($_GET['token']);
+    $ok = false;
+    if ($token !== '' && preg_match('/^[a-f0-9]{32}$/', $token)) {
+        $otpsFile = __DIR__ . '/data/otps.json';
+        if (is_readable($otpsFile)) {
+            $map = json_decode((string)file_get_contents($otpsFile), true);
+            if (is_array($map)) {
+                foreach ($map as $email => $rec) {
+                    if (is_array($rec) && ($rec['purpose'] ?? '') === 'login'
+                        && hash_equals((string)($rec['token'] ?? ''), $token)
+                        && (int)($rec['expires'] ?? 0) >= time()) {
+                        /* valid token → sign in (find or create the account) */
+                        $usersFile = __DIR__ . '/data/users.json';
+                        $users = is_readable($usersFile) ? json_decode((string)file_get_contents($usersFile), true) : [];
+                        if (!is_array($users)) { $users = []; }
+                        $found = null;
+                        foreach ($users as $u) {
+                            if (strcasecmp((string)($u['email'] ?? ''), (string)$email) === 0) { $found = $u; break; }
+                        }
+                        if (!$found) {
+                            $local = explode('@', (string)$email)[0];
+                            $first = trim((string)(preg_split('/[._\-+0-9]+/', $local)[0] ?? ''));
+                            $name = $first !== '' ? ucfirst(mb_substr($first, 0, 20)) : 'Devil';
+                            $uidNew = 'u' . bin2hex(random_bytes(8));
+                            $users[$uidNew] = ['id' => $uidNew, 'name' => $name, 'email' => strtolower((string)$email), 'created' => time()];
+                            $found = $users[$uidNew];
+                            @file_put_contents($usersFile, json_encode($users, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+                        }
+                        unset($map[$email]);
+                        @file_put_contents($otpsFile, json_encode($map), LOCK_EX);
+                        session_regenerate_id(true);
+                        $_SESSION['devil_uid'] = (string)$found['id'];
+                        $ok = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if ($ok) { header('Location: app.php'); exit; }
+    $tokenNote = 'This magic link is invalid or has expired. Enter your email below to get a fresh code.';
+}
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -22,7 +68,7 @@ $mode = (isset($_GET['mode']) && $_GET['mode'] === 'register') ? 'register' : 'l
 (function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();</script>
-<title><?= $mode === 'register' ? 'Create your account' : 'Sign in' ?> — Devil AI</title>
+<title>Sign in — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -40,25 +86,23 @@ button{font:inherit;cursor:pointer}
 .top{display:flex;justify-content:space-between;align-items:center;padding:18px 22px}
 .top .brand{display:flex;align-items:center;gap:9px;font-weight:700}
 .top .brand img{width:28px;height:28px;filter:drop-shadow(0 0 8px rgba(244,63,94,.5))}
-.top a.back{font-size:.84rem;color:var(--dim);display:inline-flex;align-items:center;gap:6px}
-.top a.back:hover{color:var(--soft)}
+.top .right{display:flex;align-items:center;gap:10px}
+.top a.back,.top button.tb{font-size:.84rem;color:var(--dim);display:inline-flex;align-items:center;gap:6px}
+.top a.back:hover,.top button.tb:hover{color:var(--soft)}
+.top button.tb{border:none;background:none;padding:6px}
 main{flex:1;display:flex;align-items:center;justify-content:center;padding:20px}
-.card{width:100%;max-width:400px;background:var(--panel);border:1px solid var(--border);border-radius:22px;padding:34px 30px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.card{width:100%;max-width:410px;background:var(--panel);border:1px solid var(--border);border-radius:22px;padding:34px 30px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
 .card .logo{text-align:center;display:block;margin-bottom:14px}
 .card .logo img{width:56px;height:56px;filter:drop-shadow(0 0 18px rgba(244,63,94,.5))}
-.card h1{font-family:var(--serif);font-weight:500;font-size:1.7rem;text-align:center}
-.card .sub{color:var(--dim);font-size:.85rem;text-align:center;margin-top:6px}
-.tabs{display:grid;grid-template-columns:1fr 1fr;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:12px;padding:4px;margin:24px 0 4px}
-.tabs button{border:none;background:none;color:var(--dim);padding:9px;border-radius:9px;font-size:.85rem;font-weight:600;transition:.15s}
-.tabs button.on{background:rgba(244,63,94,.16);color:#fff;box-shadow:0 2px 10px rgba(244,63,94,.2)}
-label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:16px 0 6px;letter-spacing:.3px}
+.card h1{font-family:var(--serif);font-weight:500;font-size:1.65rem;text-align:center}
+.card .sub{color:var(--dim);font-size:.85rem;text-align:center;margin-top:6px;line-height:1.5}
+label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:18px 0 6px;letter-spacing:.3px}
 .inrow{position:relative}
 .inrow input{width:100%;background:var(--panel2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:12px 14px;font:inherit;font-size:.9rem;outline:none;transition:.15s}
 .inrow input:focus{border-color:var(--border-hi);box-shadow:0 0 0 3px rgba(244,63,94,.12)}
-.inrow .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--dim2);padding:8px;display:flex;border-radius:8px}
-.inrow .eye:hover{color:var(--soft)}
-.formnote{font-size:.72rem;color:var(--dim2);margin-top:6px;line-height:1.5}
-.submit{width:100%;margin-top:22px;border:none;border-radius:13px;padding:13px;font-weight:700;font-size:.92rem;background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;box-shadow:0 8px 24px rgba(244,63,94,.35);transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.codebox input{font-family:ui-monospace,Consolas,monospace;letter-spacing:8px;font-size:1.15rem;text-align:center}
+.formnote{font-size:.72rem;color:var(--dim2);margin-top:8px;line-height:1.55}
+.submit{width:100%;margin-top:20px;border:none;border-radius:13px;padding:13px;font-weight:700;font-size:.92rem;background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;box-shadow:0 8px 24px rgba(244,63,94,.35);transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px}
 .submit:hover{filter:brightness(1.1)}
 .submit:disabled{opacity:.55;cursor:wait}
 .err{display:none;margin-top:14px;background:rgba(190,18,60,.12);border:1px solid rgba(248,113,113,.4);color:#fecaca;font-size:.8rem;border-radius:11px;padding:11px 13px;line-height:1.5;align-items:flex-start;gap:9px}
@@ -66,33 +110,29 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:16
 .err svg{flex-shrink:0;margin-top:1px;color:#fca5a5}
 .ok-note{display:none;margin-top:14px;background:rgba(16,185,129,.09);border:1px solid rgba(52,211,153,.35);color:#bbf7d0;font-size:.8rem;border-radius:11px;padding:11px 13px;line-height:1.5}
 .ok-note.show{display:block}
-.alt{text-align:center;margin-top:20px;font-size:.82rem;color:var(--dim)}
-.alt a{color:var(--soft);font-weight:600}
-.alt a:hover{text-decoration:underline}
+.altrow{display:flex;justify-content:space-between;align-items:center;margin-top:18px;font-size:.8rem;gap:10px;flex-wrap:wrap}
+.altrow a{color:var(--soft);font-weight:600;cursor:pointer}
+.altrow a:hover{text-decoration:underline}
+.altrow a.muted{color:var(--dim2);font-weight:400}
 .foot{text-align:center;padding:18px;font-size:.72rem;color:var(--dim2)}
 .hidden{display:none!important}
+.steps{display:flex;gap:6px;justify-content:center;margin-top:18px}
+.steps span{width:26px;height:4px;border-radius:99px;background:var(--panel2);border:1px solid var(--border)}
+.steps span.on{background:linear-gradient(90deg,#f43f5e,#be123c);border-color:transparent}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-
-/* ═══════════ LIGHT THEME (Claude-style warm) ═══════════ */
-[data-theme=light]{
-  --bg:#faf9f7; --panel:#ffffff; --panel2:#f0ede9;
-  --border:rgba(120,80,90,.18); --border-hi:rgba(190,30,60,.45);
-  --red:#e11d48; --red2:#f43f5e; --pink:#c2415f; --soft:#a63d57;
-  --text:#262023; --dim:#6e5f65; --dim2:#9c8b91;
-}
+/* light theme */
+[data-theme=light]{--bg:#faf9f7;--panel:#ffffff;--panel2:#f0ede9;--border:rgba(120,80,90,.18);--border-hi:rgba(190,30,60,.45);--red:#e11d48;--red2:#f43f5e;--pink:#c2415f;--soft:#a63d57;--text:#262023;--dim:#6e5f65;--dim2:#9c8b91}
 [data-theme=light] body{background:radial-gradient(1100px 500px at 80% -10%,rgba(225,29,72,.06),transparent 60%),radial-gradient(800px 400px at -10% 110%,rgba(190,18,60,.05),transparent 55%),var(--bg)}
-[data-theme=light] .tabs{background:rgba(120,80,90,.08)}
 [data-theme=light] .card{box-shadow:0 24px 70px rgba(120,80,90,.16)}
-[data-theme=light] .tabs button.on{background:#fff;color:#262023}
-[data-theme=light] .top a.back:hover,[data-theme=light] .inrow .eye:hover{color:#a63d57}
+[data-theme=light] .card h1,[data-theme=light] .err{color:#7f1d1d}
 </style>
 </head>
 <body>
 
 <div class="top">
   <a class="brand" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
-  <div style="display:flex;align-items:center;gap:10px">
-    <button class="back" id="themeBtn" title="Switch theme" style="border:none;background:none;cursor:pointer;display:inline-flex;align-items:center;padding:6px" type="button"><?= icon('sun', 16) ?></button>
+  <div class="right">
+    <button class="tb" id="themeBtn" title="Switch theme" type="button"><?= icon('sun', 16) ?></button>
     <a class="back" href="index.php"><?= icon('chevron-right', 14) ?> Back to home</a>
   </div>
 </div>
@@ -100,44 +140,43 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:16
 <main>
   <div class="card">
     <a class="logo" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo"></a>
-    <h1 id="title">Welcome back</h1>
-    <p class="sub" id="subtitle">Sign in to continue to your chats.</p>
 
-    <div class="tabs" role="tablist">
-      <button type="button" id="tabLogin" class="<?= $mode === 'login' ? 'on' : '' ?>">Sign in</button>
-      <button type="button" id="tabReg" class="<?= $mode === 'register' ? 'on' : '' ?>">Create account</button>
+    <?php if ($tokenNote): ?>
+      <div class="err show"><?= icon('warning', 16) ?><span><?= htmlspecialchars($tokenNote) ?></span></div>
+    <?php endif; ?>
+
+    <!-- ══ STEP 1: email ══ -->
+    <div id="step1">
+      <h1>Welcome</h1>
+      <p class="sub">Enter your email — we'll send you a one-time login code. No passwords, ever.</p>
+      <form id="emailForm" novalidate>
+        <label for="email">Email</label>
+        <div class="inrow"><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required autofocus></div>
+        <p class="formnote">New here? Just enter your email — your account is created automatically.</p>
+        <div class="err" id="e1err"><?= icon('warning', 16) ?><span></span></div>
+        <button class="submit" type="submit" id="e1btn"><?= icon('mail', 16) ?> Continue with email</button>
+      </form>
     </div>
 
-    <!-- ── sign in ── -->
-    <form id="loginForm" class="<?= $mode === 'register' ? 'hidden' : '' ?>" novalidate>
-      <label for="lemail">Email</label>
-      <div class="inrow"><input id="lemail" type="email" autocomplete="email" placeholder="you@example.com" required></div>
-      <label for="lpass">Password</label>
-      <div class="inrow">
-        <input id="lpass" type="password" autocomplete="current-password" placeholder="Your password" required>
-        <button class="eye" type="button" data-eye="lpass" aria-label="Show password"><?= icon('eye', 17) ?></button>
+    <!-- ══ STEP 2: code ══ -->
+    <div id="step2" class="hidden">
+      <h1>Check your inbox</h1>
+      <p class="sub">We sent a 6-digit code to <b id="sentTo"></b>. It expires in 10 minutes.</p>
+      <form id="codeForm" novalidate>
+        <label for="code">Login code</label>
+        <div class="inrow codebox"><input id="code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" autocomplete="one-time-code" required autofocus></div>
+        <p class="formnote">Tip: the email also contains a magic link that signs you in with one click.</p>
+        <div class="err" id="e2err"><?= icon('warning', 16) ?><span></span></div>
+        <div class="ok-note" id="e2ok"></div>
+        <button class="submit" type="submit" id="e2btn"><?= icon('unlock', 16) ?> Verify and sign in</button>
+      </form>
+      <div class="altrow">
+        <a id="resend">Resend code</a>
+        <a id="changeEmail" class="muted">Use a different email</a>
       </div>
-      <div class="err" id="lerr"><?= icon('warning', 16) ?><span></span></div>
-      <button class="submit" type="submit" id="lbtn"><?= icon('unlock', 16) ?> Sign in</button>
-      <p class="alt">New here? <a href="#" id="toReg">Create an account</a> — it takes 20 seconds.</p>
-    </form>
+    </div>
 
-    <!-- ── register ── -->
-    <form id="regForm" class="<?= $mode === 'register' ? '' : 'hidden' ?>" novalidate>
-      <label for="rname">Display name</label>
-      <div class="inrow"><input id="rname" type="text" autocomplete="name" maxlength="40" placeholder="How should we call you?" required></div>
-      <label for="remail">Email</label>
-      <div class="inrow"><input id="remail" type="email" autocomplete="email" placeholder="you@example.com" required></div>
-      <label for="rpass">Password</label>
-      <div class="inrow">
-        <input id="rpass" type="password" autocomplete="new-password" placeholder="At least 8 characters" required>
-        <button class="eye" type="button" data-eye="rpass" aria-label="Show password"><?= icon('eye', 17) ?></button>
-      </div>
-      <p class="formnote">By creating an account you accept our cookie choices (opt-in only) — you can change them anytime in the footer.</p>
-      <div class="err" id="rerr"><?= icon('warning', 16) ?><span></span></div>
-      <button class="submit" type="submit" id="rbtn"><?= icon('user', 16) ?> Create account</button>
-      <p class="alt">Already have an account? <a href="#" id="toLogin">Sign in</a>.</p>
-    </form>
+    <div class="steps"><span class="on" id="dot1"></span><span id="dot2"></span></div>
   </div>
 </main>
 
@@ -147,74 +186,89 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:16
 (function () {
 'use strict';
 var $ = function (s) { return document.querySelector(s); };
+function post(action, body) {
+  return fetch('api.php?action=' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(function (r) { return r.json(); })
+    .catch(function () { return { ok: false, error: 'Network error — please try again.' }; });
+}
 function showErr(el, msg) { el.classList.add('show'); el.querySelector('span').textContent = msg; }
 function hideErr(el) { el.classList.remove('show'); }
-function setBusy(btn, busy, label) {
-  if (busy) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '<?= icon('loader', 16) ?> Please wait…'; }
+function busy(btn, on) {
+  if (on) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '<?= icon('loader', 16) ?> Please wait…'; }
   else { btn.disabled = false; if (btn.dataset.old) { btn.innerHTML = btn.dataset.old; } }
 }
-async function post(action, body) {
-  try {
-    var r = await fetch('api.php?action=' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    return await r.json();
-  } catch (e) { return { ok: false, error: 'Network error — please try again.' }; }
-}
 
-/* tabs */
-var loginForm = $('#loginForm'), regForm = $('#regForm');
-function showTab(reg) {
-  loginForm.classList.toggle('hidden', reg);
-  regForm.classList.toggle('hidden', !reg);
-  $('#tabLogin').classList.toggle('on', !reg);
-  $('#tabReg').classList.toggle('on', reg);
-  $('#title').textContent = reg ? 'Create your account' : 'Welcome back';
-  $('#subtitle').textContent = reg ? 'Your chats will be private and isolated.' : 'Sign in to continue to your chats.';
-  hideErr($('#lerr')); hideErr($('#rerr'));
-  try { history.replaceState(null, '', reg ? '?mode=register' : 'login.php'); } catch (e) {}
-}
-$('#tabLogin').addEventListener('click', function () { showTab(false); });
-$('#tabReg').addEventListener('click', function () { showTab(true); });
-$('#toReg').addEventListener('click', function (e) { e.preventDefault(); showTab(true); });
-$('#toLogin').addEventListener('click', function (e) { e.preventDefault(); showTab(false); });
+var email = '';
+var step1 = $('#step1'), step2 = $('#step2');
 
-/* password visibility */
-document.querySelectorAll('[data-eye]').forEach(function (b) {
-  b.addEventListener('click', function () {
-    var inp = document.getElementById(b.dataset.eye);
-    var show = inp.type === 'password';
-    inp.type = show ? 'text' : 'password';
-    b.innerHTML = show ? <?= json_encode(icon('eye-off', 17)) ?> : <?= json_encode(icon('eye', 17)) ?>;
-    inp.focus();
-  });
-});
-
-/* sign in */
-loginForm.addEventListener('submit', async function (e) {
+/* step 1 → request code */
+$('#emailForm').addEventListener('submit', async function (e) {
   e.preventDefault();
-  hideErr($('#lerr'));
-  var email = $('#lemail').value.trim(), pass = $('#lpass').value;
-  if (!email || !pass) { showErr($('#lerr'), 'Please fill in your email and password.'); return; }
-  setBusy($('#lbtn'), true);
-  var j = await post('login', { email: email, password: pass });
-  setBusy($('#lbtn'), false);
-  if (j.ok) { window.location.href = 'app.php'; }
-  else { showErr($('#lerr'), j.error || 'Sign in failed.'); }
+  hideErr($('#e1err'));
+  email = $('#email').value.trim();
+  if (!email) { showErr($('#e1err'), 'Please enter your email address.'); return; }
+  busy($('#e1btn'), true);
+  var j = await post('otp_request', { email: email });
+  busy($('#e1btn'), false);
+  if (j.ok) {
+    email = email.toLowerCase();
+    step1.classList.add('hidden');
+    step2.classList.remove('hidden');
+    $('#dot2').classList.add('on');
+    $('#sentTo').textContent = j.masked || email;
+    $('#code').value = '';
+    setTimeout(function () { $('#code').focus(); }, 60);
+  } else {
+    showErr($('#e1err'), j.error || 'Could not send the code.');
+  }
 });
 
-/* register */
-regForm.addEventListener('submit', async function (e) {
+/* step 2 → verify */
+$('#codeForm').addEventListener('submit', async function (e) {
   e.preventDefault();
-  hideErr($('#rerr'));
-  var name = $('#rname').value.trim(), email = $('#remail').value.trim(), pass = $('#rpass').value;
-  if (name.length < 2) { showErr($('#rerr'), 'Please enter a display name (at least 2 characters).'); return; }
-  if (!email) { showErr($('#rerr'), 'Please enter your email.'); return; }
-  if (pass.length < 8) { showErr($('#rerr'), 'Password must be at least 8 characters long.'); return; }
-  setBusy($('#rbtn'), true);
-  var j = await post('register', { name: name, email: email, password: pass });
-  setBusy($('#rbtn'), false);
+  hideErr($('#e2err'));
+  $('#e2ok').classList.remove('show');
+  var code = $('#code').value.replace(/\D/g, '');
+  if (code.length !== 6) { showErr($('#e2err'), 'Enter the 6-digit code from your email.'); return; }
+  busy($('#e2btn'), true);
+  var j = await post('otp_verify', { email: email, code: code });
+  busy($('#e2btn'), false);
   if (j.ok) { window.location.href = 'app.php'; }
-  else { showErr($('#rerr'), j.error || 'Registration failed.'); }
+  else { showErr($('#e2err'), j.error || 'Wrong or expired code.'); }
 });
+
+/* resend with 60s cooldown */
+var resendT = null;
+$('#resend').addEventListener('click', async function () {
+  if (resendT) { return; }
+  hideErr($('#e2err'));
+  var j = await post('otp_request', { email: email });
+  if (j.ok) {
+    var left = 60;
+    var el = $('#resend');
+    var tick = function () {
+      el.textContent = 'Resend code (' + left + 's)';
+      if (left-- > 0) { resendT = setTimeout(tick, 1000); }
+      else { resendT = null; el.textContent = 'Resend code'; }
+    };
+    tick();
+    $('#e2ok').textContent = 'A new code was sent to your email.';
+    $('#e2ok').classList.add('show');
+  } else {
+    showErr($('#e2err'), j.error || 'Could not resend.');
+  }
+});
+
+/* back to step 1 */
+$('#changeEmail').addEventListener('click', function () {
+  step2.classList.add('hidden');
+  step1.classList.remove('hidden');
+  $('#dot2').classList.remove('on');
+  $('#code').value = '';
+  hideErr($('#e2err'));
+  setTimeout(function () { $('#email').focus(); }, 60);
+});
+
 /* theme toggle (respects the personalization cookie choice) */
 (function () {
   var SUN = <?= json_encode(icon('sun', 16)) ?>;

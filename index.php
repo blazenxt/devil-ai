@@ -173,7 +173,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
         <a class="btn primary" href="app.php">Open app <?= icon('arrow-right', 15) ?></a>
       <?php else: ?>
         <a class="btn ghost hide-sm" href="login.php">Sign in</a>
-        <a class="btn primary" href="login.php?mode=register">Get started <?= icon('arrow-right', 15) ?></a>
+        <a class="btn primary" href="login.php">Get started <?= icon('arrow-right', 15) ?></a>
       <?php endif; ?>
     </div>
   </div>
@@ -184,7 +184,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
   <h1>Meet Devil AI.<br>Sinfully smart.</h1>
   <p class="sub">A one-of-a-kind AI assistant, hand-built and running on a private server. Real answers, real privacy, zero tracking by default.</p>
   <div class="cta">
-    <a class="btn primary big" href="<?= $me ? 'app.php' : 'login.php?mode=register' ?>"><?= icon('message', 17) ?> Start chatting</a>
+    <a class="btn primary big" href="<?= $me ? 'app.php' : 'login.php' ?>"><?= icon('message', 17) ?> Start chatting</a>
     <a class="btn ghost big" href="#features">See what's inside</a>
   </div>
 
@@ -216,11 +216,11 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
       <p>Built from scratch in pure PHP — no bloat, no middlemen, no surprises.</p>
     </div>
     <div class="grid">
-      <div class="card"><div class="ic"><?= icon('users', 20) ?></div><h3>Private accounts</h3><p>Create your own account with a secure password. Your conversations stay behind your login — isolated from everyone else.</p></div>
+      <div class="card"><div class="ic"><?= icon('users', 20) ?></div><h3>Private accounts</h3><p>Sign in with just your email — a one-time code or magic link, no passwords to remember or leak. Your chats stay isolated.</p></div>
       <div class="card"><div class="ic"><?= icon('chat-group', 20) ?></div><h3>Isolated chats</h3><p>Every conversation is stored separately per account. Rename, revisit or delete your history anytime — you are in full control.</p></div>
       <div class="card"><div class="ic"><?= icon('layers', 20) ?></div><h3>Multiple models</h3><p>Switch between Devil Flash, Pro and Ultra mid-conversation. Pick the right brain for every task — from quick questions to deep work.</p></div>
       <div class="card"><div class="ic"><?= icon('cookie', 20) ?></div><h3>Cookie-first privacy</h3><p>Analytics and personalization are opt-in, never default. Accept all or fine-tune every category — your choice is remembered and respected.</p></div>
-      <div class="card"><div class="ic"><?= icon('shield-check', 20) ?></div><h3>Hardened by default</h3><p>Hashed passwords, brute-force protection, per-account rate limits and server-side isolation. Security is not an afterthought.</p></div>
+      <div class="card"><div class="ic"><?= icon('shield-check', 20) ?></div><h3>Hardened by default</h3><p>Passwordless sign-in, brute-force protection, per-account rate limits and server-side isolation. Security is not an afterthought.</p></div>
       <div class="card"><div class="ic"><?= icon('server', 20) ?></div><h3>Self-hosted &amp; lean</h3><p>100% PHP on a private server. No third-party scripts, no ads, no data brokers — just you and your devilishly good assistant.</p></div>
     </div>
   </div>
@@ -249,7 +249,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <a class="btn ghost" href="cookies.php"><?= icon('cookie', 16) ?> Cookie Policy</a>
-      <a class="btn primary" href="<?= $me ? 'app.php' : 'login.php?mode=register' ?>">Create free account</a>
+      <a class="btn primary" href="<?= $me ? 'app.php' : 'login.php' ?>">Create free account</a>
     </div>
   </div>
 </section>

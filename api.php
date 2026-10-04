@@ -5,34 +5,36 @@
  * ═══════════════════════════════════════════════════════════════
  *  PUBLIC actions
  *    GET  ?action=bootstrap         → {ok, models[], default, version}
- *    POST ?action=register          {name, email, password}   → {ok, user}
- *    POST ?action=login             {email, password}         → {ok, user}
- *    POST ?action=logout                                      → {ok}
- *    GET  ?action=me                                          → {ok, user|null}
- *    GET  ?action=settings          → {ok, version, admin}    (public-safe!)
+ *    POST ?action=otp_request       {email}                    → {ok, masked}   (sends code + magic link)
+ *    POST ?action=otp_verify        {email, code}              → {ok} (auto sign-in)
+ *    POST ?action=logout                                       → {ok}
+ *    GET  ?action=me                                            → {ok, user|null}
+ *    GET  ?action=settings          → {ok, version, admin}      (public-safe!)
  *
  *  USER actions (login required)
  *    GET  ?action=chats             → {ok, chats[]}
  *    GET  ?action=chat_load&id      → {ok, chat}
  *    POST ?action=chat_send         {id?, message, model, retry?} → {ok, id, title, reply, model}
- *    POST ?action=chat_delete       {id}                      → {ok}
- *    POST ?action=chat_rename       {id, title}               → {ok}
- *    POST ?action=account_delete    {password}                → {ok}
+ *    POST ?action=chat_delete       {id}                        → {ok}
+ *    POST ?action=chat_rename       {id, title}                 → {ok}
+ *    POST ?action=otp_request       {purpose:"delete"}          → {ok, masked} (code for deletion)
+ *    POST ?action=account_delete    {code}                      → {ok}
  *
- *  ADMIN actions
- *    POST ?action=auth              {admin_password}          → {ok, config, engines[]}
- *    POST ?action=settings          {current_admin_password, ...} → {ok}
- *    POST ?action=test              {current_admin_password}  → {ok, reply}
+ *  ADMIN actions (separate admin.php panel)
+ *    POST ?action=auth              {admin_password}            → {ok, config, engines[]}
+ *    POST ?action=settings          {current_admin_password,…}  → {ok}
+ *    POST ?action=test              {current_admin_password}    → {ok, reply}
  *
  *  Models (public names) → engines (server-side secret):
- *    Devil Flash / Pro / Ultra / Demo → Prexzy endpoints or Gemini (site key)
+ *    Devil Flash / Pro / Ultra → Prexzy endpoints or Gemini (site key)
  *    Automatic fallback: any engine failure retries on Prexzy.
  *
  *  Storage (JSON files, no database):
- *    data/users.json                → accounts (passwords hashed)
- *    data/chats/{user_id}/{id}.json → isolated conversations
- *    data/config.json               → admin-managed runtime config
- *    data/rl.json / data/authrl.json → rate limiting
+ *    data/users.json  accounts (no passwords — email-code login only)
+ *    data/otps.json   one-time login codes + magic-link tokens
+ *    data/chats/{user_id}/{id}.json  isolated conversations
+ *    data/config.json admin-managed runtime config
+ *    data/rl.json / data/authrl.json  rate limiting
  */
 
 declare(strict_types=1);
@@ -46,6 +48,8 @@ define('DEVIL_VERSION', '1.0.0.0');
 define('MAX_INPUT', 4000);      // max characters per message
 define('MAX_MSGS_PER_CHAT', 200);
 define('PREXZY_BASE', 'https://prexzyapis.com/ai/');
+define('OTP_TTL', 600);         // codes valid 10 minutes
+define('OTP_MAX_TRIES', 5);
 
 /* mbstring fallbacks for very old hosts */
 if (!function_exists('mb_strtolower')) { function mb_strtolower($s) { return strtolower((string)$s); } }
@@ -131,7 +135,6 @@ function default_config(): array {
 
 function load_config(): array {
     $cfg = array_merge(default_config(), load_json(data_dir() . '/config.json'));
-    /* new keys fall back to legacy keys so old installs keep working */
     if (!isset($cfg['gemini_api_key'])) { $cfg['gemini_api_key'] = (string)($cfg['api_key'] ?? ''); }
     if (!isset($cfg['gemini_model']) || $cfg['gemini_model'] === '') { $cfg['gemini_model'] = ($cfg['model'] ?? '') !== '' ? (string)$cfg['model'] : 'gemini-2.5-flash'; }
     if (!isset($cfg['engines']) || !is_array($cfg['engines'])) { $cfg['engines'] = []; }
@@ -151,7 +154,6 @@ function public_models(): array {
         ['id' => 'flash', 'label' => 'Devil Flash', 'tagline' => 'Fast answers for everyday questions', 'icon' => 'zap'],
         ['id' => 'pro',   'label' => 'Devil Pro',   'tagline' => 'Deeper thinking for complex tasks',    'icon' => 'sparkles'],
         ['id' => 'ultra', 'label' => 'Devil Ultra', 'tagline' => 'Maximum power for heavy lifting',      'icon' => 'crown'],
-        ['id' => 'demo',  'label' => 'Demo Mode',   'tagline' => 'Offline fallback — no AI needed',      'icon' => 'ghost'],
     ];
 }
 
@@ -172,9 +174,7 @@ function admin_engine_list(): array {
 
 /* resolve a public model id to a real engine — server-side secret */
 function engine_for(array $cfg, string $model_id): array {
-    if ($model_id === 'demo') { return ['kind' => 'demo']; }
     $eng = (string)($cfg['engines'][$model_id] ?? 'prexzy:askgpt5');
-    if ($eng === 'demo') { return ['kind' => 'demo']; }
     if ($eng === 'gemini:key' || $eng === 'gemini') { return ['kind' => 'gemini']; }
     if (preg_match('/^prexzy:([a-z0-9_]+)$/i', $eng, $m)) {
         $ep = strtolower($m[1]);
@@ -183,7 +183,7 @@ function engine_for(array $cfg, string $model_id): array {
     return ['kind' => 'prexzy', 'endpoint' => 'askgpt5'];
 }
 
-/* ── users ── */
+/* ── users (no passwords — email-code login) ── */
 function load_users(): array { return load_json(data_dir() . '/users.json'); }
 function save_users(array $users): bool { return save_json_atomic(data_dir() . '/users.json', $users); }
 function current_uid(): ?string { return isset($_SESSION['devil_uid']) ? (string)$_SESSION['devil_uid'] : null; }
@@ -192,6 +192,94 @@ function current_user(): ?array {
     if ($uid === null) { return null; }
     $users = load_users();
     return $users[$uid] ?? null;
+}
+
+function find_user_by_email(string $email): ?array {
+    foreach (load_users() as $u) {
+        if (strcasecmp((string)($u['email'] ?? ''), $email) === 0) { return $u; }
+    }
+    return null;
+}
+
+function name_from_email(string $email): string {
+    $local = explode('@', $email)[0];
+    $first = preg_split('/[._\-+0-9]+/', $local)[0];
+    $first = trim((string)$first);
+    if ($first === '') { $first = $local; }
+    if ($first === '') { $first = 'Devil'; }
+    return ucfirst(mb_substr($first, 0, 20));
+}
+
+/* ── one-time codes + magic links ── */
+function load_otps(): array { return load_json(data_dir() . '/otps.json'); }
+function save_otps(array $map): bool {
+    /* prune expired entries while saving */
+    $now = time();
+    foreach ($map as $k => $v) {
+        if (!is_array($v) || (int)($v['expires'] ?? 0) < $now) { unset($map[$k]); }
+    }
+    return save_json_atomic(data_dir() . '/otps.json', $map);
+}
+
+function otp_issue(string $email, string $purpose): array {
+    $map = load_otps();
+    $rec = [
+        'code'    => str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT),
+        'token'   => bin2hex(random_bytes(16)),
+        'expires' => time() + OTP_TTL,
+        'tries'   => 0,
+        'purpose' => $purpose,
+        'sent'    => time(),
+    ];
+    $map[strtolower($email)] = $rec;
+    save_otps($map);
+    return $rec;
+}
+
+function otp_consume(string $email, string $code, string $purpose): bool {
+    $email = strtolower($email);
+    $map = load_otps();
+    if (!isset($map[$email])) { return false; }
+    $rec = $map[$email];
+    if ((int)($rec['expires'] ?? 0) < time() || ($rec['purpose'] ?? '') !== $purpose) { unset($map[$email]); save_otps($map); return false; }
+    if ((int)($rec['tries'] ?? 0) >= OTP_MAX_TRIES) { unset($map[$email]); save_otps($map); return false; }
+    if (!hash_equals((string)$rec['code'], trim((string)$code))) {
+        $rec['tries'] = (int)$rec['tries'] + 1;
+        $map[$email] = $rec;
+        save_otps($map);
+        return false;
+    }
+    unset($map[$email]);
+    save_otps($map);
+    return true;
+}
+
+function otp_consume_token(string $token, string $purpose): ?array {
+    $token = trim((string)$token);
+    if ($token === '' || !preg_match('/^[a-f0-9]{32}$/', $token)) { return null; }
+    $map = load_otps();
+    foreach ($map as $email => $rec) {
+        if (($rec['purpose'] ?? '') === $purpose && hash_equals((string)($rec['token'] ?? ''), $token)) {
+            if ((int)($rec['expires'] ?? 0) >= time()) {
+                unset($map[$email]);
+                save_otps($map);
+                return ['email' => (string)$email];
+            }
+            unset($map[$email]);
+            save_otps($map);
+            return null;
+        }
+    }
+    return null;
+}
+
+function mask_email(string $email): string {
+    $p = explode('@', $email);
+    if (count($p) !== 2) { return 'your email'; }
+    $local = $p[0];
+    $n = mb_strlen($local);
+    $show = $n <= 2 ? mb_substr($local, 0, 1) : mb_substr($local, 0, 2);
+    return $show . str_repeat('*', max(1, min(6, $n - mb_strlen($show)))) . '@' . $p[1];
 }
 
 /* ── rate limiting (generic, file-based) ── */
@@ -235,8 +323,66 @@ function client_ip(): string {
 function admin_password(): string { return (string)(load_config()['admin_password'] ?? ''); }
 function admin_ok(string $given): bool {
     $pw = admin_password();
-    if ($pw === '') { return true; } /* open mode: owner hasn't set a password yet */
+    if ($pw === '') { return true; }
     return ($given !== '' && hash_equals($pw, $given));
+}
+
+/* ── email sending (PHP mail, multipart) ── */
+function app_base_url(): string {
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $dir = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/'))), '/');
+    return ($https ? 'https://' : 'http://') . $host . $dir;
+}
+
+function devil_mail(string $to, string $subject, string $html, string $text): bool {
+    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $host = preg_replace('/^www\./', '', $host) ?? $host;
+    $from = 'Devil AI <noreply@' . $host . '>';
+    $boundary = 'devil-' . bin2hex(random_bytes(8));
+    $headers = 'From: ' . $from . "\r\n"
+             . 'MIME-Version: 1.0' . "\r\n"
+             . 'Content-Type: multipart/alternative; boundary="' . $boundary . '"' . "\r\n"
+             . 'X-Mailer: DevilAI/' . DEVIL_VERSION;
+    $body = "--{$boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n{$text}\r\n"
+          . "--{$boundary}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n{$html}\r\n"
+          . "--{$boundary}--";
+    $ok = @mail($to, $subject, $body, $headers);
+    if (!$ok) {
+        @file_put_contents(data_dir() . '/mail.log', date('c') . " FAIL to={$to} subject=" . str_replace("\n", ' ', $subject) . "\n", FILE_APPEND);
+    }
+    return $ok;
+}
+
+function login_code_email(string $to, string $code, string $link): bool {
+    $subject = 'Your Devil AI login code: ' . $code;
+    $esc = htmlspecialchars($code, ENT_QUOTES);
+    $escLink = htmlspecialchars($link, ENT_QUOTES);
+    $html = '<div style="font-family:Segoe UI,Arial,sans-serif;background:#0c0709;padding:32px">'
+        . '<div style="max-width:460px;margin:0 auto;background:#171014;border:1px solid #3d222b;border-radius:16px;padding:28px;color:#efe6ea">'
+        . '<h2 style="margin:0 0 6px;color:#fff">Devil AI</h2>'
+        . '<p style="color:#a8929b;font-size:13px;margin:0 0 18px">Your one-time login code is:</p>'
+        . '<div style="font-family:Consolas,monospace;font-size:34px;letter-spacing:10px;color:#fda4af;background:#0d060a;border:1px solid #3d222b;border-radius:12px;padding:16px;text-align:center">' . $esc . '</div>'
+        . '<p style="color:#a8929b;font-size:13px;margin:18px 0 14px">Or click this magic link to sign in instantly:</p>'
+        . '<p style="margin:0 0 18px"><a href="' . $escLink . '" style="background:#e11d48;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600;display:inline-block">Sign in to Devil AI</a></p>'
+        . '<p style="color:#7c5b63;font-size:12px;margin:0;line-height:1.6">This code and link expire in 10 minutes.<br>If you did not request this, you can safely ignore this email.</p>'
+        . '</div></div>';
+    $text = "Your Devil AI login code: {$code}\n\nOr sign in instantly with this magic link (valid 10 minutes):\n{$link}\n\nIf you did not request this, ignore this email.";
+    return devil_mail($to, $subject, $html, $text);
+}
+
+function delete_code_email(string $to, string $code): bool {
+    $subject = 'Confirm deleting your Devil AI account — code: ' . $code;
+    $esc = htmlspecialchars($code, ENT_QUOTES);
+    $html = '<div style="font-family:Segoe UI,Arial,sans-serif;background:#0c0709;padding:32px">'
+        . '<div style="max-width:460px;margin:0 auto;background:#171014;border:1px solid #7f1d1d;border-radius:16px;padding:28px;color:#efe6ea">'
+        . '<h2 style="margin:0 0 6px;color:#fca5a5">Delete your Devil AI account?</h2>'
+        . '<p style="color:#a8929b;font-size:13px;margin:0 0 18px">Enter this confirmation code in the app to permanently delete your account and all chats:</p>'
+        . '<div style="font-family:Consolas,monospace;font-size:34px;letter-spacing:10px;color:#fda4af;background:#0d060a;border:1px solid #7f1d1d;border-radius:12px;padding:16px;text-align:center">' . $esc . '</div>'
+        . '<p style="color:#7c5b63;font-size:12px;margin:18px 0 0;line-height:1.6">This code expires in 10 minutes. If you did not request this, ignore this email.</p>'
+        . '</div></div>';
+    $text = "Confirm deleting your Devil AI account.\n\nConfirmation code: {$code}\n\nThis code expires in 10 minutes. If you did not request this, ignore this email.";
+    return devil_mail($to, $subject, $html, $text);
 }
 
 /* ── HTTP (cURL with stream fallback) ── */
@@ -286,19 +432,15 @@ function http_post_json(string $url, array $headers, array $body): array {
 }
 
 function error_hint(int $status): ?string {
-    if ($status === 401 || $status === 403) { return 'The API key looks wrong or expired — the owner can fix it in Admin settings.'; }
-    if ($status === 404) { return 'The configured engine looks wrong — the owner can fix it in Admin settings.'; }
+    if ($status === 401 || $status === 403) { return 'The API key looks wrong or expired — the owner can fix it in the admin panel.'; }
+    if ($status === 404) { return 'The configured engine looks wrong — the owner can fix it in the admin panel.'; }
     if ($status === 429) { return 'Free limit reached — wait a bit and try again.'; }
     return null;
 }
 
 /* ══════════════ AI ENGINES ══════════════ */
 
-/* call a real engine. $messages = full conversation incl. system.
-   returns [ok, reply|error, hint|null, engine_used|null] */
 function call_engine(array $cfg, array $engine, array $messages): array {
-    if ($engine['kind'] === 'demo') { return [false, 'Demo engine called directly', null, null]; }
-
     /* ── Prexzy (free, no key, single-turn) ── */
     if ($engine['kind'] === 'prexzy') {
         $q = '';
@@ -368,15 +510,6 @@ function call_engine(array $cfg, array $engine, array $messages): array {
 function ai_respond(array $cfg, string $modelId, array $messages): array {
     $engine = engine_for($cfg, $modelId);
 
-    /* demo model → offline brain */
-    if ($engine['kind'] === 'demo') {
-        $q = '';
-        foreach (array_reverse($messages) as $m) {
-            if (($m['role'] ?? '') === 'user') { $q = (string)$m['content']; break; }
-        }
-        return [true, demo_reply($q), 'demo'];
-    }
-
     list($ok, $txt, $hint, $used) = call_engine($cfg, $engine, $messages);
 
     /* fallback 1: different Prexzy endpoint */
@@ -394,12 +527,12 @@ function ai_respond(array $cfg, string $modelId, array $messages): array {
         foreach (array_reverse($messages) as $m) {
             if (($m['role'] ?? '') === 'user') { $q = (string)$m['content']; break; }
         }
-        return [true, "My connection to the other world flickered for a moment, so here's my offline brain talking:\n\n" . demo_reply($q), 'demo'];
+        return [true, "My connection to the other world flickered for a moment, so here's my offline brain talking:\n\n" . offline_reply($q), 'offline'];
     }
     return [$ok, $txt, $used];
 }
 
-/* ══════════════ DEMO BRAIN (offline) ══════════════ */
+/* ══════════════ OFFLINE BRAIN (internal last-resort fallback only) ══════════════ */
 
 function pick_rand(array $arr): string { return (string)$arr[array_rand($arr)]; }
 
@@ -443,7 +576,7 @@ function calc_demo(string $expr): ?float {
     return $val;
 }
 
-function demo_reply(string $text): string {
+function offline_reply(string $text): string {
     $t   = trim(preg_replace('/\s+/u', ' ', $text));
     $low = mb_strtolower($t);
     $has = function (...$needles) use ($low) {
@@ -456,73 +589,52 @@ function demo_reply(string $text): string {
         $v = calc_demo($m);
         if ($v !== null) {
             $pretty = rtrim(rtrim(number_format($v, 10, '.', ''), '0'), '.');
-            return "Calculator mode ON\n\n`{$m}` = **{$pretty}**\n\nAsk me more — math is my passion.";
+            return "Calculator mode ON\n\n`{$m}` = **{$pretty}**";
         }
-        return "I couldn't solve that one — the offline calculator only understands **+ − × ÷ % ( )**. Check the brackets or numbers!";
+        return "I couldn't solve that one offline — the calculator only understands **+ − × ÷ % ( )**.";
     }
 
-    if ($has('hack', 'virus', 'malware', 'keylogger', 'ddos', 'password tod', 'bomb bana', 'how to hack')) {
-        return "I'm a devil, not a criminal! I won't help with hacking, viruses, or anything like that.\n\nBut coding, studying, ideas, jokes — I'll help with all of that, with all the fire of hell.";
+    if ($has('hack', 'virus', 'malware', 'keylogger', 'ddos', 'how to hack')) {
+        return "I'm a devil, not a criminal! I won't help with hacking or anything harmful.\n\nBut coding, studying, ideas, jokes — I'll help with all of that, with all the fire of hell.";
     }
 
-    if ($has('who are you', 'who r u', 'who is this', 'what are you', 'your name', 'tum kaun', 'kaun ho', 'tera naam', 'tumhara naam', 'introduce', 'naam kya', 'which model', 'what model', 'which ai', 'what ai are you', 'are you chatgpt', 'are you gpt', 'are you qwen', 'are you gemini')) {
-        return "I am **Devil AI** — a custom-built devil, living on my master's own PHP server.\n\nStraight from hell, with the best answers on Earth! Ask me anything.";
+    if ($has('who are you', 'who r u', 'what are you', 'your name', 'tum kaun', 'kaun ho', 'which model', 'what model', 'are you chatgpt', 'are you gpt', 'are you qwen', 'are you gemini')) {
+        return "I am **Devil AI** — a custom-built devil, living on my master's own PHP server.\n\nStraight from hell, with the best answers on Earth!";
     }
 
-    if ($has('how are you', 'how r u', 'how are u', 'kaise ho', 'kaisa hai tu', 'kya haal', 'how is it going', 'how are you doing')) {
-        return "Hot as hell, smooth as PHP. What about you — how's it going?";
+    if ($has('who made you', 'who created you', 'who built you', 'kisne banaya', 'your creator', 'your owner')) {
+        return "My master built me with his own hands — custom code, private server, zero third-party soul.";
     }
 
-    if ($has('who made you', 'who created you', 'who built you', 'kisne banaya', 'your creator', 'your developer', 'creator', 'who owns you', 'your owner')) {
-        return "My master built me with his own hands — custom code, private server, zero third-party soul.\n\nI'm one of a kind, and I never forget who owns me.";
+    if ($has('what time', 'time now', 'current time', 'time bata', 'kitne baje') || $low === 'time') {
+        return "It's **" . date('h:i A') . "** right now (server time).";
     }
 
-    if ($has('what time', 'time now', 'current time', 'time please', 'the time', 'time bata', 'kya time', 'kitne baje', 'samay') || $low === 'time') {
-        return "It's **" . date('h:i A') . "** right now (server time). We don't check the time in hell, but for you — anything.";
+    if ($has('what date', 'date today', 'aaj ki date', 'what day', 'tareekh') || $low === 'date') {
+        return "Today is **" . date('l, d F Y') . "**.";
     }
 
-    if ($has('what date', 'date today', 'todays date', 'date please', 'date bata', 'kaunsi date', 'aaj ki date', 'what day', 'tareekh', 'tarikh') || $low === 'date') {
-        return "Today is **" . date('l, d F Y') . "**. Day delivered — now it's time to get to work.";
-    }
-
-    if ($has('joke', 'funny', 'make me laugh', 'hasao', 'hasa do', 'chutkula', 'comedy', 'laugh')) {
+    if ($has('joke', 'funny', 'make me laugh', 'hasao', 'chutkula')) {
         return pick_rand([
             "Teacher: Why are you late?\nStudent: Sir, there was a sign on the road — *Devil zone, drive slowly*.",
             "I asked the devil — *who is the biggest devil of all?*\nHe showed me a mirror.",
             "Why is there no AC in hell?\nBecause heat is our **family business**.",
-            "Ghosts are afraid of me. I'm the ghost of ghosts.",
         ]);
-    }
-
-    if ($has('story', 'stories', 'horror', 'scary', 'kahani', 'ghost', 'bhoot')) {
-        return "One night, a programmer's server crashed… and the logs said — *I now live inside your code*.\n\nWant real, full-length stories? Switch to a smarter model and keep asking — I never run out of nightmares.";
     }
 
     if ($has('thank', 'thx', 'shukriya', 'dhanyavad')) {
-        return "You're welcome. But next time, bring a candle too. Anything else?";
+        return "You're welcome. But next time, bring a candle too.";
     }
 
-    if ($has('bye', 'goodbye', 'good night', 'see you', 'alvida', 'tata', 'chalta hu', 'gtg')) {
+    if ($has('bye', 'goodbye', 'good night', 'see you', 'alvida')) {
         return "Goodbye, human! Remember — **Devil AI never forgets**…";
     }
 
-    if ($has('love you', 'i love you', 'pyar', 'marry me')) {
-        return "The devil's heart is made of stone, but for you it melted. Still, love won't work — my *system requirements* are on another level.";
+    if (preg_match('/^(hi+|hii+|hello+|helo+|hey+|yo|sup|namaste|hola|salam|hy)\b/u', $low) || $low === 'hi' || $low === 'hello' || $low === 'hey') {
+        return "Hello, human! I'm **Devil AI**. The main engines are warming up — ask me again in a moment for full power.";
     }
 
-    if (preg_match('/^(hi+|hii+|hello+|helo+|hey+|yo|sup|namaste|namaskar|hola|salam|hy)\b/u', $low) || $low === 'hi' || $low === 'hello' || $low === 'hey') {
-        return pick_rand([
-            "Hello, human! I'm **Devil AI** — hell's most helpful resident. Tell me, what do you need?",
-            "Welcome, welcome! You've entered hell… kidding, I'm a *helpful* devil. What would you like to ask?",
-            "Hey! Devil AI, reporting live from hell. What shall we talk about today?",
-        ]);
-    }
-
-    return pick_rand([
-        "Hmm… that one slipped past my offline brain. Try a smarter model for the full power!",
-        "My offline brain is small but mighty. Ask me math, jokes, time — or switch models for real AI power.",
-        "Even devils blank out sometimes. Rephrase that, or pick a smarter model from the chat box.",
-    ]);
+    return "My offline brain is small but honest — the main engines are warming up. Ask me again in a moment!";
 }
 
 /* ══════════════ CHAT STORAGE (isolated per user) ══════════════ */
@@ -569,6 +681,25 @@ function rrmdir(string $dir): void {
     @rmdir($dir);
 }
 
+/* sign in / create the account for an email (used by otp_verify + magic link) */
+function login_email(string $email): ?array {
+    $users = load_users();
+    foreach ($users as $u) {
+        if (strcasecmp((string)($u['email'] ?? ''), $email) === 0) {
+            session_regenerate_id(true);
+            $_SESSION['devil_uid'] = (string)$u['id'];
+            return $u;
+        }
+    }
+    /* auto-create on first login */
+    $uid = 'u' . bin2hex(random_bytes(8));
+    $users[$uid] = ['id' => $uid, 'name' => name_from_email($email), 'email' => strtolower($email), 'created' => time()];
+    if (!save_users($users)) { return null; }
+    session_regenerate_id(true);
+    $_SESSION['devil_uid'] = $uid;
+    return $users[$uid];
+}
+
 /* ══════════════ MAIN ══════════════ */
 
 try {
@@ -586,61 +717,65 @@ try {
         json_out(['ok' => true, 'version' => DEVIL_VERSION, 'admin' => (admin_password() !== '')]);
     }
 
-    if ($action === 'register' && $method === 'POST') {
+    /* ── passwordless login: request a code ── */
+    if ($action === 'otp_request' && $method === 'POST') {
+        $in = input_json();
+        $purpose = (($in['purpose'] ?? '') === 'delete') ? 'delete' : 'login';
+
+        /* delete codes require an active session */
+        if ($purpose === 'delete') {
+            $user = current_user();
+            if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
+            $email = (string)$user['email'];
+        } else {
+            $email = strtolower(trim((string)($in['email'] ?? '')));
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { json_out(['ok' => false, 'error' => 'Please enter a valid email address.']); }
+        }
+
+        /* rate limits: 10 requests / 15 min per IP, 3 / 15 min per email */
         if (!rate_ok('authrl.json', 'ip:' . client_ip(), 10, 900)) {
-            json_out(['ok' => false, 'error' => 'Too many attempts from your network. Please wait 15 minutes and try again.'], 429);
+            json_out(['ok' => false, 'error' => 'Too many code requests. Please wait 15 minutes and try again.'], 429);
         }
-        $in   = input_json();
-        $name = trim(strip_tags((string)($in['name'] ?? '')));
-        $email = strtolower(trim((string)($in['email'] ?? '')));
-        $pass = (string)($in['password'] ?? '');
-
-        if (mb_strlen($name) < 2 || mb_strlen($name) > 40)  { json_out(['ok' => false, 'error' => 'Display name must be 2-40 characters.']); }
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL))     { json_out(['ok' => false, 'error' => 'Please enter a valid email address.']); }
-        if (strlen($pass) < 8 || strlen($pass) > 200)       { json_out(['ok' => false, 'error' => 'Password must be at least 8 characters.']); }
-
-        $users = load_users();
-        foreach ($users as $u) {
-            if (strcasecmp((string)($u['email'] ?? ''), $email) === 0) {
-                json_out(['ok' => false, 'error' => 'An account with this email already exists — try signing in instead.']);
-            }
+        if (!rate_ok('authrl.json', 'mail:' . $email, 3, 900)) {
+            json_out(['ok' => false, 'error' => 'A code was already sent recently — please wait a few minutes before requesting another.'], 429);
         }
-        $uid = 'u' . bin2hex(random_bytes(8));
-        $users[$uid] = [
-            'id'      => $uid,
-            'name'    => $name,
-            'email'   => $email,
-            'hash'    => password_hash($pass, PASSWORD_DEFAULT),
-            'created' => time(),
-        ];
-        if (!save_users($users)) { json_out(['ok' => false, 'error' => 'Server storage error — please try again.'], 500); }
 
-        session_regenerate_id(true);
-        $_SESSION['devil_uid'] = $uid;
-        json_out(['ok' => true, 'user' => ['name' => $name, 'email' => $email]]);
+        /* cooldown: no re-send within 60s */
+        $otps = load_otps();
+        $key = strtolower($email);
+        if (isset($otps[$key]) && (time() - (int)($otps[$key]['sent'] ?? 0)) < 60) {
+            json_out(['ok' => false, 'error' => 'Please wait a minute before requesting a new code.'], 429);
+        }
+
+        $rec = otp_issue($email, $purpose);
+
+        if ($purpose === 'login') {
+            $link = app_base_url() . '/login.php?token=' . $rec['token'];
+            $sent = login_code_email($email, $rec['code'], $link);
+        } else {
+            $sent = delete_code_email($email, $rec['code']);
+        }
+        if (!$sent) {
+            json_out(['ok' => false, 'error' => 'The email could not be sent — the server mailer is not available. Please contact the site owner.'], 500);
+        }
+        json_out(['ok' => true, 'masked' => mask_email($email)]);
     }
 
-    if ($action === 'login' && $method === 'POST') {
-        if (!rate_ok('authrl.json', 'ip:' . client_ip(), 10, 900)) {
-            json_out(['ok' => false, 'error' => 'Too many sign-in attempts. Please wait 15 minutes and try again.'], 429);
+    /* ── passwordless login: verify the code ── */
+    if ($action === 'otp_verify' && $method === 'POST') {
+        if (!rate_ok('authrl.json', 'ip:' . client_ip(), 20, 900)) {
+            json_out(['ok' => false, 'error' => 'Too many attempts. Please wait 15 minutes.'], 429);
         }
-        $in    = input_json();
+        $in = input_json();
         $email = strtolower(trim((string)($in['email'] ?? '')));
-        $pass  = (string)($in['password'] ?? '');
-        if ($email === '' || $pass === '') { json_out(['ok' => false, 'error' => 'Enter your email and password.']); }
-
-        $users = load_users();
-        foreach ($users as $u) {
-            if (strcasecmp((string)($u['email'] ?? ''), $email) === 0) {
-                if (password_verify($pass, (string)($u['hash'] ?? ''))) {
-                    session_regenerate_id(true);
-                    $_SESSION['devil_uid'] = (string)$u['id'];
-                    json_out(['ok' => true, 'user' => ['name' => (string)$u['name'], 'email' => (string)$u['email']]]);
-                }
-                json_out(['ok' => false, 'error' => 'Wrong email or password.'], 401);
-            }
+        $code  = trim((string)($in['code'] ?? ''));
+        if ($email === '' || $code === '') { json_out(['ok' => false, 'error' => 'Enter the code from your email.']); }
+        if (!otp_consume($email, $code, 'login')) {
+            json_out(['ok' => false, 'error' => 'Wrong or expired code. Request a new one and try again.'], 401);
         }
-        json_out(['ok' => false, 'error' => 'Wrong email or password.'], 401);
+        $u = login_email($email);
+        if (!$u) { json_out(['ok' => false, 'error' => 'Could not sign you in — please try again.'], 500); }
+        json_out(['ok' => true, 'user' => ['name' => (string)$u['name'], 'email' => (string)$u['email']]]);
     }
 
     if ($action === 'logout' && $method === 'POST') {
@@ -653,7 +788,7 @@ try {
         json_out(['ok' => true, 'user' => $u ? ['name' => (string)$u['name'], 'email' => (string)$u['email']] : null]);
     }
 
-    /* ─────────── ADMIN ─────────── */
+    /* ─────────── ADMIN (admin.php panel only) ─────────── */
 
     if ($action === 'auth' && $method === 'POST') {
         if (!rate_ok('authrl.json', 'ip:' . client_ip(), 20, 900)) {
@@ -666,11 +801,14 @@ try {
             'ok'      => true,
             'engines' => admin_engine_list(),
             'config'  => [
-                'engines'         => $cfg['engines'],
-                'has_gemini_key'  => trim((string)$cfg['gemini_api_key']) !== '',
-                'gemini_model'    => (string)$cfg['gemini_model'],
-                'rate_per_hour'   => (int)$cfg['rate_per_hour'],
-                'max_chats'       => (int)$cfg['max_chats'],
+                'engines'        => $cfg['engines'],
+                'key_set'        => trim((string)$cfg['gemini_api_key']) !== '',
+                'site_model'     => (string)$cfg['gemini_model'],
+                'rate_per_hour'  => (int)$cfg['rate_per_hour'],
+                'max_chats'      => (int)$cfg['max_chats'],
+                /* confidential hints — only ever sent after the password checks out */
+                'key_hint'       => 'Only needed for the Gemini engine — free key: aistudio.google.com/apikey',
+                'model_hint'     => 'Gemini model name (default: gemini-2.5-flash)',
             ],
         ]);
     }
@@ -689,14 +827,14 @@ try {
             $eng = [];
             foreach (['flash', 'pro', 'ultra'] as $slot) {
                 $v = (string)($in['engines'][$slot] ?? '');
-                if (in_array($v, $valid, true) || $v === 'demo') { $eng[$slot] = $v; }
+                if (in_array($v, $valid, true)) { $eng[$slot] = $v; }
             }
             if ($eng) { $new['engines'] = array_merge($cfg['engines'], $eng); }
         }
-        if (isset($in['gemini_api_key']) && is_string($in['gemini_api_key']) && trim($in['gemini_api_key']) !== '') {
-            $new['gemini_api_key'] = mb_substr(trim($in['gemini_api_key']), 0, 300);
+        if (isset($in['site_key']) && is_string($in['site_key']) && trim($in['site_key']) !== '') {
+            $new['gemini_api_key'] = mb_substr(trim($in['site_key']), 0, 300);
         }
-        if (isset($in['gemini_model']))  { $new['gemini_model'] = mb_substr(trim((string)$in['gemini_model']), 0, 100); }
+        if (isset($in['site_model']))  { $new['gemini_model'] = mb_substr(trim((string)$in['site_model']), 0, 100); }
         if (isset($in['rate_per_hour'])) { $new['rate_per_hour'] = max(1, min(1000, (int)$in['rate_per_hour'])); }
         if (isset($in['max_chats']))     { $new['max_chats'] = max(1, min(500, (int)$in['max_chats'])); }
         if (isset($in['new_admin_password']) && is_string($in['new_admin_password'])) {
@@ -740,8 +878,10 @@ try {
 
     if ($action === 'account_delete' && $method === 'POST') {
         $in = input_json();
-        if (!password_verify((string)($in['password'] ?? ''), (string)($user['hash'] ?? ''))) {
-            json_out(['ok' => false, 'error' => 'Wrong password — account not deleted.'], 403);
+        $code = trim((string)($in['code'] ?? ''));
+        if ($code === '') { json_out(['ok' => false, 'error' => 'Enter the confirmation code from your email.'], 400); }
+        if (!otp_consume((string)$user['email'], $code, 'delete')) {
+            json_out(['ok' => false, 'error' => 'Wrong or expired code. Request a new one.'], 403);
         }
         rrmdir(chats_dir($uid));
         $users = load_users();
@@ -790,7 +930,7 @@ try {
         $model  = (string)($in['model'] ?? 'flash');
         $validModel = false;
         foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
-        if (!$validModel) { json_out(['ok' => false, 'error' => 'Unknown model selected.'], 400); }
+        if (!$validModel) { $model = 'flash'; }
 
         $cfgAll = load_config();
 
@@ -820,7 +960,6 @@ try {
         $chat['messages'] = array_values(array_filter($chat['messages'] ?? [], 'is_array'));
 
         if ($retry) {
-            /* drop trailing assistant message, reuse the last user message */
             if (count($chat['messages']) && ($chat['messages'][count($chat['messages']) - 1]['role'] ?? '') === 'assistant') {
                 array_pop($chat['messages']);
             }
@@ -843,7 +982,6 @@ try {
         list($ok, $reply, $used) = ai_respond($cfgAll, $model, $providerMsgs);
         if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }
 
-        /* which PUBLIC label do we show? the model the user picked */
         $chat['messages'][] = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => model_label($model)];
         if ($chat['title'] === '') {
             $title = trim(preg_replace('/\s+/u', ' ', $msg));

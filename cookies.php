@@ -118,7 +118,7 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
 
   <h2><span class="num">5</span>Your data &amp; your rights</h2>
   <ul>
-    <li>Account passwords are stored only as one-way hashes — nobody, including the owner, can read them.</li>
+    <li>There are no account passwords at all — sign-in works via one-time email codes, so there is nothing to leak.</li>
     <li>Your chats are stored on this server, isolated per account, and can be deleted by you at any time from the app.</li>
     <li>To request deletion of your entire account, use the delete option in the app or contact the site owner.</li>
   </ul>

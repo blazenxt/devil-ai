@@ -287,7 +287,6 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
     <nav id="chatList" aria-label="Chat history"></nav>
     <div class="sb-bottom">
       <div id="userMenu">
-        <button class="mi" id="mSettings"><?= icon('settings', 16) ?> Admin settings</button>
         <button class="mi" id="mCookies"><?= icon('cookie', 16) ?> Cookie settings</button>
         <hr>
         <button class="mi danger" id="mDelAcc"><?= icon('warning', 16) ?> Delete account</button>
@@ -347,52 +346,17 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
   <div class="btnrow"><button class="btn primary" id="renameSave">Save</button><button class="btn ghost" data-close="renameModal">Cancel</button></div>
 </div></div>
 
-<!-- ═══ delete account modal ═══ -->
+<!-- ═══ delete account modal (email-code confirmation) ═══ -->
 <div class="modal hidden" id="delAccModal"><div class="sheet">
   <div class="shead"><h3><?= icon('warning', 17) ?> Delete account</h3><button class="iconbtn" data-close="delAccModal"><?= icon('x', 16) ?></button></div>
-  <p class="snote" style="margin-top:12px">This permanently deletes your account, <b>all your chats and your sign-in</b>. There is no undo. Type your password to confirm.</p>
-  <label for="delAccPw">Password</label>
-  <input id="delAccPw" type="password" autocomplete="current-password">
+  <p class="snote" style="margin-top:12px">This permanently deletes your account, <b>all your chats and your sign-in</b>. There is no undo. We'll send a confirmation code to your email.</p>
+  <div class="btnrow"><button class="btn ghost" id="delAccSend" type="button"><?= icon('mail', 15) ?> Send code to my email</button></div>
+  <div id="delAccStep2" class="hidden">
+    <label for="delAccCode">Confirmation code</label>
+    <input id="delAccCode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code">
+  </div>
   <div class="status bad" id="delAccStatus"></div>
-  <div class="btnrow"><button class="btn danger" id="delAccGo"><?= icon('trash', 15) ?> Delete everything</button><button class="btn ghost" data-close="delAccModal">Cancel</button></div>
-</div></div>
-
-<!-- ═══ admin settings modal ═══ -->
-<div class="modal hidden" id="adminModal"><div class="sheet wide">
-  <div class="shead"><h3><?= icon('settings', 17) ?> Admin settings</h3><button class="iconbtn" data-close="adminModal"><?= icon('x', 16) ?></button></div>
-
-  <div id="adminLock">
-    <p class="snote" style="margin-top:12px">These settings control the server and its AI engines. They are for the owner only — visitors never see this panel.</p>
-    <label for="adminPw">Admin password</label>
-    <input id="adminPw" type="password" autocomplete="off" placeholder="Enter the admin password">
-    <div class="status" id="adminLockStatus"></div>
-    <div class="btnrow"><button class="btn primary" id="adminUnlock"><?= icon('unlock', 15) ?> Unlock</button></div>
-  </div>
-
-  <div id="adminMain" class="hidden">
-    <label for="aFlash">Devil Flash — engine</label>
-    <select id="aFlash"></select>
-    <label for="aPro">Devil Pro — engine</label>
-    <select id="aPro"></select>
-    <label for="aUltra">Devil Ultra — engine</label>
-    <select id="aUltra"></select>
-    <label for="aKey">Site API key <span id="aKeyState" style="font-weight:400;color:var(--dim2)"></span> <span style="font-weight:400;color:var(--dim2)">(only for the Gemini engine)</span></label>
-    <input id="aKey" type="password" placeholder="Paste key — or leave empty" autocomplete="off">
-    <label for="aGModel">Gemini model</label>
-    <input id="aGModel" type="text" placeholder="gemini-2.5-flash" autocomplete="off">
-    <label for="aRate">Messages per user per hour</label>
-    <input id="aRate" type="number" min="1" max="1000" inputmode="numeric">
-    <label for="aChats">Max saved chats per user</label>
-    <input id="aChats" type="number" min="1" max="500" inputmode="numeric">
-    <label for="aPw">New admin password <span style="font-weight:400;color:var(--dim2)">(leave empty to keep)</span></label>
-    <input id="aPw" type="password" placeholder="Only if you want to change it" autocomplete="off">
-    <div class="status" id="adminStatus"></div>
-    <div class="btnrow">
-      <button class="btn primary" id="adminSave"><?= icon('check', 15) ?> Save settings</button>
-      <button class="btn ghost" id="adminTest"><?= icon('zap', 15) ?> Test engines</button>
-    </div>
-    <p class="snote">Engine names are visible here (owner only) — they are never exposed to the public site.</p>
-  </div>
+  <div class="btnrow"><button class="btn danger" id="delAccGo" type="button"><?= icon('trash', 15) ?> Delete everything</button><button class="btn ghost" data-close="delAccModal">Cancel</button></div>
 </div></div>
 
 <!-- ═══ code preview modal (mini artifacts) ═══ -->
@@ -422,7 +386,7 @@ var $$ = function (s) { return Array.prototype.slice.call(document.querySelector
 /* ── state ── */
 var models = [], modelById = {}, currentModel = 'flash';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages} */
-var busy = false, adminUnlocked = false;
+var busy = false;
 var personalOK = true;
 try {
   var prefs = JSON.parse(localStorage.getItem('devil_cookie_prefs') || 'null');
@@ -862,13 +826,31 @@ $('#mCookies').addEventListener('click', function () { $('#userMenu').classList.
 
 $('#mDelAcc').addEventListener('click', function () {
   $('#userMenu').classList.remove('open');
-  $('#delAccPw').value = ''; $('#delAccStatus').textContent = '';
+  $('#delAccCode').value = '';
+  $('#delAccStatus').textContent = '';
+  $('#delAccStep2').classList.add('hidden');
+  $('#delAccGo').classList.add('hidden');
+  $('#delAccSend').classList.remove('hidden');
   $('#delAccModal').classList.remove('hidden');
 });
+$('#delAccSend').addEventListener('click', function () {
+  $('#delAccStatus').textContent = 'Sending code…';
+  api('otp_request', { purpose: 'delete' }).then(function (j) {
+    if (j.ok) {
+      $('#delAccStatus').textContent = 'Code sent to ' + (j.masked || 'your email') + '. It expires in 10 minutes.';
+      $('#delAccSend').classList.add('hidden');
+      $('#delAccStep2').classList.remove('hidden');
+      $('#delAccGo').classList.remove('hidden');
+      setTimeout(function () { $('#delAccCode').focus(); }, 60);
+    } else {
+      $('#delAccStatus').textContent = j.error || 'Could not send the code.';
+    }
+  });
+});
 $('#delAccGo').addEventListener('click', function () {
-  var pw = $('#delAccPw').value;
-  if (!pw) { $('#delAccStatus').textContent = 'Enter your password to confirm.'; return; }
-  api('account_delete', { password: pw }).then(function (j) {
+  var code = $('#delAccCode').value.replace(/\D/g, '');
+  if (code.length !== 6) { $('#delAccStatus').textContent = 'Enter the 6-digit code from your email.'; return; }
+  api('account_delete', { code: code }).then(function (j) {
     if (j.ok) { window.location.href = 'index.php'; }
     else { $('#delAccStatus').textContent = j.error || 'Delete failed.'; }
   });
@@ -879,120 +861,11 @@ $$('[data-close]').forEach(function (b) { b.addEventListener('click', function (
 $$('.modal').forEach(function (m) { m.addEventListener('click', function (e) { if (e.target === m) { m.classList.add('hidden'); } }); });
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { $$('.modal').forEach(function (m) { m.classList.add('hidden'); }); } });
 
-/* ── admin settings ── */
-var ENGINES = [];
-function fillAdmin(cfg) {
-  function sel(el, val) {
-    el.innerHTML = '';
-    ENGINES.forEach(function (en) {
-      var o = document.createElement('option');
-      o.value = en.id; o.textContent = en.label;
-      el.appendChild(o);
-    });
-    el.value = val;
-  }
-  sel($('#aFlash'), cfg.engines.flash);
-  sel($('#aPro'), cfg.engines.pro);
-  sel($('#aUltra'), cfg.engines.ultra);
-  $('#aKey').value = '';
-  $('#aKeyState').textContent = cfg.has_gemini_key ? '— key is set' : '';
-  $('#aKey').placeholder = cfg.has_gemini_key ? 'New key — or leave empty to keep' : 'Paste key — or leave empty';
-  $('#aGModel').value = cfg.gemini_model || '';
-  $('#aRate').value = cfg.rate_per_hour;
-  $('#aChats').value = cfg.max_chats;
-  $('#aPw').value = '';
-  $('#adminStatus').textContent = '';
-}
-$('#mSettings').addEventListener('click', function () {
-  $('#userMenu').classList.remove('open');
-  $('#adminModal').classList.remove('hidden');
-  if (adminUnlocked && window.__devilAdminPw) {
-    /* re-verify with the stored password to fetch the config */
-    api('auth', { admin_password: window.__devilAdminPw }).then(function (j) {
-      if (j.ok && j.config) {
-        ENGINES = j.engines || [];
-        fillAdmin(j.config);
-        $('#adminLock').classList.add('hidden');
-        $('#adminMain').classList.remove('hidden');
-      } else {
-        adminUnlocked = false;
-        window.__devilAdminPw = '';
-        $('#adminLock').classList.remove('hidden');
-        $('#adminMain').classList.add('hidden');
-        setTimeout(function () { $('#adminPw').focus(); }, 60);
-      }
-    });
-  } else {
-    $('#adminLock').classList.remove('hidden');
-    $('#adminMain').classList.add('hidden');
-    $('#adminPw').value = '';
-    $('#adminLockStatus').textContent = '';
-    setTimeout(function () { $('#adminPw').focus(); }, 60);
-  }
-});
-function tryUnlock() {
-  var pw = $('#adminPw').value;
-  if (!pw) { $('#adminLockStatus').textContent = 'Enter the password first.'; return; }
-  window.__devilAdminPw = pw;
-  $('#adminLockStatus').textContent = 'Checking…';
-  api('auth', { admin_password: pw }).then(function (j) {
-    if (j.ok && j.config) {
-      adminUnlocked = true;
-      ENGINES = j.engines || [];
-      fillAdmin(j.config);
-      $('#adminLock').classList.add('hidden');
-      $('#adminMain').classList.remove('hidden');
-      toast('Admin panel unlocked', 'unlock');
-    } else { $('#adminLockStatus').textContent = 'Wrong password.'; }
-  });
-}
-$('#adminUnlock').addEventListener('click', tryUnlock);
-$('#adminPw').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); tryUnlock(); } });
-$('#adminSave').addEventListener('click', function () {
-  var st = $('#adminStatus');
-  st.className = 'status'; st.textContent = 'Saving…';
-  api('settings', {
-    current_admin_password: window.__devilAdminPw || '',
-    new_admin_password: $('#aPw').value,
-    engines: { flash: $('#aFlash').value, pro: $('#aPro').value, ultra: $('#aUltra').value },
-    gemini_api_key: $('#aKey').value,
-    gemini_model: $('#aGModel').value.trim(),
-    rate_per_hour: parseInt($('#aRate').value, 10) || 40,
-    max_chats: parseInt($('#aChats').value, 10) || 100
-  }).then(function (j) {
-    if (j.ok) { st.className = 'status ok'; st.textContent = 'Saved — settings are live.'; toast('Settings saved'); }
-    else { st.className = 'status bad'; st.textContent = j.error || 'Save failed.'; }
-  });
-});
-$('#adminTest').addEventListener('click', function () {
-  var st = $('#adminStatus');
-  st.className = 'status'; st.textContent = 'Testing engines…';
-  api('test', { current_admin_password: window.__devilAdminPw || '' }).then(function (j) {
-    if (j.ok) { st.className = 'status ok'; st.textContent = 'All engines alive. Sample reply: ' + (j.reply || '').slice(0, 140); }
-    else { st.className = 'status bad'; st.textContent = (j.error || 'Test failed') + (j.hint ? '\nHint: ' + j.hint : ''); }
-  });
-});
-
 /* ── boot ── */
 api('bootstrap').then(function (j) {
   if (!j.ok) { return; }
   models = j.models || [];
   modelById = {};
-  models.forEach(function (m) { modelById[m.id] = m; });
-  var saved = read('devil_model');
-  if (saved && modelById[saved]) { currentModel = saved; }
-  else if (j.default && modelById[j.default]) { currentModel = j.default; }
-  setModelBtn();
-  renderModelMenu();
-});
-loadChats();
-resize();
-if (window.innerWidth > 900) { inp.focus(); }
-})();
-</script>
-</body>
-</html>
-modelById = {};
   models.forEach(function (m) { modelById[m.id] = m; });
   var saved = read('devil_model');
   if (saved && modelById[saved]) { currentModel = saved; }
