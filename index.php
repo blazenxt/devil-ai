@@ -260,7 +260,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
     <div class="fin">
       <div>
         <div class="fbrand"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</div>
-        <div class="fmeta">Custom-built AI assistant.<br>Running on a private server since day one.</div>
+        <div class="fmeta">Custom-built AI assistant.<br>Developed by <a href="https://www.blazenxt.in" target="_blank" rel="noopener">BlazeNXT</a>.</div>
       </div>
       <div class="flinks">
         <a href="#features">Features</a>
@@ -272,7 +272,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
     </div>
     <div class="fcopy">
       <span>Devil AI v1.0.0.0 • 100% PHP</span>
-      <span>Made with fire by the owner of this server</span>
+      <span>Developed by <a href="https://www.blazenxt.in" target="_blank" rel="noopener">BlazeNXT</a></span>
     </div>
   </div>
 </footer>

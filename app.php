@@ -37,6 +37,7 @@ $JS_ICONS = [
     'message' => icon('message', 16), 'menu' => icon('menu', 18), 'flame' => icon('flame', 15),
     'lightbulb' => icon('lightbulb', 17), 'shield' => icon('shield', 16),
     'sun' => icon('sun', 17), 'moon' => icon('moon', 17), 'play' => icon('play', 13),
+    'layers' => icon('layers', 15), 'brain' => icon('brain', 15), 'server' => icon('server', 15),
 ];
 ?><!DOCTYPE html>
 <html lang="en">
@@ -175,10 +176,14 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 #inp{width:100%;background:none;border:none;outline:none;resize:none;color:var(--text);font:inherit;font-size:.93rem;line-height:1.55;padding:16px 18px 6px;max-height:190px}
 #inp::placeholder{color:var(--dim2)}
 .comprow{display:flex;align-items:center;gap:10px;padding:8px 10px 10px 14px}
-#modelBtn{display:flex;align-items:center;gap:7px;font-size:.8rem;font-weight:600;color:var(--soft);border:1px solid var(--border);border-radius:999px;padding:7px 13px;transition:.15s;max-width:220px}
+#modelBtn,#customModelBtn{display:flex;align-items:center;gap:7px;font-size:.8rem;font-weight:600;color:var(--soft);border:1px solid var(--border);border-radius:999px;padding:7px 13px;transition:.15s;max-width:220px;min-width:0}
 .modelwrap{display:flex;align-items:center;gap:8px;position:relative;min-width:0}
-#modelBtn:hover{background:rgba(244,63,94,.1);border-color:var(--border-hi)}
-#modelBtn .lb{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.customwrap{display:none;align-items:center;position:relative;min-width:0}
+.customwrap.show{display:flex}
+#customModelBtn{max-width:260px;color:var(--text);background:rgba(244,63,94,.07)}
+#modelBtn:hover,#customModelBtn:hover{background:rgba(244,63,94,.1);border-color:var(--border-hi)}
+#modelBtn .lb,#customModelBtn .lb{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#customIco{display:flex;align-items:center;justify-content:center;flex-shrink:0}
 #sendBtn{margin-left:auto;width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 16px rgba(244,63,94,.4);transition:.15s;flex-shrink:0}
 #sendBtn:hover{transform:scale(1.06)}
 #sendBtn:disabled{opacity:.45;transform:none;cursor:default}
@@ -200,15 +205,24 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 /* model menu */
 #modelMenu{position:absolute;bottom:calc(100% + 8px);left:0;width:300px;max-width:calc(100vw - 44px);background:var(--panel2);border:1px solid var(--border-hi);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:6px;display:none;z-index:70}
 #modelMenu.open{display:block}
-.mopt{display:flex;gap:11px;align-items:center;width:100%;padding:11px 12px;border-radius:11px;text-align:left;transition:.12s}
-.mopt:hover{background:rgba(244,63,94,.1)}
-.mopt.on{background:rgba(244,63,94,.14)}
-.mopt .ic{width:32px;height:32px;border-radius:9px;background:rgba(244,63,94,.1);display:flex;align-items:center;justify-content:center;color:var(--pink);flex-shrink:0}
-.mopt .tx{flex:1;min-width:0}
-.mopt .tx b{display:block;font-size:.85rem}
-.mopt .tx span{display:block;font-size:.7rem;color:var(--dim2);margin-top:1px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mopt .tick{color:var(--pink);opacity:0;flex-shrink:0}
-.mopt.on .tick{opacity:1}
+#customModelMenu{position:absolute;bottom:calc(100% + 8px);left:0;width:390px;max-width:calc(100vw - 44px);background:var(--panel2);border:1px solid var(--border-hi);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:8px;display:none;z-index:75}
+#customModelMenu.open{display:block}
+.csearch{width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:11px;padding:10px 12px;font:inherit;font-size:.8rem;outline:none;margin-bottom:6px}
+.csearch:focus{border-color:var(--border-hi)}
+.cmlist{max-height:360px;overflow:auto;padding-right:2px}
+.mopt,.cmopt{display:flex;gap:11px;align-items:center;width:100%;padding:11px 12px;border-radius:11px;text-align:left;transition:.12s}
+.mopt:hover,.cmopt:hover{background:rgba(244,63,94,.1)}
+.mopt.on,.cmopt.on{background:rgba(244,63,94,.14)}
+.mopt .ic,.cmopt .ic{width:32px;height:32px;border-radius:9px;background:rgba(244,63,94,.1);display:flex;align-items:center;justify-content:center;color:var(--pink);flex-shrink:0;overflow:hidden}
+.cmopt .ic svg,#customIco svg{display:block}
+.mopt .tx,.cmopt .tx{flex:1;min-width:0}
+.mopt .tx b,.cmopt .tx b{display:block;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mopt .tx span,.cmopt .tx span{display:block;font-size:.7rem;color:var(--dim2);margin-top:1px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmopt .tx em{font-style:normal;color:var(--soft)}
+.mopt .tick,.cmopt .tick{color:var(--pink);opacity:0;flex-shrink:0}
+.mopt.on .tick,.cmopt.on .tick{opacity:1}
+.cmempty{padding:14px;text-align:center;color:var(--dim2);font-size:.78rem}
+@media(max-width:680px){#customModelBtn{max-width:150px}#customModelMenu{left:auto;right:0;width:340px}.modelwrap{gap:6px}#modelBtn{max-width:150px}}
 
 /* ═══════════ MODALS ═══════════ */
 .modal{position:fixed;inset:0;background:rgba(5,2,4,.72);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
@@ -308,6 +322,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
     <nav id="chatList" aria-label="Chat history"></nav>
     <div class="sb-bottom">
       <div id="userMenu">
+        <a class="mi" href="settings.php"><?= icon('settings', 16) ?> Account settings</a>
         <button class="mi" id="mCookies"><?= icon('cookie', 16) ?> Cookie settings</button>
         <hr>
         <button class="mi danger" id="mDelAcc"><?= icon('warning', 16) ?> Delete account</button>
@@ -354,6 +369,10 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
             <button id="attachBtn" title="Attach image" type="button"><?= icon('paperclip', 16) ?></button>
             <button id="modelBtn" title="Choose model"><span id="modelIco"><?= icon('zap', 14) ?></span><span class="lb" id="modelLbl">Devil Flash</span><?= icon('chevron-down', 13) ?></button>
             <div id="modelMenu"></div>
+            <div id="customWrap" class="customwrap">
+              <button id="customModelBtn" title="Choose custom AI model" type="button"><span id="customIco"></span><span class="lb" id="customLbl">Devil Smart</span><?= icon('chevron-down', 13) ?></button>
+              <div id="customModelMenu"></div>
+            </div>
           </div>
           <button id="sendBtn" title="Send (Enter)" disabled><?= icon('send', 17) ?></button>
         </div>
@@ -406,6 +425,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 <script>
 const I = <?= json_encode($JS_ICONS, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ME = <?= json_encode(['name' => $me['name'], 'email' => $me['email']], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const INITIAL_CHAT_ID = <?= json_encode(preg_match('/^c[a-f0-9]{16}$/', (string)($_GET['chat'] ?? '')) ? (string)$_GET['chat'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 (function () {
 'use strict';
 var $ = function (s) { return document.querySelector(s); };
@@ -413,6 +433,7 @@ var $$ = function (s) { return Array.prototype.slice.call(document.querySelector
 
 /* ── state ── */
 var models = [], modelById = {}, currentModel = 'flash';
+var customModels = [], customById = {}, currentCustom = 'devil-09';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages} */
 var busy = false;
 var personalOK = true;
@@ -423,6 +444,22 @@ try {
 
 function store(key, val) { if (!personalOK) { return; } try { localStorage.setItem(key, val); } catch (e) {} }
 function read(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+
+function providerIcon(key) {
+  var k = String(key || 'devil').toLowerCase();
+  var base = 'width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false"';
+  if (k === 'code') { return '<svg ' + base + ' fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 4l-4 16"/></svg>'; }
+  if (k === 'image') { return '<svg ' + base + ' fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-4-4a2 2 0 0 0-2.8 0L7 20"/></svg>'; }
+  if (k === 'music') { return '<svg ' + base + ' fill="none" stroke="#f472b6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>'; }
+  if (k === 'medical') { return '<svg ' + base + ' fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-3Z"/><path d="M12 8v8M8 12h8"/></svg>'; }
+  if (k === 'story') { return '<svg ' + base + ' fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M8 7h8M8 11h6"/></svg>'; }
+  return '<svg ' + base + ' fill="none" stroke="#fb7185" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c1 4-4 5.5-4 10a4 4 0 0 0 8 0c0-1.5-.6-2.6-1.3-3.6C13.6 9.7 13 8 13.5 6 12.8 6.6 12 7 12 2Z"/><path d="M12 22a6.5 6.5 0 0 0 6.5-6.5c0-2-1-4-2.5-5.5"/></svg>';
+}
+
+function activeModelLabel() {
+  if (currentModel === 'custom') { return (customById[currentCustom] || {}).label || 'Custom AI'; }
+  return (modelById[currentModel] || {}).label || 'Devil AI';
+}
 
 /* ── markdown (escape-first, XSS safe) ── */
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -546,7 +583,7 @@ $('#chatList').addEventListener('click', function (e) {
   if (rn) { e.stopPropagation(); openRename(rn.dataset.rename); return; }
   if (del) { e.stopPropagation(); deleteChat(del.dataset.del); return; }
   var it = e.target.closest('.chatitem');
-  if (it) { openChat(it.dataset.id); if (window.innerWidth <= 900) { setSb(false); } }
+  if (it) { window.location.href = 'app.php?chat=' + encodeURIComponent(it.dataset.id); }
 });
 
 /* ── messages ── */
@@ -700,7 +737,7 @@ setThemeIco();
 function optsCanRetry(el) { return el === msgs.lastElementChild || el.nextElementSibling === null; }
 
 function addThinking() {
-  var d = addAiMsg({ modelTag: (modelById[currentModel] || {}).label });
+  var d = addAiMsg({ modelTag: activeModelLabel() });
   d.classList.add('thinking');
   d.querySelector('.content').innerHTML = '<span class="dots"><span></span><span></span><span></span></span> thinking…';
   scrollDown();
@@ -802,7 +839,7 @@ function newChatView() {
   renderList($('#searchInp').value);
   if (window.innerWidth > 900) { inp.focus(); }
 }
-$('#newChatBtn').addEventListener('click', newChatView);
+$('#newChatBtn').addEventListener('click', function () { window.location.href = 'app.php'; });
 
 $$('#welcome .card').forEach(function (c) {
   c.addEventListener('click', function () { inp.value = c.dataset.fill; resize(); send(); });
@@ -817,6 +854,7 @@ function send() {
   resize();
   addUserMsg(text, img);
   var payload = { message: text, model: currentModel, id: currentChat ? currentChat.id : null };
+  if (currentModel === 'custom') { payload.custom_model = currentCustom; }
   if (img) { payload.image = img; }
   runSend(payload);
 }
@@ -828,7 +866,7 @@ function retryLast() {
   /* drop last assistant message visually + in memory */
   m.pop();
   if (msgs.lastElementChild && msgs.lastElementChild.classList.contains('msg-ai')) { msgs.lastElementChild.remove(); }
-  runSend({ id: currentChat.id, retry: true, model: currentModel });
+  runSend({ id: currentChat.id, retry: true, model: currentModel, custom_model: currentModel === 'custom' ? currentCustom : undefined });
 }
 
 function runSend(payload) {
@@ -839,6 +877,7 @@ function runSend(payload) {
     if (j.ok) {
       if (!currentChat) { currentChat = { id: j.id, title: j.title, messages: [] }; }
       currentChat.id = j.id; currentChat.title = j.title;
+      if (window.history && currentChat.id) { history.replaceState(null, '', 'app.php?chat=' + encodeURIComponent(currentChat.id)); }
       if (payload.retry) {
         /* keep existing user msg, replace assistant */
       } else {
@@ -847,7 +886,7 @@ function runSend(payload) {
         currentChat.messages.push(um);
       }
       currentChat.messages.push({ role: 'assistant', content: j.reply });
-      var el = addAiMsg({ modelTag: (j.model && j.model.label) || modelById[currentModel].label });
+      var el = addAiMsg({ modelTag: (j.model && j.model.label) || activeModelLabel() });
       aiContent(el, j.reply);
       loadChats();
     } else {
@@ -918,6 +957,7 @@ function renderModelMenu() {
   models.forEach(function (m) {
     var b = document.createElement('button');
     b.className = 'mopt' + (m.id === currentModel ? ' on' : '');
+    b.dataset.model = m.id;
     b.innerHTML = '<span class="ic">' + (I[m.icon] || I.sparkles) + '</span>' +
       '<span class="tx"><b></b><span></span></span><span class="tick">' + I.check + '</span>';
     b.querySelector('.tx b').textContent = m.label;
@@ -930,16 +970,83 @@ function renderModelMenu() {
     });
     mm.appendChild(b);
   });
+  syncModelMenu();
+}
+function syncModelMenu() {
+  $$('#modelMenu .mopt').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.model === currentModel);
+  });
+  $$('#customModelMenu .cmopt').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.custom === currentCustom);
+  });
 }
 function setModelBtn() {
   var m = modelById[currentModel] || models[0];
   if (!m) { return; }
   $('#modelLbl').textContent = m.label;
   $('#modelIco').innerHTML = I[m.icon] || I.sparkles;
+  $('#customWrap').classList.toggle('show', currentModel === 'custom');
+  setCustomBtn();
+  syncModelMenu();
 }
-$('#modelBtn').addEventListener('click', function (e) { e.stopPropagation(); $('#modelMenu').classList.toggle('open'); });
+function setCustomBtn() {
+  var m = customById[currentCustom] || customModels[0];
+  if (!m) { return; }
+  currentCustom = m.id;
+  $('#customLbl').textContent = m.label;
+  $('#customIco').innerHTML = providerIcon(m.icon);
+  syncModelMenu();
+}
+function renderCustomModelMenu(filter) {
+  var menu = $('#customModelMenu');
+  filter = (filter || '').toLowerCase();
+  var existing = menu.querySelector('.csearch');
+  var val = existing ? existing.value : '';
+  menu.innerHTML = '';
+  var search = document.createElement('input');
+  search.className = 'csearch';
+  search.type = 'search';
+  search.placeholder = 'Search custom engines…';
+  search.value = val;
+  var list = document.createElement('div');
+  list.className = 'cmlist';
+  var shown = 0;
+  customModels.forEach(function (m) {
+    var hay = (m.label + ' ' + m.scope).toLowerCase();
+    if (filter && hay.indexOf(filter) === -1) { return; }
+    shown++;
+    var b = document.createElement('button');
+    b.className = 'cmopt' + (m.id === currentCustom ? ' on' : '');
+    b.dataset.custom = m.id;
+    b.innerHTML = '<span class="ic">' + providerIcon(m.icon) + '</span>' +
+      '<span class="tx"><b></b><span class="scope"></span></span><span class="tick">' + I.check + '</span>';
+    b.querySelector('.tx b').textContent = m.label;
+    b.querySelector('.scope').textContent = m.scope + (m.vision ? ' · vision' : '');
+    b.addEventListener('click', function () {
+      currentCustom = m.id;
+      store('devil_custom_model', m.id);
+      setCustomBtn();
+      menu.classList.remove('open');
+    });
+    list.appendChild(b);
+  });
+  if (!shown) { list.innerHTML = '<div class="cmempty">No model found.</div>'; }
+  search.addEventListener('input', function () { renderCustomModelMenu(search.value); var s = $('#customModelMenu .csearch'); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } });
+  menu.appendChild(search);
+  menu.appendChild(list);
+  syncModelMenu();
+}
+$('#modelBtn').addEventListener('click', function (e) { e.stopPropagation(); $('#customModelMenu').classList.remove('open'); $('#modelMenu').classList.toggle('open'); });
+$('#customModelBtn').addEventListener('click', function (e) {
+  e.stopPropagation();
+  $('#modelMenu').classList.remove('open');
+  renderCustomModelMenu('');
+  $('#customModelMenu').classList.toggle('open');
+  setTimeout(function () { var s = $('#customModelMenu .csearch'); if (s) { s.focus(); } }, 20);
+});
 document.addEventListener('click', function (e) {
   if (!e.target.closest('#modelMenu') && !e.target.closest('#modelBtn')) { $('#modelMenu').classList.remove('open'); }
+  if (!e.target.closest('#customModelMenu') && !e.target.closest('#customModelBtn')) { $('#customModelMenu').classList.remove('open'); }
 });
 
 /* ── user menu ── */
@@ -989,15 +1096,23 @@ document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { $$
 api('bootstrap').then(function (j) {
   if (!j.ok) { return; }
   models = j.models || [];
-  modelById = {};
+  customModels = j.custom_models || [];
+  modelById = {}; customById = {};
   models.forEach(function (m) { modelById[m.id] = m; });
+  customModels.forEach(function (m) { customById[m.id] = m; });
   var saved = read('devil_model');
+  var savedCustom = read('devil_custom_model');
   if (saved && modelById[saved]) { currentModel = saved; }
   else if (j.default && modelById[j.default]) { currentModel = j.default; }
+  if (savedCustom && customById[savedCustom]) { currentCustom = savedCustom; }
+  else if (customModels[0]) { currentCustom = customModels[0].id; }
   setModelBtn();
   renderModelMenu();
+  renderCustomModelMenu('');
 });
-loadChats();
+loadChats().then(function () {
+  if (INITIAL_CHAT_ID) { openChat(INITIAL_CHAT_ID); }
+});
 resize();
 if (window.innerWidth > 900) { inp.focus(); }
 })();
