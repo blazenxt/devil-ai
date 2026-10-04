@@ -61,6 +61,7 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <button class="tab on" data-tab="overview" type="button"><?= icon('gauge', 16) ?> Overview</button>
         <button class="tab" data-tab="models" type="button"><?= icon('sparkles', 16) ?> Models</button>
         <button class="tab" data-tab="security" type="button"><?= icon('shield', 16) ?> Security</button>
+        <button class="tab" data-tab="mail" type="button"><?= icon('mail', 16) ?> Mail</button>
         <button class="tab" data-tab="admins" type="button"><?= icon('users', 16) ?> Admins</button>
       </div>
     </aside>
@@ -100,6 +101,20 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <label>Datacenter CIDR block list</label><textarea id="dcCidrs" placeholder="Example: 203.0.113.0/24"></textarea><p class="hint">Used for suspicious non-browser/datacenter traffic. One IPv4 or CIDR per line.</p>
         <div class="btnrow"><button class="btn primary saveBtn" type="button"><?= icon('check', 15) ?> Save security</button></div>
         <div class="status" id="securityStatus"></div>
+      </div>
+
+      <div class="section" id="tab-mail">
+        <div class="switchrow"><span><b>Gmail deliverability</b><small>Native PHP mail works on temp-mail, but Gmail often blocks it. Use authenticated SMTP for reliable Gmail inbox delivery.</small></span><span class="pill" id="mailModePill"><?= icon('mail', 13) ?> mail()</span></div>
+        <div class="row"><div><label>Mail transport</label><select id="mailTransport"><option value="mail">PHP mail() fallback</option><option value="smtp">SMTP authenticated</option></select></div><div><label>Test recipient</label><input id="mailTestTo" placeholder="bk.w.p.bk@gmail.com"></div></div>
+        <div class="row"><div><label>From email</label><input id="mailFromEmail" placeholder="noreply@your-domain.com"></div><div><label>From name</label><input id="mailFromName" placeholder="Devil AI"></div></div>
+        <label>Reply-To email</label><input id="mailReplyTo" placeholder="bk.w.p.bk@gmail.com">
+        <hr class="divider">
+        <div class="row"><div><label>SMTP host</label><input id="smtpHost" placeholder="smtp.gmail.com / mail.your-domain.com"></div><div><label>SMTP port</label><input id="smtpPort" type="number" min="1" max="65535" placeholder="587"></div></div>
+        <div class="row"><div><label>SMTP security</label><select id="smtpSecure"><option value="tls">STARTTLS / 587</option><option value="ssl">SSL / 465</option><option value="none">None / 25</option></select></div><div><label>SMTP username</label><input id="smtpUser" autocomplete="off"></div></div>
+        <label>SMTP password <span style="color:var(--dim2);font-weight:500">(leave empty to keep saved)</span></label><input id="smtpPass" type="password" autocomplete="new-password">
+        <div class="btnrow"><button class="btn primary saveBtn" type="button"><?= icon('check', 15) ?> Save mail settings</button><button class="btn ghost" id="mailTestBtn" type="button"><?= icon('mail', 15) ?> Send test mail</button><button class="btn ghost" id="feedbackRefreshBtn" type="button"><?= icon('retry', 15) ?> Load feedback inbox</button></div>
+        <div class="status" id="mailStatus"></div>
+        <div class="banlist" id="feedbackList"></div>
       </div>
 
       <div class="section" id="tab-admins">
@@ -172,6 +187,18 @@ function fill(cfg, sec, adminUser) {
   $('#blockedDomains').value = joinLines(CFG.security_extra_blocked_email_domains || []);
   $('#trustedDomains').value = joinLines(CFG.security_trusted_email_domains || []);
   $('#dcCidrs').value = joinLines(CFG.security_datacenter_cidrs || []);
+  $('#mailTransport').value = CFG.mail_transport || 'mail';
+  $('#mailTestTo').value = (CFG.admin_emails || ['bk.w.p.bk@gmail.com'])[0] || 'bk.w.p.bk@gmail.com';
+  $('#mailFromEmail').value = CFG.mail_from_email || '';
+  $('#mailFromName').value = CFG.mail_from_name || 'Devil AI';
+  $('#mailReplyTo').value = CFG.mail_reply_to || 'bk.w.p.bk@gmail.com';
+  $('#smtpHost').value = CFG.smtp_host || '';
+  $('#smtpPort').value = CFG.smtp_port || 587;
+  $('#smtpSecure').value = CFG.smtp_secure || 'tls';
+  $('#smtpUser').value = CFG.smtp_username || '';
+  $('#smtpPass').value = '';
+  $('#smtpPass').placeholder = CFG.smtp_password_set ? 'SMTP password saved — leave blank to keep' : 'SMTP password not set';
+  $('#mailModePill').innerHTML = PILL_ICONS.mail + ' ' + ((CFG.mail_transport || 'mail') === 'smtp' ? 'SMTP' : 'mail()');
   $('#adminPills').innerHTML = '<span class="pill">' + PILL_ICONS.mail + ' Admin: bk.w.p.bk@gmail.com</span>' + (adminUser ? '<span class="pill">' + PILL_ICONS.shieldCheck + ' Signed in as admin</span>' : '') + (CFG.security_require_recaptcha ? '<span class="pill">' + PILL_ICONS.shield + ' reCAPTCHA on</span>' : '<span class="pill">' + PILL_ICONS.shield + ' reCAPTCHA off</span>');
   renderSecurity();
 }
@@ -191,7 +218,16 @@ function payload() {
     security_block_subdomain_emails: getSwitch($('#subToggle')),
     security_extra_blocked_email_domains: lines($('#blockedDomains').value),
     security_trusted_email_domains: lines($('#trustedDomains').value),
-    security_datacenter_cidrs: lines($('#dcCidrs').value)
+    security_datacenter_cidrs: lines($('#dcCidrs').value),
+    mail_transport: $('#mailTransport').value,
+    mail_from_email: $('#mailFromEmail').value.trim(),
+    mail_from_name: $('#mailFromName').value.trim(),
+    mail_reply_to: $('#mailReplyTo').value.trim(),
+    smtp_host: $('#smtpHost').value.trim(),
+    smtp_port: parseInt($('#smtpPort').value, 10) || 587,
+    smtp_secure: $('#smtpSecure').value,
+    smtp_username: $('#smtpUser').value.trim(),
+    smtp_password: $('#smtpPass').value
   };
 }
 function unlock() {
@@ -211,17 +247,45 @@ $('#pw').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.p
 $$('.tab').forEach(function (b) { b.addEventListener('click', function () { $$('.tab').forEach(function (x) { x.classList.remove('on'); }); $$('.section').forEach(function (x) { x.classList.remove('on'); }); b.classList.add('on'); $('#tab-' + b.getAttribute('data-tab')).classList.add('on'); }); });
 $$('.switch').forEach(function (b) { b.addEventListener('click', function () { setSwitch(b, !getSwitch(b)); }); });
 $$('.saveBtn').forEach(function (b) { b.addEventListener('click', function () {
-  status('#modelStatus', 'Saving…'); status('#securityStatus', 'Saving…'); status('#adminStatus', 'Saving…');
+  status('#modelStatus', 'Saving…'); status('#securityStatus', 'Saving…'); status('#adminStatus', 'Saving…'); status('#mailStatus', 'Saving…');
   post('settings', payload()).then(function (j) {
     var ok = !!j.ok; var msg = ok ? 'Saved — settings are live.' : (j.error || 'Save failed.');
-    status('#modelStatus', msg, ok ? 'ok' : 'bad'); status('#securityStatus', msg, ok ? 'ok' : 'bad'); status('#adminStatus', msg, ok ? 'ok' : 'bad');
+    status('#modelStatus', msg, ok ? 'ok' : 'bad'); status('#securityStatus', msg, ok ? 'ok' : 'bad'); status('#adminStatus', msg, ok ? 'ok' : 'bad'); status('#mailStatus', msg, ok ? 'ok' : 'bad');
     if (ok && j.security) { SEC = j.security; renderSecurity(); }
-    $('#aPw').value = ''; $('#recSecret').value = '';
+    $('#aPw').value = ''; $('#recSecret').value = ''; $('#smtpPass').value = '';
   });
 }); });
 $('#refreshBtn').addEventListener('click', function () { post('auth', { admin_password: PW }).then(function (j) { if (j.ok) { fill(j.config, j.security || {}, !!j.admin_user); status('#overviewStatus', 'Refreshed.', 'ok'); } }); });
 $('#clearSecBtn').addEventListener('click', function () { if (!confirm('Clear active security bans and rate counters?')) { return; } post('admin_security_clear', { current_admin_password: PW }).then(function (j) { if (j.ok) { SEC = j.security || {}; renderSecurity(); status('#overviewStatus', 'Security counters cleared.', 'ok'); } else { status('#overviewStatus', j.error || 'Could not clear counters.', 'bad'); } }); });
 $('#testBtn').addEventListener('click', function () { status('#overviewStatus', 'Testing engines…'); post('test', { current_admin_password: PW }).then(function (j) { if (j.ok) { status('#overviewStatus', 'All engines alive. Sample reply: ' + (j.reply || '').slice(0, 140), 'ok'); } else { status('#overviewStatus', (j.error || 'Test failed') + (j.hint ? '\nHint: ' + j.hint : ''), 'bad'); } }); });
+function renderFeedback(items) {
+  var list = $('#feedbackList'); list.innerHTML = '';
+  if (!items || !items.length) { list.innerHTML = '<div class="ban"><b>No feedback saved yet.</b><br><span style="color:var(--dim)">When users tap good/bad, it will appear here even if Gmail blocks mail.</span></div>'; return; }
+  items.forEach(function (f) {
+    var u = f.user || {}; var when = f.ts ? new Date(f.ts * 1000).toLocaleString() : '';
+    var div = document.createElement('div'); div.className = 'ban';
+    div.innerHTML = '<b>' + String(f.rating || '').toUpperCase() + '</b> <span style="color:var(--dim)">' + when + '</span><br>'
+      + '<span style="color:var(--soft)">' + String(u.name || '').replace(/[<>&]/g, '') + ' &lt;' + String(u.email || '').replace(/[<>&]/g, '') + '&gt;</span><br>'
+      + '<span style="color:var(--dim)">Chat: ' + String(f.chat_id || '').replace(/[<>&]/g, '') + ' • msg ' + String(f.message_index || '') + '</span>'
+      + '<div style="white-space:pre-wrap;margin-top:8px;color:var(--text)">' + String(f.content || '').replace(/[&<>]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }) + '</div>';
+    list.appendChild(div);
+  });
+}
+function loadFeedback() {
+  status('#mailStatus', 'Loading feedback inbox…');
+  post('admin_feedback', { current_admin_password: PW }).then(function (j) {
+    if (j.ok) { renderFeedback(j.feedback || []); status('#mailStatus', 'Feedback inbox loaded.', 'ok'); }
+    else { status('#mailStatus', j.error || 'Could not load feedback.', 'bad'); }
+  });
+}
+$('#feedbackRefreshBtn').addEventListener('click', loadFeedback);
+$('#mailTestBtn').addEventListener('click', function () {
+  status('#mailStatus', 'Sending test mail…');
+  post('admin_mail_test', { current_admin_password: PW, to: $('#mailTestTo').value.trim() }).then(function (j) {
+    if (j.ok) { status('#mailStatus', 'Test mail accepted for ' + (j.to || $('#mailTestTo').value) + '. Check inbox/spam/promotions.', 'ok'); }
+    else { status('#mailStatus', j.error || 'Mail test failed.', 'bad'); }
+  });
+});
 
 /* theme toggle */
 (function () { var SUN = <?= json_encode(icon('sun', 16)) ?>; var MOON = <?= json_encode(icon('moon', 16)) ?>; var b = $('#themeBtn'); function cur(){return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';} function setIco(){b.innerHTML = cur() === 'dark' ? SUN : MOON;} b.addEventListener('click', function(){var t = cur() === 'dark' ? 'light' : 'dark'; document.documentElement.setAttribute('data-theme', t); try{localStorage.setItem('devil_theme', t); document.cookie='devil_theme='+encodeURIComponent(t)+'; Max-Age=31536000; Path=/devil-ai/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');}catch(e){} setIco();}); setIco(); })();

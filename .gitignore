@@ -13,3 +13,4 @@ data/devrl.json
 data/security_rl.json
 data/security_bans.json
 data/security_datacenter_cidrs.json
+data/mail.log

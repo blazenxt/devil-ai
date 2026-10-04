@@ -63,6 +63,18 @@ return [
     'security_extra_blocked_email_domains' => [],
     'security_trusted_email_domains' => [],
 
+    /* Email delivery. Native PHP mail() is kept as fallback, but Gmail delivery
+       is much more reliable after SMTP is configured in Admin. */
+    'mail_transport' => 'mail',
+    'mail_from_email' => '',
+    'mail_from_name' => 'Devil AI',
+    'mail_reply_to' => 'bk.w.p.bk@gmail.com',
+    'smtp_host' => '',
+    'smtp_port' => 587,
+    'smtp_secure' => 'tls',
+    'smtp_username' => '',
+    'smtp_password' => '',
+
     /* ═══════ FINE TUNING ═══════ */
 
     /* Timezone (used for time/date questions) */

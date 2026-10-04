@@ -711,22 +711,148 @@ function app_base_url(): string {
     return ($https ? 'https://' : 'http://') . $host . $dir;
 }
 
-function devil_mail(string $to, string $subject, string $html, string $text): bool {
-    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+function devil_mail_domain(): string {
+    $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? 'blazepanel.mywp.info'));
+    $host = preg_replace('/:\d+$/', '', $host) ?? $host;
     $host = preg_replace('/^www\./', '', $host) ?? $host;
-    $from = 'Devil AI <noreply@' . $host . '>';
-    $boundary = 'devil-' . bin2hex(random_bytes(8));
-    $headers = 'From: ' . $from . "\r\n"
-             . 'MIME-Version: 1.0' . "\r\n"
-             . 'Content-Type: multipart/alternative; boundary="' . $boundary . '"' . "\r\n"
-             . 'X-Mailer: DevilAI/' . DEVIL_VERSION;
-    $body = "--{$boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n{$text}\r\n"
-          . "--{$boundary}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n{$html}\r\n"
-          . "--{$boundary}--";
-    $ok = @mail($to, $subject, $body, $headers);
-    if (!$ok) {
-        @file_put_contents(data_dir() . '/mail.log', date('c') . " FAIL to={$to} subject=" . str_replace("\n", ' ', $subject) . "\n", FILE_APPEND);
+    if (!preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $host)) { $host = 'blazepanel.mywp.info'; }
+    return $host;
+}
+function devil_mail_clean_header(string $v, int $max = 260): string {
+    $v = trim(preg_replace('/[\r\n]+/', ' ', $v) ?? '');
+    return mb_substr($v, 0, $max);
+}
+function devil_mail_address(string $email, string $name = ''): string {
+    $email = strtolower(trim($email));
+    $name = devil_mail_clean_header($name, 80);
+    if ($name === '') { return '<' . $email . '>'; }
+    $name = addcslashes($name, '"\\');
+    return '"' . $name . '" <' . $email . '>';
+}
+function devil_mail_subject(string $subject): string {
+    $subject = devil_mail_clean_header($subject, 180);
+    if (function_exists('mb_encode_mimeheader')) { return mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n"); }
+    return '=?UTF-8?B?' . base64_encode($subject) . '?=';
+}
+function devil_mail_log(string $status, string $to, string $subject, string $detail = ''): void {
+    $line = date('c') . ' ' . $status . ' to=' . str_replace(["\r", "\n"], '', $to) . ' subject=' . str_replace(["\r", "\n"], ' ', $subject);
+    if ($detail !== '') { $line .= ' detail=' . str_replace(["\r", "\n"], ' ', mb_substr($detail, 0, 300)); }
+    @file_put_contents(data_dir() . '/mail.log', $line . "\n", FILE_APPEND | LOCK_EX);
+}
+function devil_mail_body(string $html, string $text, string $boundary): string {
+    return "--{$boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n{$text}\r\n"
+         . "--{$boundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n{$html}\r\n"
+         . "--{$boundary}--";
+}
+function devil_mail_headers(string $to, string $subject, string $fromEmail, string $fromName, string $replyTo, string $boundary, bool $smtp = false): string {
+    $domain = devil_mail_domain();
+    $headers = [];
+    if ($smtp) {
+        $headers[] = 'To: ' . devil_mail_address($to);
+        $headers[] = 'Subject: ' . devil_mail_subject($subject);
     }
+    $headers[] = 'From: ' . devil_mail_address($fromEmail, $fromName);
+    if ($replyTo !== '') { $headers[] = 'Reply-To: ' . devil_mail_address($replyTo); }
+    $headers[] = 'Return-Path: <' . $fromEmail . '>';
+    $headers[] = 'Date: ' . date('r');
+    $headers[] = 'Message-ID: <devil-' . bin2hex(random_bytes(10)) . '@' . $domain . '>';
+    $headers[] = 'MIME-Version: 1.0';
+    $headers[] = 'Content-Type: multipart/alternative; boundary="' . $boundary . '"';
+    $headers[] = 'X-Mailer: DevilAI/' . DEVIL_VERSION;
+    return implode("\r\n", $headers);
+}
+function devil_smtp_read($fp): array {
+    $data = '';
+    while (!feof($fp)) {
+        $line = (string)fgets($fp, 1024);
+        if ($line === '') { break; }
+        $data .= $line;
+        if (strlen($line) >= 4 && $line[3] !== '-') { break; }
+    }
+    return [(int)substr($data, 0, 3), trim($data)];
+}
+function devil_smtp_cmd($fp, string $cmd, array $expect): array {
+    fwrite($fp, $cmd . "\r\n");
+    [$code, $resp] = devil_smtp_read($fp);
+    return [in_array($code, $expect, true), $code, $resp];
+}
+function devil_mail_smtp(string $to, string $subject, string $headers, string $body, array $cfg, string $fromEmail): array {
+    $host = trim((string)($cfg['smtp_host'] ?? ''));
+    if ($host === '') { return [false, 'SMTP host missing']; }
+    $port = max(1, min(65535, (int)($cfg['smtp_port'] ?? 587)));
+    $secure = strtolower((string)($cfg['smtp_secure'] ?? 'tls'));
+    if (!in_array($secure, ['none', 'tls', 'ssl'], true)) { $secure = 'tls'; }
+    $target = ($secure === 'ssl' ? 'ssl://' : '') . $host . ':' . $port;
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'allow_self_signed' => false]]);
+    $errno = 0; $errstr = '';
+    $fp = @stream_socket_client($target, $errno, $errstr, 12, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) { return [false, 'Connect failed: ' . ($errstr ?: $errno)]; }
+    stream_set_timeout($fp, 18);
+    [$code, $resp] = devil_smtp_read($fp);
+    if ($code !== 220) { fclose($fp); return [false, 'Greeting failed: ' . $resp]; }
+    $ehlo = devil_mail_domain();
+    [$ok, $code, $resp] = devil_smtp_cmd($fp, 'EHLO ' . $ehlo, [250]);
+    if (!$ok) { [$ok, $code, $resp] = devil_smtp_cmd($fp, 'HELO ' . $ehlo, [250]); }
+    if (!$ok) { fclose($fp); return [false, 'EHLO failed: ' . $resp]; }
+    if ($secure === 'tls') {
+        [$ok, $code, $resp] = devil_smtp_cmd($fp, 'STARTTLS', [220]);
+        if (!$ok) { fclose($fp); return [false, 'STARTTLS failed: ' . $resp]; }
+        $crypto = defined('STREAM_CRYPTO_METHOD_TLS_CLIENT') ? STREAM_CRYPTO_METHOD_TLS_CLIENT : STREAM_CRYPTO_METHOD_SSLv23_CLIENT;
+        if (!@stream_socket_enable_crypto($fp, true, $crypto)) { fclose($fp); return [false, 'TLS crypto failed']; }
+        [$ok, $code, $resp] = devil_smtp_cmd($fp, 'EHLO ' . $ehlo, [250]);
+        if (!$ok) { fclose($fp); return [false, 'EHLO after TLS failed: ' . $resp]; }
+    }
+    $user = (string)($cfg['smtp_username'] ?? '');
+    $pass = (string)($cfg['smtp_password'] ?? '');
+    if ($user !== '') {
+        [$ok, $code, $resp] = devil_smtp_cmd($fp, 'AUTH LOGIN', [334]);
+        if (!$ok) { fclose($fp); return [false, 'AUTH start failed: ' . $resp]; }
+        [$ok, $code, $resp] = devil_smtp_cmd($fp, base64_encode($user), [334]);
+        if (!$ok) { fclose($fp); return [false, 'AUTH username failed: ' . $resp]; }
+        [$ok, $code, $resp] = devil_smtp_cmd($fp, base64_encode($pass), [235]);
+        if (!$ok) { fclose($fp); return [false, 'AUTH password failed: ' . $resp]; }
+    }
+    [$ok, $code, $resp] = devil_smtp_cmd($fp, 'MAIL FROM:<' . $fromEmail . '>', [250]);
+    if (!$ok) { fclose($fp); return [false, 'MAIL FROM failed: ' . $resp]; }
+    [$ok, $code, $resp] = devil_smtp_cmd($fp, 'RCPT TO:<' . strtolower(trim($to)) . '>', [250, 251]);
+    if (!$ok) { fclose($fp); return [false, 'RCPT TO failed: ' . $resp]; }
+    [$ok, $code, $resp] = devil_smtp_cmd($fp, 'DATA', [354]);
+    if (!$ok) { fclose($fp); return [false, 'DATA failed: ' . $resp]; }
+    $message = $headers . "\r\n\r\n" . $body;
+    $message = preg_replace("/\r?\n/", "\r\n", $message) ?? $message;
+    $message = preg_replace('/^\./m', '..', $message) ?? $message;
+    fwrite($fp, $message . "\r\n.\r\n");
+    [$code, $resp] = devil_smtp_read($fp);
+    @devil_smtp_cmd($fp, 'QUIT', [221, 250]);
+    fclose($fp);
+    if ($code !== 250) { return [false, 'Message rejected: ' . $resp]; }
+    return [true, 'SMTP accepted'];
+}
+function devil_mail(string $to, string $subject, string $html, string $text): bool {
+    $cfg = load_config();
+    $domain = devil_mail_domain();
+    $to = strtolower(trim($to));
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) { devil_mail_log('INVALID_TO', $to, $subject); return false; }
+    $fromEmail = strtolower(trim((string)($cfg['mail_from_email'] ?? '')));
+    if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) { $fromEmail = 'noreply@' . $domain; }
+    $fromName = devil_mail_clean_header((string)($cfg['mail_from_name'] ?? 'Devil AI'), 80) ?: 'Devil AI';
+    $replyTo = strtolower(trim((string)($cfg['mail_reply_to'] ?? '')));
+    if (!filter_var($replyTo, FILTER_VALIDATE_EMAIL)) { $replyTo = ''; }
+    $boundary = 'devil-' . bin2hex(random_bytes(12));
+    $body = devil_mail_body($html, $text, $boundary);
+    $transport = strtolower((string)($cfg['mail_transport'] ?? 'mail'));
+    $smtpReady = trim((string)($cfg['smtp_host'] ?? '')) !== '';
+    if (($transport === 'smtp' || $smtpReady) && $smtpReady) {
+        $smtpHeaders = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, true);
+        [$ok, $detail] = devil_mail_smtp($to, $subject, $smtpHeaders, $body, $cfg, $fromEmail);
+        devil_mail_log($ok ? 'SMTP_OK' : 'SMTP_FAIL', $to, $subject, $detail);
+        if ($ok) { return true; }
+        if ($transport === 'smtp') { return false; }
+    }
+    $headers = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, false);
+    $params = '-f' . $fromEmail;
+    $ok = @mail($to, devil_mail_subject($subject), $body, $headers, $params);
+    devil_mail_log($ok ? 'MAIL_OK' : 'MAIL_FAIL', $to, $subject, $ok ? 'php mail accepted' : 'php mail returned false');
     return $ok;
 }
 
@@ -1990,6 +2116,15 @@ try {
                 'security_extra_blocked_email_domains' => normalize_domain_list($cfg['security_extra_blocked_email_domains'] ?? []),
                 'security_trusted_email_domains' => normalize_domain_list($cfg['security_trusted_email_domains'] ?? []),
                 'security_datacenter_cidrs' => $snapshot['datacenter_cidrs'],
+                'mail_transport' => (string)($cfg['mail_transport'] ?? 'mail'),
+                'mail_from_email' => (string)($cfg['mail_from_email'] ?? ''),
+                'mail_from_name' => (string)($cfg['mail_from_name'] ?? 'Devil AI'),
+                'mail_reply_to' => (string)($cfg['mail_reply_to'] ?? ''),
+                'smtp_host' => (string)($cfg['smtp_host'] ?? ''),
+                'smtp_port' => (int)($cfg['smtp_port'] ?? 587),
+                'smtp_secure' => (string)($cfg['smtp_secure'] ?? 'tls'),
+                'smtp_username' => (string)($cfg['smtp_username'] ?? ''),
+                'smtp_password_set' => (string)($cfg['smtp_password'] ?? '') !== '',
             ],
         ]);
     }
@@ -2033,6 +2168,31 @@ try {
             if (!save_json_atomic(data_dir() . '/security_datacenter_cidrs.json', $cidrs)) { json_out(['ok' => false, 'error' => 'Could not save datacenter CIDR list.'], 500); }
             $sideSaved = true;
         }
+        if (isset($in['mail_transport'])) {
+            $mt = strtolower(trim((string)$in['mail_transport']));
+            if (in_array($mt, ['mail', 'smtp'], true)) { $new['mail_transport'] = $mt; }
+        }
+        if (isset($in['mail_from_email']) && is_string($in['mail_from_email'])) {
+            $v = strtolower(trim($in['mail_from_email']));
+            $new['mail_from_email'] = filter_var($v, FILTER_VALIDATE_EMAIL) ? $v : '';
+        }
+        if (isset($in['mail_from_name']) && is_string($in['mail_from_name'])) { $new['mail_from_name'] = devil_mail_clean_header($in['mail_from_name'], 80) ?: 'Devil AI'; }
+        if (isset($in['mail_reply_to']) && is_string($in['mail_reply_to'])) {
+            $v = strtolower(trim($in['mail_reply_to']));
+            $new['mail_reply_to'] = filter_var($v, FILTER_VALIDATE_EMAIL) ? $v : '';
+        }
+        if (isset($in['smtp_host']) && is_string($in['smtp_host'])) { $new['smtp_host'] = mb_substr(trim($in['smtp_host']), 0, 180); }
+        if (isset($in['smtp_port'])) { $new['smtp_port'] = max(1, min(65535, (int)$in['smtp_port'])); }
+        if (isset($in['smtp_secure']) && is_string($in['smtp_secure'])) {
+            $secMode = strtolower(trim($in['smtp_secure']));
+            if (in_array($secMode, ['none', 'tls', 'ssl'], true)) { $new['smtp_secure'] = $secMode; }
+        }
+        if (isset($in['smtp_username']) && is_string($in['smtp_username'])) { $new['smtp_username'] = mb_substr(trim($in['smtp_username']), 0, 180); }
+        if (isset($in['smtp_password']) && is_string($in['smtp_password'])) {
+            $sp = trim($in['smtp_password']);
+            if ($sp !== '') { $new['smtp_password'] = mb_substr($sp, 0, 260); }
+        }
+        if (!empty($in['smtp_password_clear'])) { $new['smtp_password'] = ''; }
         if (isset($in['new_admin_password']) && is_string($in['new_admin_password'])) {
             $np = trim($in['new_admin_password']);
             if ($np !== '') {
@@ -2059,6 +2219,42 @@ try {
         @file_put_contents(data_dir() . '/security_bans.json', json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
         @file_put_contents(data_dir() . '/security_rl.json', json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
         json_out(['ok' => true, 'security' => admin_security_snapshot()]);
+    }
+
+    if ($action === 'admin_mail_test' && $method === 'POST') {
+        $in = input_json();
+        if (!admin_ok((string)($in['current_admin_password'] ?? ''))) {
+            json_out(['ok' => false, 'error' => 'Admin password is incorrect.'], 403);
+        }
+        $to = strtolower(trim((string)($in['to'] ?? '')));
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) { $to = admin_emails()[0] ?? 'bk.w.p.bk@gmail.com'; }
+        $html = '<div style="font-family:Segoe UI,Arial,sans-serif;line-height:1.6"><h2>Devil AI mail test</h2><p>If this reached Gmail, SMTP/mail delivery is working.</p><p><b>Time:</b> ' . htmlspecialchars(date('c'), ENT_QUOTES) . '</p></div>';
+        $text = "Devil AI mail test\nIf this reached Gmail, SMTP/mail delivery is working.\nTime: " . date('c');
+        $ok = devil_mail($to, 'Devil AI mail test', $html, $text);
+        json_out(['ok' => $ok, 'to' => $to, 'error' => $ok ? '' : 'Mail send failed. Check SMTP settings or data/mail.log.']);
+    }
+
+    if ($action === 'admin_feedback' && $method === 'POST') {
+        $in = input_json();
+        if (!admin_ok((string)($in['current_admin_password'] ?? ''))) {
+            json_out(['ok' => false, 'error' => 'Admin password is incorrect.'], 403);
+        }
+        $all = load_json(feedback_path());
+        $items = [];
+        foreach ($all as $entry) {
+            if (!is_array($entry)) { continue; }
+            $items[] = [
+                'rating' => (string)($entry['rating'] ?? ''),
+                'content' => mb_substr((string)($entry['content'] ?? ''), 0, 1200),
+                'chat_id' => (string)($entry['chat_id'] ?? ''),
+                'message_index' => (int)($entry['message_index'] ?? -1),
+                'user' => is_array($entry['user'] ?? null) ? $entry['user'] : [],
+                'ip' => (string)($entry['ip'] ?? ''),
+                'ts' => (int)($entry['ts'] ?? 0),
+            ];
+        }
+        usort($items, function ($a, $b) { return (int)($b['ts'] ?? 0) <=> (int)($a['ts'] ?? 0); });
+        json_out(['ok' => true, 'feedback' => array_slice($items, 0, 120)]);
     }
 
     if ($action === 'test' && $method === 'POST') {
@@ -2285,7 +2481,9 @@ try {
               . ($link ? '<p><a href="' . $safeLink . '">Open chat</a></p>' : '')
               . '<hr><p><b>Response:</b></p><div style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:8px">' . $safeContent . '</div></div>';
         $textMail = "Devil AI feedback: " . strtoupper($rating) . "\nUser: " . ($entry['user']['name'] ?? '') . " <" . ($entry['user']['email'] ?? '') . ">\nChat: {$chatId}\nMessage index: {$msgIndex}\n" . ($link ? "Link: {$link}\n" : '') . "\nResponse:\n" . $entry['content'];
-        $mailed = devil_mail('bk.w.p.bk@gmail.com', 'Devil AI feedback: ' . strtoupper($rating), $html, $textMail);
+        $recipients = admin_emails() ?: ['bk.w.p.bk@gmail.com'];
+        $mailed = false;
+        foreach ($recipients as $rcpt) { if (devil_mail($rcpt, 'Devil AI feedback: ' . strtoupper($rating), $html, $textMail)) { $mailed = true; } }
         json_out(['ok' => true, 'mailed' => $mailed]);
     }
 
