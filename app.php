@@ -43,6 +43,7 @@ $JS_ICONS = [
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0c0709">
+<meta name="robots" content="noindex">
 <title>Devil AI — Chat</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <style>
@@ -422,7 +423,9 @@ function api(action, body, method) {
   method = method || (body === undefined ? 'GET' : 'POST');
   var opt = { method: method, headers: { 'Content-Type': 'application/json' } };
   if (method === 'POST') { opt.body = JSON.stringify(body || {}); }
-  return fetch('api.php' + (action ? '?action=' + encodeURIComponent(action) : ''), opt).then(function (r) {
+  /* NOTE: action may carry extra query params (chat_load&id=…) whose values
+     are already encodeURIComponent'd by the caller — so don't re-encode here */
+  return fetch('api.php' + (action ? '?action=' + action : ''), opt).then(function (r) {
     if (r.status === 401) { window.location.href = 'login.php'; throw new Error('signed out'); }
     return r.json();
   }).catch(function (e) { return { ok: false, error: 'Network error — please try again.' }; });
@@ -451,7 +454,8 @@ $('#sbOpen').addEventListener('click', function () { setSb(true); });
 bd.addEventListener('click', function () { setSb(false); });
 (function () {
   var saved = read('devil_sb');
-  setSb(saved === null ? true : saved === '1');
+  /* default: open on desktop, closed on mobile (first visit) */
+  setSb(saved === null ? window.innerWidth > 900 : saved === '1');
 })();
 
 /* ── chat list ── */
