@@ -6,10 +6,8 @@
  *  Magic link: login.php?token=… (auto sign-in + redirect)
  * ═══════════════════════════════════════════════════════
  */
-if (session_status() === PHP_SESSION_NONE) {
-    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
-    session_start();
-}
+require_once __DIR__ . '/inc/session.php';
+devil_session_boot();
 /* already signed in? — validate against users.json, else a deleted account
    with a stale session would bounce app.php ⇄ login.php forever */
 if (isset($_SESSION['devil_uid'])) {
@@ -56,6 +54,7 @@ if (isset($_GET['token']) && is_string($_GET['token'])) {
                         @file_put_contents($otpsFile, json_encode($map), LOCK_EX);
                         session_regenerate_id(true);
                         $_SESSION['devil_uid'] = (string)$found['id'];
+                        devil_session_refresh();
                         $ok = true;
                         break;
                     }

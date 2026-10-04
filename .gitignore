@@ -4,3 +4,5 @@ data/rl.json
 data/authrl.json
 data/users.json
 data/chats/
+
+data/sessions/

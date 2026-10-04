@@ -6,10 +6,8 @@
  *  anywhere in the public UI — bookmark this URL.
  * ═══════════════════════════════════════════════════════
  */
-if (session_status() === PHP_SESSION_NONE) {
-    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
-    session_start();
-}
+require_once __DIR__ . '/inc/session.php';
+devil_session_boot();
 require_once __DIR__ . '/inc/icons.php';
 ?><!DOCTYPE html>
 <html lang="en">

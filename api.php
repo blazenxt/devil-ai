@@ -39,10 +39,8 @@
 
 declare(strict_types=1);
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
-    session_start();
-}
+require_once __DIR__ . '/inc/session.php';
+devil_session_boot();
 
 define('DEVIL_VERSION', '1.0.0.0');
 define('MAX_INPUT', 4000);      // max characters per message
@@ -1047,6 +1045,7 @@ function login_email(string $email): ?array {
         if (strcasecmp((string)($u['email'] ?? ''), $email) === 0) {
             session_regenerate_id(true);
             $_SESSION['devil_uid'] = (string)$u['id'];
+            devil_session_refresh();
             return $u;
         }
     }
@@ -1056,6 +1055,7 @@ function login_email(string $email): ?array {
     if (!save_users($users)) { return null; }
     session_regenerate_id(true);
     $_SESSION['devil_uid'] = $uid;
+    devil_session_refresh();
     return $users[$uid];
 }
 
@@ -1138,7 +1138,7 @@ try {
     }
 
     if ($action === 'logout' && $method === 'POST') {
-        unset($_SESSION['devil_uid']);
+        devil_session_destroy_all();
         json_out(['ok' => true]);
     }
 
@@ -1237,8 +1237,7 @@ try {
         $users = load_users();
         unset($users[$uid]);
         save_users($users);
-        unset($_SESSION['devil_uid']);
-        session_regenerate_id(true);
+        devil_session_destroy_all();
         json_out(['ok' => true]);
     }
 
