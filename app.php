@@ -28,7 +28,7 @@ if (!$me) { header('Location: ' . ($APP_BASE_PATH ?: '') . '/login.php'); exit; 
 
 $JS_ICONS = [
     'send' => icon('send', 17), 'stop' => icon('stop', 17), 'copy' => icon('copy', 15), 'retry' => icon('retry', 15),
-    'thumbUp' => icon('thumb-up', 15), 'thumbDown' => icon('thumb-down', 15), 'share' => icon('share', 15), 'paperclip' => icon('paperclip', 15),
+    'thumbUp' => icon('thumb-up', 15), 'thumbDown' => icon('thumb-down', 15), 'share' => icon('share', 15), 'paperclip' => icon('paperclip', 15), 'mic' => icon('mic', 15), 'micOff' => icon('mic-off', 15), 'volume' => icon('volume', 15), 'volumeX' => icon('volume-x', 15),
     'trash' => icon('trash', 15), 'pencil' => icon('pencil', 14), 'check' => icon('check', 15),
     'x' => icon('x', 16), 'chev' => icon('chevron-down', 14), 'zap' => icon('zap', 15),
     'sparkles' => icon('sparkles', 15), 'crown' => icon('crown', 15), 'ghost' => icon('ghost', 15),
@@ -229,8 +229,17 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
 #sendBtn:disabled{opacity:.45;transform:none;cursor:default}
 #sendBtn.stopmode{background:rgba(190,18,60,.22);border:1px solid rgba(248,113,113,.45);color:#fecaca;box-shadow:none}
 .hint{text-align:center;font-size:.68rem;color:var(--dim2);margin-top:9px}
-#attachBtn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.15s;flex-shrink:0}
-#attachBtn:hover{background:rgba(244,63,94,.12);color:var(--soft)}
+#attachBtn,#voiceBtn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.15s;flex-shrink:0;position:relative}
+#attachBtn:hover,#voiceBtn:hover{background:rgba(244,63,94,.12);color:var(--soft)}
+#voiceBtn.on{background:rgba(244,63,94,.16);color:var(--soft);box-shadow:0 0 0 3px rgba(244,63,94,.08)}
+#voiceBtn.listening:after{content:'';position:absolute;inset:-3px;border-radius:50%;border:1px solid rgba(244,63,94,.55);animation:voice-pulse 1.25s infinite}
+#voiceBtn.speaking{color:#fff;background:linear-gradient(135deg,#f43f5e,#be123c);box-shadow:0 5px 16px rgba(244,63,94,.32)}
+#voiceChip{display:none;align-items:center;justify-content:space-between;gap:10px;margin:12px 16px 0;padding:9px 11px;background:rgba(244,63,94,.08);border:1px solid var(--border);border-radius:12px;color:var(--soft);font-size:.76rem;line-height:1.45}
+#voiceChip.show{display:flex}
+#voiceChip span{display:flex;align-items:center;gap:7px;min-width:0}
+#voiceChip button{font-size:.72rem;font-weight:700;color:var(--dim);padding:5px 8px;border-radius:8px;flex-shrink:0}
+#voiceChip button:hover{background:rgba(244,63,94,.12);color:var(--soft)}
+@keyframes voice-pulse{0%{transform:scale(.92);opacity:.9}100%{transform:scale(1.35);opacity:0}}
 #imgChip{display:none;align-items:stretch;gap:8px;margin:12px 16px 0;max-width:calc(100% - 32px);flex-wrap:wrap}
 #imgChip.show{display:flex}
 .filechip{display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:12px;max-width:270px;min-width:0}
@@ -338,7 +347,7 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
 [data-theme=light] .ctbtn.primary{background:rgba(190,30,60,.08);color:#a63d57;border-color:rgba(190,30,60,.20)}
 [data-theme=light] .ctbtn.on{background:rgba(190,30,60,.16);color:#7f1d1d;border-color:rgba(190,30,60,.38);box-shadow:0 0 0 3px rgba(190,30,60,.08)}
 [data-theme=light] .ctbtn.stop,[data-theme=light] #sendBtn.stopmode{background:rgba(190,18,60,.10);border-color:rgba(190,18,60,.32);color:#9f1239;box-shadow:none}
-[data-theme=light] #editChip{background:rgba(190,30,60,.07);border-color:rgba(190,30,60,.20);color:#9f1239}
+[data-theme=light] #editChip,[data-theme=light] #voiceChip{background:rgba(190,30,60,.07);border-color:rgba(190,30,60,.20);color:#9f1239}
 [data-theme=light] .inlineEditBox{background:#fff;border-color:rgba(190,30,60,.28);box-shadow:0 14px 34px rgba(120,80,90,.14)}
 [data-theme=light] .inlineEditBox textarea{background:#f7f3ef;border-color:rgba(120,80,90,.18)}
 [data-theme=light] .editBadge{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.20);color:#9f1239}
@@ -437,11 +446,13 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
     <div id="composer">
       <div class="compbox">
         <div id="imgChip"></div>
+        <div id="voiceChip"><span><?= icon('mic', 14) ?><b id="voiceStatus">Voice mode ready</b></span><button id="voiceClose" type="button">Turn off</button></div>
         <div id="editChip"><span><?= icon('pencil', 14) ?> Editing message — original chat stays saved, a new branch will be created.</span><button id="editCancel" type="button">Cancel</button></div>
         <textarea id="inp" rows="1" maxlength="4000" placeholder="Message Devil AI…"></textarea>
         <div class="comprow">
           <div class="modelwrap">
             <button id="attachBtn" title="Attach files" type="button"><?= icon('paperclip', 16) ?></button>
+            <button id="voiceBtn" title="Voice mode" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
             <button id="modelBtn" title="Choose model"><span id="modelIco"><?= icon('zap', 14) ?></span><span class="lb" id="modelLbl">Devil Flash</span><?= icon('chevron-down', 13) ?></button>
             <div id="modelMenu"></div>
             <div id="customWrap" class="customwrap">
@@ -452,7 +463,7 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
           <button id="sendBtn" title="Send (Enter)" disabled><?= icon('send', 17) ?></button>
         </div>
       </div>
-      <p class="hint">Enter = new line • Ctrl/⌘ + Enter = send • Devil AI can make mistakes.</p>
+      <p class="hint">Enter = new line • Ctrl/⌘ + Enter = send • Mic = voice mode • Devil AI can make mistakes.</p>
     </div>
   </main>
 </div>
@@ -1051,6 +1062,7 @@ function aiContent(el, text, meta) {
   var acts = el.querySelector('.acts');
   acts.innerHTML = '';
   acts.appendChild(actionBtn(I.copy, 'Copy', 'Copy response', function () { copyText(text); }));
+  acts.appendChild(actionBtn(I.volume, 'Speak', 'Read aloud', function () { speakText(text); }));
   var sh = actionBtn(I.share, 'Share', 'Share chat', function () { shareCurrentChat(sh); });
   if (!currentChat || !currentChat.id || isTempChat) { sh.hidden = true; }
   acts.appendChild(sh);
@@ -1182,6 +1194,144 @@ function addErr(text) {
 
 /* ── composer ── */
 var inp = $('#inp'), sendBtn = $('#sendBtn');
+
+/* ── voice mode (browser speech recognition + speech synthesis) ── */
+var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+var voiceRec = null, voiceMode = false, voiceListening = false, voiceSpeaking = false, voiceFinal = '', voiceRestartTimer = null;
+var voiceBtn = $('#voiceBtn'), voiceChip = $('#voiceChip'), voiceStatus = $('#voiceStatus');
+function voiceCleanText(text) {
+  return String(text || '')
+    .replace(/```[\s\S]*?```/g, ' code block ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/[*_#>~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function setVoiceStatus(msg) {
+  if (voiceStatus) { voiceStatus.textContent = msg || 'Voice mode ready'; }
+}
+function updateVoiceUi() {
+  if (!voiceBtn) { return; }
+  voiceBtn.classList.toggle('on', voiceMode);
+  voiceBtn.classList.toggle('listening', voiceListening);
+  voiceBtn.classList.toggle('speaking', voiceSpeaking);
+  voiceBtn.setAttribute('aria-pressed', voiceMode ? 'true' : 'false');
+  voiceBtn.title = voiceSpeaking ? 'Stop speaking' : (voiceMode ? 'Turn off voice mode' : 'Voice mode');
+  voiceBtn.innerHTML = voiceSpeaking ? I.volumeX : (voiceMode ? I.micOff : I.mic);
+  if (voiceChip) { voiceChip.classList.toggle('show', voiceMode); }
+}
+function initVoiceRec() {
+  if (!SpeechRec) { return false; }
+  if (voiceRec) { return true; }
+  voiceRec = new SpeechRec();
+  voiceRec.lang = navigator.language || 'en-US';
+  voiceRec.interimResults = true;
+  voiceRec.continuous = false;
+  voiceRec.maxAlternatives = 1;
+  voiceRec.onstart = function () { voiceListening = true; setVoiceStatus('Listening… speak now'); updateVoiceUi(); };
+  voiceRec.onresult = function (e) {
+    var interim = '', final = '';
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      var tx = e.results[i][0] ? e.results[i][0].transcript : '';
+      if (e.results[i].isFinal) { final += tx + ' '; }
+      else { interim += tx + ' '; }
+    }
+    if (interim) { setVoiceStatus('Listening: ' + interim.trim()); }
+    if (final.trim()) { voiceFinal += ' ' + final.trim(); }
+  };
+  voiceRec.onerror = function (e) {
+    voiceListening = false;
+    updateVoiceUi();
+    var err = e && e.error ? e.error : 'voice error';
+    if (err === 'not-allowed' || err === 'service-not-allowed') {
+      voiceMode = false;
+      setVoiceStatus('Microphone permission denied');
+      updateVoiceUi();
+      toast('Microphone permission denied', 'warning');
+      return;
+    }
+    setVoiceStatus('Voice paused — tap mic if needed');
+  };
+  voiceRec.onend = function () {
+    voiceListening = false;
+    updateVoiceUi();
+    var final = voiceFinal.trim();
+    voiceFinal = '';
+    if (voiceMode && final && !busy) {
+      inp.value = final;
+      resize();
+      setVoiceStatus('Sending voice message…');
+      setTimeout(function () { send(); }, 80);
+      return;
+    }
+    if (voiceMode && !busy && !voiceSpeaking) {
+      clearTimeout(voiceRestartTimer);
+      voiceRestartTimer = setTimeout(startVoiceListening, 350);
+    }
+  };
+  return true;
+}
+function startVoiceListening() {
+  if (!voiceMode || busy || voiceSpeaking) { return; }
+  if (!initVoiceRec()) { voiceMode = false; updateVoiceUi(); toast('Voice mode is not supported in this browser', 'warning'); return; }
+  try { voiceRec.start(); }
+  catch (e) { clearTimeout(voiceRestartTimer); voiceRestartTimer = setTimeout(startVoiceListening, 700); }
+}
+function stopVoiceListening() {
+  clearTimeout(voiceRestartTimer);
+  if (voiceRec && voiceListening) { try { voiceRec.abort(); } catch (e) {} }
+  voiceListening = false;
+  updateVoiceUi();
+}
+function setVoiceMode(on) {
+  voiceMode = !!on;
+  if (voiceMode) {
+    if (!initVoiceRec()) { voiceMode = false; updateVoiceUi(); toast('Voice mode is not supported in this browser', 'warning'); return; }
+    setVoiceStatus('Voice mode on — listening…');
+    updateVoiceUi();
+    startVoiceListening();
+  } else {
+    stopVoiceListening();
+    if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
+    voiceSpeaking = false;
+    setVoiceStatus('Voice mode off');
+    updateVoiceUi();
+  }
+}
+function speakText(text) {
+  var clean = voiceCleanText(text);
+  if (!clean) { return; }
+  if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) { toast('Read aloud is not supported in this browser', 'warning'); return; }
+  stopVoiceListening();
+  try { window.speechSynthesis.cancel(); } catch (e) {}
+  var u = new SpeechSynthesisUtterance(clean.slice(0, 3800));
+  u.lang = navigator.language || 'en-US';
+  u.rate = 1;
+  u.pitch = 1;
+  voiceSpeaking = true;
+  setVoiceStatus('Devil AI is speaking…');
+  updateVoiceUi();
+  u.onend = u.onerror = function () {
+    voiceSpeaking = false;
+    setVoiceStatus(voiceMode ? 'Listening…' : 'Voice mode ready');
+    updateVoiceUi();
+    if (voiceMode && !busy) { setTimeout(startVoiceListening, 450); }
+  };
+  window.speechSynthesis.speak(u);
+}
+if (voiceBtn) { voiceBtn.addEventListener('click', function () {
+  if (voiceSpeaking && !voiceMode) {
+    if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
+    voiceSpeaking = false;
+    setVoiceStatus('Voice mode ready');
+    updateVoiceUi();
+    return;
+  }
+  setVoiceMode(!voiceMode);
+}); }
+if ($('#voiceClose')) { $('#voiceClose').addEventListener('click', function () { setVoiceMode(false); }); }
+
 function updateChatActions() {
   document.body.classList.toggle('temp-chat', isTempChat);
   var tb = $('#tempChatBtn');
@@ -1429,6 +1579,7 @@ function retryLast() {
 
 function runSend(payload) {
   busy = true;
+  if (voiceMode) { stopVoiceListening(); setVoiceStatus('Thinking…'); }
   var seq = ++sendSeq;
   activeController = window.AbortController ? new AbortController() : null;
   resize();
@@ -1465,17 +1616,20 @@ function runSend(payload) {
       var aiIndex = currentChat.messages.length - 1;
       var el = addAiMsg({ modelTag: (j.model && j.model.label) || activeModelLabel() });
       aiContent(el, j.reply, { index: aiIndex });
+      if (voiceMode) { speakText(j.reply); }
       if (!isTempChat) { loadChats(); }
       updateChatActions();
     } else {
       if (payload.retry) { /* put a placeholder assistant error, keep chat usable */ }
       addErr(j.error + (j.hint ? '\nHint: ' + j.hint : ''));
+      if (voiceMode) { setVoiceStatus('Error — listening again…'); }
     }
   }).finally(function () {
     if (seq === sendSeq) {
       busy = false;
       activeController = null;
       resize();
+      if (voiceMode && !voiceSpeaking) { setTimeout(startVoiceListening, 350); }
     }
   });
 }
