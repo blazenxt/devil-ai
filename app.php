@@ -232,7 +232,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 
 @media (max-width:900px){
   #sidebar{position:fixed;top:0;bottom:0;left:0;box-shadow:20px 0 60px rgba(0,0,0,.5)}
-  #sidebar.closed{margin-left:-272px}
+  #sidebar.closed{margin-left:-272px;box-shadow:none}
   #backdrop.show{display:block}
   .m-top{display:flex}
   #thread{padding:20px 16px 24px}
