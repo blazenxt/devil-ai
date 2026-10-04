@@ -10,6 +10,8 @@
  *    POST ?action=logout                                       → {ok}
  *    GET  ?action=me                                            → {ok, user|null}
  *    GET  ?action=settings          → {ok, version, admin}      (public-safe!)
+ *    GET  /v1/models                → OpenAI-style model list (Bearer API key)
+ *    POST /v1/chat/completions      → OpenAI-style chat completion (Bearer API key)
  *
  *  USER actions (login required)
  *    GET  ?action=chats             → {ok, chats[]}
@@ -17,6 +19,9 @@
  *    POST ?action=chat_send         {id?, message, model, retry?} → {ok, id, title, reply, model}
  *    POST ?action=chat_delete       {id}                        → {ok}
  *    POST ?action=chat_rename       {id, title}                 → {ok}
+ *    GET  ?action=dev_keys          → {ok, keys[]}
+ *    POST ?action=dev_key_create    {name?}                     → {ok, key, token}
+ *    POST ?action=dev_key_revoke    {id}                        → {ok}
  *    POST ?action=otp_request       {purpose:"delete"}          → {ok, masked} (code for deletion)
  *    POST ?action=account_delete    {code}                      → {ok}
  *
@@ -428,6 +433,162 @@ function client_ip(): string {
         }
     }
     return (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+}
+
+/* ── Developer API keys + OpenAI-compatible endpoint helpers ── */
+function dev_keys_path(): string { return data_dir() . '/api_keys.json'; }
+function load_dev_keys(): array { return load_json(dev_keys_path()); }
+function save_dev_keys(array $keys): bool { return save_json_atomic(dev_keys_path(), $keys); }
+
+function dev_api_headers(): void {
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Headers: Authorization, Content-Type');
+    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('X-Robots-Tag: noindex');
+}
+
+function dev_api_error(string $message, int $status = 400, string $type = 'invalid_request_error', string $code = 'bad_request'): void {
+    dev_api_headers();
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['error' => ['message' => $message, 'type' => $type, 'code' => $code]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+function dev_public_key(array $rec): array {
+    return [
+        'id'       => (string)($rec['id'] ?? ''),
+        'name'     => (string)($rec['name'] ?? 'API key'),
+        'prefix'   => (string)($rec['prefix'] ?? ''),
+        'last4'    => (string)($rec['last4'] ?? ''),
+        'created'  => (int)($rec['created'] ?? 0),
+        'last_used'=> (int)($rec['last_used'] ?? 0),
+        'requests' => (int)($rec['requests'] ?? 0),
+        'revoked'  => !empty($rec['revoked']),
+    ];
+}
+
+function dev_clean_key_name(string $name): string {
+    $name = trim(preg_replace('/\s+/u', ' ', strip_tags($name)) ?? '');
+    if ($name === '') { $name = 'Devil API key'; }
+    if (mb_strlen($name) > 48) { $name = mb_substr($name, 0, 48); }
+    return $name;
+}
+
+function dev_bearer_token(): string {
+    $h = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''));
+    if (preg_match('/^Bearer\s+(.+)$/i', trim($h), $m)) { return trim($m[1]); }
+    return '';
+}
+
+function dev_api_auth(): array {
+    dev_api_headers();
+    $token = dev_bearer_token();
+    if ($token === '' || !preg_match('/^dv_live_[A-Fa-f0-9]{48}$/', $token)) {
+        dev_api_error('Missing or invalid API key. Use Authorization: Bearer dv_live_...', 401, 'authentication_error', 'invalid_api_key');
+    }
+    $hash = hash('sha256', $token);
+    $keys = load_dev_keys();
+    foreach ($keys as $id => $rec) {
+        if (!is_array($rec) || !empty($rec['revoked']) || !isset($rec['hash'])) { continue; }
+        if (hash_equals((string)$rec['hash'], $hash)) {
+            $users = load_users();
+            $uid = (string)($rec['uid'] ?? '');
+            if ($uid === '' || !isset($users[$uid]) || !is_array($users[$uid])) {
+                dev_api_error('The account for this API key no longer exists.', 401, 'authentication_error', 'invalid_api_key');
+            }
+            $rec['last_used'] = time();
+            $rec['last_ip'] = client_ip();
+            $rec['requests'] = (int)($rec['requests'] ?? 0) + 1;
+            $keys[$id] = $rec;
+            save_dev_keys($keys);
+            return ['uid' => $uid, 'user' => $users[$uid], 'key_id' => (string)($rec['id'] ?? $id), 'key' => $rec];
+        }
+    }
+    dev_api_error('Invalid API key.', 401, 'authentication_error', 'invalid_api_key');
+}
+
+function dev_api_models(): array {
+    return [
+        ['id' => 'devil-flash', 'label' => 'Devil Flash', 'owned_by' => 'devil-ai'],
+        ['id' => 'devil-pro',   'label' => 'Devil Pro',   'owned_by' => 'devil-ai'],
+        ['id' => 'devil-ultra', 'label' => 'Devil Ultra', 'owned_by' => 'devil-ai'],
+    ];
+}
+
+function dev_normalize_model(string $model): string {
+    $m = strtolower(trim($model));
+    if ($m === '') { $m = 'devil-flash'; }
+    if (strpos($m, 'devil-') === 0) { $m = substr($m, 6); }
+    if (in_array($m, ['flash', 'pro', 'ultra'], true)) { return $m; }
+    dev_api_error('Unknown model. Use devil-flash, devil-pro, or devil-ultra.', 400, 'invalid_request_error', 'model_not_found');
+}
+function dev_public_model_id(string $model): string { return 'devil-' . dev_normalize_model($model); }
+
+function dev_content_to_text_and_image($content): array {
+    $text = '';
+    $image = '';
+    if (is_string($content) || is_numeric($content)) {
+        $text = (string)$content;
+    } elseif (is_array($content)) {
+        foreach ($content as $part) {
+            if (is_string($part) || is_numeric($part)) { $text .= "\n" . (string)$part; continue; }
+            if (!is_array($part)) { continue; }
+            $type = (string)($part['type'] ?? '');
+            if (($type === 'text' || $type === 'input_text' || isset($part['text'])) && isset($part['text'])) {
+                $text .= "\n" . (string)$part['text'];
+                continue;
+            }
+            $url = '';
+            if (isset($part['image_url'])) {
+                $img = $part['image_url'];
+                $url = is_array($img) ? (string)($img['url'] ?? '') : (string)$img;
+            } elseif (isset($part['input_image'])) {
+                $img = $part['input_image'];
+                $url = is_array($img) ? (string)($img['image_url'] ?? ($img['url'] ?? '')) : (string)$img;
+            }
+            if ($url !== '' && $image === '' && preg_match('/^data:image\/(png|jpe?g|gif|webp);base64,/i', $url)) { $image = $url; }
+            elseif ($url !== '') { $text .= "\n[Image URL: " . $url . "]"; }
+        }
+    }
+    return [trim($text), $image];
+}
+
+function dev_messages_from_request(array $in): array {
+    $raw = $in['messages'] ?? null;
+    if (!is_array($raw) || !$raw) { dev_api_error('messages must be a non-empty array.', 400); }
+    $messages = [];
+    $image = '';
+    $hasUser = false;
+    $total = 0;
+    foreach (array_slice($raw, -30) as $m) {
+        if (!is_array($m)) { continue; }
+        $role = strtolower((string)($m['role'] ?? 'user'));
+        if (!in_array($role, ['system', 'user', 'assistant'], true)) { continue; }
+        list($text, $img) = dev_content_to_text_and_image($m['content'] ?? '');
+        if ($img !== '' && $image === '') { $image = $img; }
+        if ($text === '') { continue; }
+        if (mb_strlen($text) > 4000) { $text = mb_substr($text, 0, 4000); }
+        $total += mb_strlen($text);
+        if ($total > 14000) { dev_api_error('messages are too long for this endpoint.', 400, 'invalid_request_error', 'context_length_exceeded'); }
+        if ($role === 'system') {
+            $messages[] = ['role' => 'user', 'content' => 'Developer instruction: ' . $text];
+        } else {
+            $messages[] = ['role' => $role, 'content' => $text];
+            if ($role === 'user') { $hasUser = true; }
+        }
+    }
+    if (!$hasUser) { dev_api_error('At least one user message is required.', 400); }
+    return [$messages, $image];
+}
+
+function dev_usage(array $messages, string $reply): array {
+    $chars = mb_strlen($reply);
+    foreach ($messages as $m) { $chars += mb_strlen((string)($m['content'] ?? '')); }
+    $promptChars = max(0, $chars - mb_strlen($reply));
+    $prompt = (int)ceil($promptChars / 4);
+    $completion = (int)ceil(mb_strlen($reply) / 4);
+    return ['prompt_tokens' => $prompt, 'completion_tokens' => $completion, 'total_tokens' => $prompt + $completion];
 }
 
 /* ── admin auth ── */
@@ -1563,6 +1724,60 @@ try {
         json_out(['ok' => true, 'version' => DEVIL_VERSION, 'admin' => (admin_password() !== '')]);
     }
 
+    /* ─────────── DEVELOPER API (Bearer API key, OpenAI-compatible) ─────────── */
+    if (in_array($action, ['dev_models', 'dev_chat_completions'], true)) {
+        dev_api_headers();
+        if ($method === 'OPTIONS') { http_response_code(204); exit; }
+        $auth = dev_api_auth();
+
+        if ($action === 'dev_models' && $method === 'GET') {
+            $data = [];
+            foreach (dev_api_models() as $m) {
+                $data[] = ['id' => $m['id'], 'object' => 'model', 'created' => 1760000000, 'owned_by' => $m['owned_by'], 'label' => $m['label']];
+            }
+            http_response_code(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['object' => 'list', 'data' => $data], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+        if ($action === 'dev_chat_completions' && $method === 'POST') {
+            $in = input_json();
+            if (!empty($in['stream'])) { dev_api_error('Streaming is not supported yet. Send stream:false or omit it.', 400, 'invalid_request_error', 'stream_not_supported'); }
+            $model = dev_normalize_model((string)($in['model'] ?? 'devil-flash'));
+            list($messages, $image) = dev_messages_from_request($in);
+            $cfgAll = load_config();
+            $rl = max(1, min(1000, (int)($cfgAll['rate_per_hour'] ?? 40)));
+            if (!rate_ok('devrl.json', 'k:' . (string)$auth['key_id'], $rl, 3600)) {
+                dev_api_error('Rate limit exceeded. Try again later.', 429, 'rate_limit_error', 'rate_limit_exceeded');
+            }
+            $tz = (string)($cfgAll['timezone'] ?? '');
+            if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) { date_default_timezone_set($tz); }
+            $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $messages);
+            list($ok, $reply, $used) = ai_respond($cfgAll, $model, $providerMsgs, $image);
+            if (!$ok) { dev_api_error($reply, 502, 'api_error', 'engine_error'); }
+            $created = time();
+            $outModel = dev_public_model_id($model);
+            $resp = [
+                'id' => 'chatcmpl-devil-' . bin2hex(random_bytes(10)),
+                'object' => 'chat.completion',
+                'created' => $created,
+                'model' => $outModel,
+                'choices' => [[
+                    'index' => 0,
+                    'message' => ['role' => 'assistant', 'content' => $reply],
+                    'finish_reason' => 'stop',
+                ]],
+                'usage' => dev_usage($messages, $reply),
+            ];
+            http_response_code(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode($resp, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+        dev_api_error('Method not allowed for this endpoint.', 405, 'invalid_request_error', 'method_not_allowed');
+    }
+
     /* ── passwordless login: request a code ── */
     if ($action === 'otp_request' && $method === 'POST') {
         $in = input_json();
@@ -1708,7 +1923,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete'], true)) {
+    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -1716,6 +1931,54 @@ try {
     /* Release the PHP session lock before chat/file/AI work so parallel requests
        (chat_load + sidebar list, or page refresh + API calls) do not block each other. */
     if ($action !== 'account_delete' && session_status() === PHP_SESSION_ACTIVE) { @session_write_close(); }
+
+    if ($action === 'dev_keys' && $method === 'GET') {
+        $all = load_dev_keys();
+        $mine = [];
+        foreach ($all as $rec) {
+            if (is_array($rec) && (string)($rec['uid'] ?? '') === $uid) { $mine[] = dev_public_key($rec); }
+        }
+        usort($mine, function ($a, $b) { return (int)($b['created'] ?? 0) <=> (int)($a['created'] ?? 0); });
+        json_out(['ok' => true, 'keys' => $mine]);
+    }
+
+    if ($action === 'dev_key_create' && $method === 'POST') {
+        $in = input_json();
+        $all = load_dev_keys();
+        $active = 0;
+        foreach ($all as $rec) { if (is_array($rec) && (string)($rec['uid'] ?? '') === $uid && empty($rec['revoked'])) { $active++; } }
+        if ($active >= 12) { json_out(['ok' => false, 'error' => 'You can keep up to 12 active API keys. Revoke an old key first.'], 400); }
+        $token = 'dv_live_' . bin2hex(random_bytes(24));
+        $id = 'dk_' . bin2hex(random_bytes(8));
+        $rec = [
+            'id' => $id,
+            'uid' => $uid,
+            'name' => dev_clean_key_name((string)($in['name'] ?? '')),
+            'hash' => hash('sha256', $token),
+            'prefix' => substr($token, 0, 15),
+            'last4' => substr($token, -4),
+            'created' => time(),
+            'last_used' => 0,
+            'requests' => 0,
+            'revoked' => false,
+        ];
+        $all[$id] = $rec;
+        if (!save_dev_keys($all)) { json_out(['ok' => false, 'error' => 'Could not create API key.'], 500); }
+        json_out(['ok' => true, 'key' => dev_public_key($rec), 'token' => $token]);
+    }
+
+    if ($action === 'dev_key_revoke' && $method === 'POST') {
+        $in = input_json();
+        $id = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($in['id'] ?? ''));
+        $all = load_dev_keys();
+        if ($id === '' || !isset($all[$id]) || !is_array($all[$id]) || (string)($all[$id]['uid'] ?? '') !== $uid) {
+            json_out(['ok' => false, 'error' => 'API key not found.'], 404);
+        }
+        $all[$id]['revoked'] = true;
+        $all[$id]['revoked_at'] = time();
+        if (!save_dev_keys($all)) { json_out(['ok' => false, 'error' => 'Could not revoke API key.'], 500); }
+        json_out(['ok' => true]);
+    }
 
     if ($action === 'account_delete' && $method === 'POST') {
         $in = input_json();

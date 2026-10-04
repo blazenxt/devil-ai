@@ -1,6 +1,6 @@
 # Devil AI — basic security
 
-Options -Indexes
+Options -Indexes -MultiViews
 
 <IfModule mod_headers.c>
   Header set X-Content-Type-Options "nosniff"
@@ -16,6 +16,10 @@ Options -Indexes
 
   # Pretty chat URLs: /chat/{model}/{type}/{128-char-slug}
   RewriteRule ^chat/([A-Za-z0-9-]+)/([A-Za-z0-9-]+)/([A-Fa-f0-9]{128})/?$ app.php?route_model=$1&route_type=$2&chat=$3 [L,QSA]
+
+  # Developer API (OpenAI-compatible)
+  RewriteRule ^v1/models/?$ api.php?action=dev_models [L,QSA]
+  RewriteRule ^v1/chat/completions/?$ api.php?action=dev_chat_completions [L,QSA]
 
   # Pretty share URLs: /share/{128-char-share-id} (old share.php?id=... remains supported)
   RewriteRule ^share/([A-Za-z0-9_-]{8,160})/?$ share.php?id=$1 [L,QSA]

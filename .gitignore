@@ -8,3 +8,5 @@ data/chats/
 data/sessions/
 data/feedback.json
 data/shares/
+data/api_keys.json
+data/devrl.json
