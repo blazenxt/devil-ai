@@ -48,6 +48,14 @@ return [
     /* Max saved chats per user */
     'max_chats' => 100,
 
+    /* Security hardening: optional Google reCAPTCHA v3 for login/signup.
+       Set security_require_recaptcha=true plus both keys in data/config.json
+       when attacks spike. */
+    'security_require_recaptcha' => false,
+    'recaptcha_site_key' => '',
+    'recaptcha_secret_key' => '',
+    'recaptcha_min_score' => 0.45,
+
     /* ═══════ FINE TUNING ═══════ */
 
     /* Timezone (used for time/date questions) */

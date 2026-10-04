@@ -1798,6 +1798,12 @@ try {
         } else {
             $email = strtolower(trim((string)($in['email'] ?? '')));
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { json_out(['ok' => false, 'error' => 'Please enter a valid email address.']); }
+            if (devil_security_recaptcha_required() && !devil_security_verify_recaptcha((string)($in['recaptcha_token'] ?? ''), client_ip())) {
+                json_out(['ok' => false, 'error' => 'Security verification failed. Please refresh and try again.'], 403);
+            }
+            $existing = find_user_by_email($email) !== null;
+            [$allowedEmail, $emailBlockMsg] = devil_security_email_auth_status($email, $existing);
+            if (!$allowedEmail) { json_out(['ok' => false, 'error' => $emailBlockMsg], 403); }
         }
 
         /* rate limits: 10 requests / 15 min per IP, 3 / 15 min per email */

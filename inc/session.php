@@ -8,6 +8,9 @@ if (!defined('DEVIL_SESSION_LIFETIME')) {
     define('DEVIL_SESSION_LIFETIME', 60 * 60 * 24 * 30); // 30 days
 }
 
+require_once __DIR__ . '/security.php';
+devil_security_boot();
+
 function devil_is_https(): bool {
     return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')

@@ -18,6 +18,7 @@ if (isset($_SESSION['devil_uid'])) {
     unset($_SESSION['devil_uid'], $_SESSION['devil_name']); /* stale — clean it up */
 }
 require_once __DIR__ . '/inc/icons.php';
+$recaptchaSiteKey = devil_security_recaptcha_site_key();
 
 /* ── magic link (?token=…) — server-side verify + sign-in ── */
 $tokenNote = null;
@@ -41,6 +42,12 @@ if (isset($_GET['token']) && is_string($_GET['token'])) {
                         foreach ($users as $u) {
                             if (strcasecmp((string)($u['email'] ?? ''), (string)$email) === 0) { $found = $u; break; }
                         }
+                        [$allowedMagicEmail, $magicEmailMsg] = devil_security_email_auth_status((string)$email, (bool)$found);
+                        if (!$allowedMagicEmail) {
+                            $tokenNote = $magicEmailMsg;
+                            $ok = false;
+                            break;
+                        }
                         if (!$found) {
                             $local = explode('@', (string)$email)[0];
                             $first = trim((string)(preg_split('/[._\-+0-9]+/', $local)[0] ?? ''));
@@ -63,7 +70,7 @@ if (isset($_GET['token']) && is_string($_GET['token'])) {
         }
     }
     if ($ok) { header('Location: app.php'); exit; }
-    $tokenNote = 'This magic link is invalid or has expired. Enter your email below to get a fresh code.';
+    if ($tokenNote === null) { $tokenNote = 'This magic link is invalid or has expired. Enter your email below to get a fresh code.'; }
 }
 ?><!DOCTYPE html>
 <html lang="en">
@@ -77,6 +84,7 @@ if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-co
 document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Sign in — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<?php if ($recaptchaSiteKey !== ''): ?><script src="https://www.google.com/recaptcha/api.js?render=<?= htmlspecialchars($recaptchaSiteKey, ENT_QUOTES) ?>" async defer></script><?php endif; ?>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -201,6 +209,14 @@ function post(action, body) {
     .then(function (r) { return r.json(); })
     .catch(function () { return { ok: false, error: 'Network error — please try again.' }; });
 }
+var RECAPTCHA_SITE_KEY = <?= json_encode($recaptchaSiteKey) ?>;
+function recaptchaToken(action) {
+  if (!RECAPTCHA_SITE_KEY || !window.grecaptcha) { return Promise.resolve(''); }
+  return new Promise(function (resolve) {
+    try { grecaptcha.ready(function () { grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: action || 'login' }).then(resolve).catch(function () { resolve(''); }); }); }
+    catch (e) { resolve(''); }
+  });
+}
 function showErr(el, msg) { el.classList.add('show'); el.querySelector('span').textContent = msg; }
 function hideErr(el) { el.classList.remove('show'); }
 function busy(btn, on) {
@@ -218,7 +234,8 @@ $('#emailForm').addEventListener('submit', async function (e) {
   email = $('#email').value.trim();
   if (!email) { showErr($('#e1err'), 'Please enter your email address.'); return; }
   busy($('#e1btn'), true);
-  var j = await post('otp_request', { email: email });
+  var token = await recaptchaToken('login');
+  var j = await post('otp_request', { email: email, recaptcha_token: token });
   busy($('#e1btn'), false);
   if (j.ok) {
     email = email.toLowerCase();
@@ -252,7 +269,8 @@ var resendT = null;
 $('#resend').addEventListener('click', async function () {
   if (resendT) { return; }
   hideErr($('#e2err'));
-  var j = await post('otp_request', { email: email });
+  var token = await recaptchaToken('login_resend');
+  var j = await post('otp_request', { email: email, recaptcha_token: token });
   if (j.ok) {
     var left = 60;
     var el = $('#resend');
