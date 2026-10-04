@@ -796,7 +796,12 @@ function addErr(text) {
 var inp = $('#inp'), sendBtn = $('#sendBtn');
 function updateChatActions() {
   document.body.classList.toggle('temp-chat', isTempChat);
-  $('#tempChatBtn').classList.toggle('on', isTempChat);
+  var tb = $('#tempChatBtn');
+  tb.classList.toggle('on', isTempChat);
+  tb.setAttribute('aria-pressed', isTempChat ? 'true' : 'false');
+  tb.title = isTempChat ? 'Turn off temporary chat' : 'Turn on temporary chat';
+  var tt = tb.querySelector('.txt');
+  if (tt) { tt.textContent = isTempChat ? 'Temp on' : 'Temp'; }
   $('#topNewChatBtn').style.display = (currentChat && !isTempChat) ? 'inline-flex' : 'none';
   $('#pauseBtn').classList.toggle('show', busy);
 }
@@ -819,8 +824,9 @@ function compactHistoryForTemp() {
   if (!currentChat || !currentChat.messages) { return []; }
   return currentChat.messages.slice(-18).map(function (m) { return { role: m.role, content: m.content || '' }; }).filter(function (m) { return m.content; });
 }
-function startTempChat() {
+function startTempChat(forceOn) {
   if (busy) { return; }
+  if (isTempChat && forceOn !== true) { stopTempChat(); return; }
   isTempChat = true;
   currentChat = { id: null, title: 'Temporary chat', temp: true, messages: [] };
   msgs.innerHTML = '';
@@ -828,7 +834,19 @@ function startTempChat() {
   if (window.history) { history.replaceState(null, '', 'app.php?temp=1'); }
   renderList($('#searchInp').value);
   updateChatActions();
-  toast('Temporary chat started — it will not be saved', 'ghost');
+  toast('Temporary chat on — this chat will not be saved', 'ghost');
+  if (window.innerWidth > 900) { inp.focus(); }
+}
+function stopTempChat() {
+  if (busy) { return; }
+  isTempChat = false;
+  currentChat = null;
+  msgs.innerHTML = '';
+  welcome.style.display = '';
+  if (window.history) { history.replaceState(null, '', 'app.php'); }
+  renderList($('#searchInp').value);
+  updateChatActions();
+  toast('Temporary chat off — new chats will be saved');
   if (window.innerWidth > 900) { inp.focus(); }
 }
 function pauseSend() {
@@ -1222,7 +1240,7 @@ api('bootstrap').then(function (j) {
 });
 loadChats().then(function () {
   if (INITIAL_CHAT_ID) { openChat(INITIAL_CHAT_ID); }
-  else if (new URLSearchParams(window.location.search).get('temp') === '1') { startTempChat(); }
+  else if (new URLSearchParams(window.location.search).get('temp') === '1') { startTempChat(true); }
   else { updateChatActions(); }
 });
 resize();
