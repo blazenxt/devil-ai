@@ -362,18 +362,20 @@ function updateProviderUI() {
   const pid = $('#sProvider').value;
   const p = PROVIDERS[pid] || {};
   const h = $('#sHelper');
-  if (pid === 'demo') {
-    h.innerHTML = '😈 Offline demo mode — works without any key (basic replies, jokes, calculator).';
+  const keyRow = $('#keyRow');
+  if (pid === 'prexzy') {
+    h.innerHTML = '✅ <b>No API key needed!</b> Free AI via prexzyapis.com — just hit Save. Docs: <a href="https://docs.prexzyapis.com/" target="_blank" rel="noopener">docs.prexzyapis.com ↗</a>';
     h.classList.remove('hidden');
-  } else if (pid === 'custom') {
-    h.innerHTML = 'Any OpenAI-compatible API — Base URL + Key + Model are required.';
+    keyRow.style.display = 'none';
+  } else if (pid === 'demo') {
+    h.innerHTML = '😈 Offline demo mode — basic replies, jokes, calculator. No key, no internet needed.';
     h.classList.remove('hidden');
+    keyRow.style.display = 'none';
   } else if (p.key_url) {
-    const isFree = (pid === 'gemini' || pid === 'groq' || pid === 'openrouter');
-    h.innerHTML = '🔑 Get a ' + (isFree ? 'FREE' : '') + ' key here: <a href="' + p.key_url + '" target="_blank" rel="noopener">' + p.key_url.replace('https://', '') + ' ↗</a>';
+    h.innerHTML = '🔑 Get a FREE key here: <a href="' + p.key_url + '" target="_blank" rel="noopener">' + p.key_url.replace('https://', '') + ' ↗</a> — best quality + full conversation memory.';
     h.classList.remove('hidden');
-  } else { h.classList.add('hidden'); }
-  $('#baseRow').style.display = (pid === 'custom') ? '' : 'none';
+    keyRow.style.display = '';
+  } else { h.classList.add('hidden'); keyRow.style.display = ''; }
   $('#sModel').placeholder = p.default_model || 'model-name';
 }
 

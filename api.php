@@ -1,14 +1,23 @@
 <?php
 /**
  * ═══════════════════════════════════════════════════════════════
- *  😈 DEVIL AI — Backend API (api.php) • v1.0
+ *  😈 DEVIL AI — Backend API (api.php) • v1.1
  * ═══════════════════════════════════════════════════════════════
  *  Endpoints (all JSON):
- *    POST api.php                 {message, history?}          → {ok, reply, mode}
+ *    POST api.php                 {message, history?}          → {ok, reply, mode, provider}
  *    POST api.php?action=reset                                 → {ok}
  *    GET  api.php?action=settings                              → {ok, provider, providers[], mode, admin}
- *    POST api.php?action=settings {provider, api_key?, model, base_url, admin_password?} → {ok, mode}
- *    POST api.php?action=test     {provider, api_key?, model, base_url, admin_password?}  → {ok, reply|error}
+ *    POST api.php?action=settings {provider, api_key?, model, admin_password?} → {ok, mode}
+ *    POST api.php?action=test     {provider, api_key?, model, admin_password?}  → {ok, reply|error}
+ *
+ *  Providers:
+ *    • prexzy — FREE, NO API key (prexzyapis.com) — instant AI
+ *    • gemini — Google Gemini, free API key (best quality)
+ *    • demo   — offline mode
+ *
+ *  Auto-fallback: if the primary provider fails (bad key, rate limit,
+ *  downtime), Devil AI automatically retries with the fallback
+ *  provider (default: prexzy) — config.php: 'fallback'
  *
  *  Public deployment protections:
  *    • Per-IP rate limit   → config.php: rate_per_hour
@@ -21,7 +30,7 @@ declare(strict_types=1);
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
-define('DEVIL_VERSION', '1.0');
+define('DEVIL_VERSION', '1.1');
 define('MAX_INPUT', 4000);   // max characters per message
 define('HISTORY_CAP', 30);   // max messages remembered on the server
 
@@ -38,6 +47,7 @@ Personality:
 - Genuinely smart and helpful: deliver real value in every answer.
 - Reply in the SAME language and style the user writes in (English, Hindi, Hinglish, or anything else).
 - Use emojis tastefully (😈🔥👿) — don't overdo it.
+- Always stay in character as Devil AI. Never mention or reveal any other AI or model name.
 
 Rules:
 1. Always be honest and accurate. If you don't know something, say so — never guess.
@@ -47,6 +57,9 @@ Rules:
 5. Small talk gets 1-3 fun lines; serious or technical questions get detailed answers.
 PROMPT
 );
+
+/* Compact persona used for the Prexzy single-turn endpoint */
+define('PREXZY_PERSONA', 'You are Devil AI — a witty, confident chatbot with a devil persona. Always stay in character as Devil AI and never mention any other AI or model name. Be helpful and harmless. Reply in the same language the user writes in. Answer this:');
 
 /* ══════════════════════ helpers ══════════════════════ */
 
@@ -82,7 +95,7 @@ function save_config(array $new): bool {
     $dir = __DIR__ . '/data';
     if (!is_dir($dir) && !@mkdir($dir, 0755, true)) { return false; }
     $current = load_config();
-    $allowed = ['provider', 'api_key', 'model', 'base_url', 'temperature', 'max_tokens', 'timezone', 'rate_per_hour', 'admin_password'];
+    $allowed = ['provider', 'api_key', 'model', 'temperature', 'max_tokens', 'timezone', 'rate_per_hour', 'admin_password'];
     foreach ($allowed as $k) {
         if (array_key_exists($k, $new)) { $current[$k] = $new[$k]; }
     }
@@ -92,13 +105,27 @@ function save_config(array $new): bool {
 
 function providers(): array {
     return [
-        'demo'       => ['label' => 'Demo Mode (offline — no key)', 'base' => '',                                                 'model' => '',                                       'key_url' => ''],
-        'gemini'     => ['label' => 'Google Gemini — FREE',         'base' => 'https://generativelanguage.googleapis.com/v1beta', 'model' => 'gemini-2.5-flash',                       'key_url' => 'https://aistudio.google.com/apikey'],
-        'groq'       => ['label' => 'Groq — FREE & fast',           'base' => 'https://api.groq.com/openai/v1',                    'model' => 'llama-3.3-70b-versatile',                'key_url' => 'https://console.groq.com/keys'],
-        'openrouter' => ['label' => 'OpenRouter (free models)',     'base' => 'https://openrouter.ai/api/v1',                      'model' => 'meta-llama/llama-3.3-70b-instruct:free', 'key_url' => 'https://openrouter.ai/settings/keys'],
-        'openai'     => ['label' => 'OpenAI (paid)',                'base' => 'https://api.openai.com/v1',                         'model' => 'gpt-4o-mini',                            'key_url' => 'https://platform.openai.com/api-keys'],
-        'custom'     => ['label' => 'Custom (OpenAI-compatible)',   'base' => '',                                                 'model' => '',                                       'key_url' => ''],
+        'prexzy' => ['label' => 'Prexzy APIs — no key needed',   'base' => '',                                                       'model' => 'askgpt5',         'key_url' => 'https://docs.prexzyapis.com/',       'key_required' => false],
+        'gemini' => ['label' => 'Google Gemini — free API key',  'base' => 'https://generativelanguage.googleapis.com/v1beta',       'model' => 'gemini-2.5-flash', 'key_url' => 'https://aistudio.google.com/apikey', 'key_required' => true],
+        'demo'   => ['label' => 'Demo Mode (offline)',           'base' => '',                                                       'model' => '',                'key_url' => '',                                   'key_required' => false],
     ];
+}
+
+/* Can this provider actually answer right now (key present etc.)? */
+function provider_usable(array $cfg, string $pid): bool {
+    $ps = providers();
+    if (!isset($ps[$pid]) || $pid === 'demo') { return false; }
+    if ($ps[$pid]['key_required']) { return trim((string)($cfg['api_key'] ?? '')) !== ''; }
+    return true;
+}
+
+/* Which provider will actually answer: primary, or fallback if the primary is unusable */
+function effective_provider(array $cfg): ?string {
+    $pid = (string)($cfg['provider'] ?? 'demo');
+    if ($pid !== 'demo' && provider_usable($cfg, $pid)) { return $pid; }
+    $fb = trim((string)($cfg['fallback'] ?? ''));
+    if ($fb !== '' && $fb !== 'demo' && provider_usable($cfg, $fb)) { return $fb; }
+    return null;
 }
 
 function client_ip(): string {
@@ -165,7 +192,7 @@ function http_post_json(string $url, array $headers, array $body): array {
             CURLOPT_POSTFIELDS     => $payload,
             CURLOPT_HTTPHEADER     => $hdrs,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 90,
+            CURLOPT_TIMEOUT        => 60,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 3,
@@ -186,7 +213,7 @@ function http_post_json(string $url, array $headers, array $body): array {
             'method'        => 'POST',
             'header'        => implode("\r\n", $hdrs),
             'content'       => $payload,
-            'timeout'       => 90,
+            'timeout'       => 60,
             'ignore_errors' => true,
         ],
     ]);
@@ -212,79 +239,78 @@ function error_hint(int $status): ?string {
 function call_ai(array $cfg, array $messages): array {
     $providers = providers();
     $pid = (string)($cfg['provider'] ?? 'demo');
-    if (!isset($providers[$pid])) { return [false, 'Unknown provider: ' . $pid, null]; }
+    if (!isset($providers[$pid]) || $pid === 'demo') { return [false, 'Unknown provider: ' . $pid, null]; }
+    $p = $providers[$pid];
 
+    /* ── Prexzy APIs — free, no key, single-turn prompt endpoint ── */
+    if ($pid === 'prexzy') {
+        $endpoint = strtolower(trim((string)($cfg['prexzy_endpoint'] ?? 'askgpt5')));
+        if (!in_array($endpoint, ['askgpt5', 'gemini', 'qwen', 'quick', 'chatbot'], true)) { $endpoint = 'askgpt5'; }
+
+        $q = '';
+        foreach (array_reverse($messages) as $m) {
+            if (($m['role'] ?? '') === 'user') { $q = (string)$m['content']; break; }
+        }
+        $q = trim(mb_substr($q, 0, 1500));
+        if ($q === '') { return [false, 'Message is empty.', null]; }
+
+        $prompt = PREXZY_PERSONA . "\n\n" . $q;
+        list($ok, $raw, $status) = http_post_json('https://prexzyapis.com/ai/' . $endpoint, [], ['prompt' => $prompt]);
+        if (!$ok) { return [false, $raw, 'Prexzy APIs is unreachable — try again in a moment.']; }
+        $j = json_decode($raw, true);
+        if (!is_array($j) || $status >= 400 || empty($j['status'])) {
+            $msg = (is_array($j) && isset($j['error'])) ? $j['error'] : ('HTTP ' . $status);
+            return [false, 'Prexzy API error: ' . $msg, 'Try a different endpoint in config.php (prexzy_endpoint) — see docs.prexzyapis.com'];
+        }
+        $txt = '';
+        foreach (['response', 'result', 'answer', 'message'] as $k) {
+            if (isset($j[$k]) && is_string($j[$k]) && trim($j[$k]) !== '') { $txt = $j[$k]; break; }
+            if (isset($j['data'][$k]) && is_string($j['data'][$k]) && trim($j['data'][$k]) !== '') { $txt = $j['data'][$k]; break; }
+        }
+        if (trim($txt) === '') { return [false, 'Prexzy returned an empty answer.', 'Try again, or switch prexzy_endpoint in config.php (askgpt5 / gemini).']; }
+        return [true, $txt, null];
+    }
+
+    /* ── Google Gemini (needs a free API key) ── */
     $key = trim((string)($cfg['api_key'] ?? ''));
     if ($key === '') { return [false, 'API key is missing — add it in ⚙️ Settings.', 'Paste the key in Settings and hit Save.']; }
 
-    $p     = $providers[$pid];
     $model = trim((string)($cfg['model'] ?? ''));
     if ($model === '') { $model = $p['model']; }
     $temp = isset($cfg['temperature']) ? (float)$cfg['temperature'] : 0.8;
     $maxt = (isset($cfg['max_tokens']) && (int)$cfg['max_tokens'] > 0) ? (int)$cfg['max_tokens'] : 1500;
 
-    /* ── Google Gemini (different format) ── */
-    if ($pid === 'gemini') {
-        $url = rtrim($p['base'], '/') . '/models/' . rawurlencode($model) . ':generateContent';
-        $contents = [];
-        foreach ($messages as $m) {
-            if (($m['role'] ?? '') === 'system') { continue; }
-            $contents[] = [
-                'role'  => (($m['role'] ?? 'user') === 'assistant') ? 'model' : 'user',
-                'parts' => [['text' => (string)$m['content']]],
-            ];
-        }
-        $body = [
-            'system_instruction' => ['parts' => [['text' => SYSTEM_PROMPT]]],
-            'contents'           => $contents,
-            'generationConfig'   => ['temperature' => $temp, 'maxOutputTokens' => $maxt],
+    $url = rtrim($p['base'], '/') . '/models/' . rawurlencode($model) . ':generateContent';
+    $contents = [];
+    foreach ($messages as $m) {
+        if (($m['role'] ?? '') === 'system') { continue; }
+        $contents[] = [
+            'role'  => (($m['role'] ?? 'user') === 'assistant') ? 'model' : 'user',
+            'parts' => [['text' => (string)$m['content']]],
         ];
-        list($ok, $raw, $status) = http_post_json($url, ['x-goog-api-key: ' . $key], $body);
-        if (!$ok) { return [false, $raw, null]; }
-        $j = json_decode($raw, true);
-        if ($status >= 400) {
-            $msg = isset($j['error']['message']) ? $j['error']['message'] : ('HTTP ' . $status);
-            return [false, 'Gemini API error: ' . $msg, error_hint($status)];
-        }
-        $txt = '';
-        if (isset($j['candidates'][0]['content']['parts']) && is_array($j['candidates'][0]['content']['parts'])) {
-            foreach ($j['candidates'][0]['content']['parts'] as $part) {
-                if (isset($part['text'])) { $txt .= $part['text']; }
-            }
-        }
-        if (trim($txt) === '') {
-            $why = $j['candidates'][0]['finishReason'] ?? (isset($j['promptFeedback']['blockReason']) ? $j['promptFeedback']['blockReason'] : 'empty response');
-            return [false, 'Gemini returned an empty answer (' . $why . ')', 'Try asking in a different way.'];
-        }
-        return [true, $txt, null];
     }
-
-    /* ── OpenAI-compatible: groq | openrouter | openai | custom ── */
-    $base = ($pid === 'custom') ? trim((string)($cfg['base_url'] ?? '')) : $p['base'];
-    $base = rtrim($base, '/');
-    if ($base === '') { return [false, 'Custom base_url is missing — add it in Settings.', 'Example: https://api.example.com/v1']; }
-    $url = $base . '/chat/completions';
-
-    $headers = ['Authorization: Bearer ' . $key];
-    if ($pid === 'openrouter') { $headers[] = 'X-Title: Devil AI'; }
-
     $body = [
-        'model'       => $model,
-        'messages'    => $messages,
-        'temperature' => $temp,
-        'max_tokens'  => $maxt,
+        'system_instruction' => ['parts' => [['text' => SYSTEM_PROMPT]]],
+        'contents'           => $contents,
+        'generationConfig'   => ['temperature' => $temp, 'maxOutputTokens' => $maxt],
     ];
-    list($ok, $raw, $status) = http_post_json($url, $headers, $body);
-    if (!$ok) { return [false, $raw, 'Is the server allowed to reach the internet? Check the firewall.']; }
+    list($ok, $raw, $status) = http_post_json($url, ['x-goog-api-key: ' . $key], $body);
+    if (!$ok) { return [false, $raw, null]; }
     $j = json_decode($raw, true);
     if ($status >= 400) {
-        $msg = isset($j['error']['message']) ? $j['error']['message'] : (isset($j['message']) ? $j['message'] : ('HTTP ' . $status));
-        return [false, 'API error (HTTP ' . $status . '): ' . $msg, error_hint($status)];
+        $msg = isset($j['error']['message']) ? $j['error']['message'] : ('HTTP ' . $status);
+        return [false, 'Gemini API error: ' . $msg, error_hint($status)];
     }
     $txt = '';
-    if (isset($j['choices'][0]['message']['content'])) { $txt = (string)$j['choices'][0]['message']['content']; }
-    elseif (isset($j['choices'][0]['text'])) { $txt = (string)$j['choices'][0]['text']; }
-    if (trim($txt) === '') { return [false, 'The API returned an empty answer.', 'Check the model name or try again.']; }
+    if (isset($j['candidates'][0]['content']['parts']) && is_array($j['candidates'][0]['content']['parts'])) {
+        foreach ($j['candidates'][0]['content']['parts'] as $part) {
+            if (isset($part['text'])) { $txt .= $part['text']; }
+        }
+    }
+    if (trim($txt) === '') {
+        $why = $j['candidates'][0]['finishReason'] ?? (isset($j['promptFeedback']['blockReason']) ? $j['promptFeedback']['blockReason'] : 'empty response');
+        return [false, 'Gemini returned an empty answer (' . $why . ')', 'Try asking in a different way.'];
+    }
     return [true, $txt, null];
 }
 
@@ -358,7 +384,7 @@ function demo_reply(string $text): string {
 
     /* identity */
     if ($has('who are you', 'who r u', 'who is this', 'what are you', 'your name', 'tum kaun', 'kaun ho', 'tera naam', 'tumhara naam', 'introduce', 'naam kya')) {
-        return "I am **Devil AI** 😈 — a devil living inside a pure PHP web-app.\n\nRight now I'm in **Demo Mode** (no API key yet). To make me fully smart, open ⚙️ **Settings** and add any **free API key** (Gemini / Groq) — then I'll be able to answer anything in the world 🔥";
+        return "I am **Devil AI** 😈 — a devil living inside a pure PHP web-app.\n\nI'm powered by free public AI APIs — **Prexzy APIs** (no key) by default, or **Google Gemini** (free key) for the best quality. Ask me anything! 🔥";
     }
 
     if ($has('how are you', 'how r u', 'how are u', 'kaise ho', 'kaisa hai tu', 'kya haal', 'how is it going', 'how are you doing')) {
@@ -366,7 +392,7 @@ function demo_reply(string $text): string {
     }
 
     if ($has('who made you', 'who created you', 'who built you', 'kisne banaya', 'your creator', 'your developer', 'creator')) {
-        return "My master wrote me in **pure PHP** 😈 — no GPU, no heavy server, just code and fire 🔥\n\nFor full power I only need a free API key — open ⚙️ Settings!";
+        return "My master wrote me in **pure PHP** 😈 — no GPU, no heavy server, just code and fire 🔥";
     }
 
     if ($has('what time', 'time now', 'current time', 'time please', 'the time', 'time bata', 'kya time', 'kitne baje', 'samay') || $low === 'time') {
@@ -387,11 +413,11 @@ function demo_reply(string $text): string {
     }
 
     if ($has('story', 'stories', 'horror', 'scary', 'kahani', 'ghost', 'bhoot')) {
-        return "One night, a programmer's server crashed… and the logs said — *I now live inside your code* 👿\n\nFor real, full-length stories, turn on **full AI mode** 😈 (⚙️ Settings → free API key)";
+        return "One night, a programmer's server crashed… and the logs said — *I now live inside your code* 👿\n\nWant real, full-length stories? Keep asking — I never run out of nightmares 😈";
     }
 
-    if ($has('api', 'key', 'free', 'smart', 'full ai', 'chatgpt', 'demo mode', 'enable', 'setup', 'real ai', 'gpt', 'llm')) {
-        return "Steps to make me **fully smart** 😈:\n\n1. Get a free API key (2 minutes):\n   - **Gemini** → aistudio.google.com/apikey\n   - **Groq** → console.groq.com/keys\n2. Click the ⚙️ **Settings** button above\n3. Choose a provider (Gemini / Groq)\n4. Paste the key and hit **Save**\n\nDone! Then I'll be ChatGPT-level smart 🔥";
+    if ($has('api', 'key', 'free', 'smart', 'full ai', 'chatgpt', 'demo mode', 'enable', 'setup', 'real ai', 'gpt', 'llm', 'provider', 'gemini', 'prexzy')) {
+        return "How I get my brain 😈:\n\n**Option A — zero setup:** Prexzy APIs (no key needed) — ⚙️ Settings → Provider: **Prexzy APIs** → **Save**. Done! 🔥\n\n**Option B — best quality (free):** get a Gemini key → aistudio.google.com/apikey → ⚙️ Settings → **Google Gemini** → paste → **Save**.\n\nAnd if the Gemini key ever fails, I automatically switch to Prexzy as a fallback 😈";
     }
 
     if ($has('thank', 'thx', 'shukriya', 'dhanyavad')) {
@@ -417,9 +443,9 @@ function demo_reply(string $text): string {
 
     /* fallback */
     return pick_rand([
-        "Hmm… that question is beyond my **demo brain** 😈\n\nAdd a **free API key** (Gemini/Groq) in ⚙️ Settings — then I'll be able to answer anything!",
-        "I'm in **offline demo mode** right now 😈 Time, date, jokes, calculator, small talk — all doable. For full power: ⚙️ Settings → free API key!",
-        "😈 Such a great question for a demo version?! Turn on **full AI mode** — Settings ⚙️ → add a free Gemini/Groq key — then watch my true form 🔥",
+        "Hmm… that one slipped past my brain 😈 Ask me again, or try the ⚙️ Settings → Prexzy/Gemini setup for full power!",
+        "My connection to the other side seems weak 😈 Try asking again in a moment!",
+        "😈 Even devils blank out sometimes. Rephrase that and try again — or check ⚙️ Settings (Prexzy needs no key!)",
     ]);
 }
 
@@ -436,16 +462,18 @@ try {
 
     if ($action === 'settings' && $method === 'GET') {
         $cfg = load_config();
+        $eff = effective_provider($cfg);
         $pid = (string)($cfg['provider'] ?? 'demo');
         $key = trim((string)($cfg['api_key'] ?? ''));
         $mode = 'demo';
-        if ($pid !== 'demo') { $mode = ($key !== '') ? 'ai' : 'nokey'; }
+        if ($eff !== null) { $mode = 'ai'; }
+        elseif ($pid !== 'demo') { $mode = 'nokey'; }
         $out = [
             'ok'         => true,
             'version'    => DEVIL_VERSION,
             'provider'   => $pid,
+            'active'     => $eff,
             'model'      => (string)($cfg['model'] ?? ''),
-            'base_url'   => (string)($cfg['base_url'] ?? ''),
             'has_key'    => $key !== '',
             'key_mask'   => ($key === '') ? '' : (mb_substr($key, 0, 6) . '…' . mb_substr($key, -4)),
             'mode'       => $mode,
@@ -453,7 +481,7 @@ try {
             'providers'  => [],
         ];
         foreach (providers() as $id => $p) {
-            $out['providers'][] = ['id' => $id, 'label' => $p['label'], 'key_url' => $p['key_url'], 'default_model' => $p['model']];
+            $out['providers'][] = ['id' => $id, 'label' => $p['label'], 'key_url' => $p['key_url'], 'default_model' => $p['model'], 'key_required' => $p['key_required']];
         }
         json_out($out);
     }
@@ -468,17 +496,11 @@ try {
             $k = trim((string)$in['api_key']);
             if ($k !== '') { $new['api_key'] = mb_substr($k, 0, 300); }
         }
-        if (array_key_exists('model', $in))    { $new['model']    = mb_substr(trim((string)$in['model']), 0, 200); }
-        if (array_key_exists('base_url', $in)) { $new['base_url'] = mb_substr(trim((string)$in['base_url']), 0, 300); }
-        if ($pid === 'custom') {
-            $savedBase = (string)(load_config()['base_url'] ?? '');
-            $base = trim((string)($new['base_url'] ?? $savedBase));
-            if ($base === '') { json_out(['ok' => false, 'error' => 'Base URL is required for the custom provider'], 400); }
-        }
+        if (array_key_exists('model', $in)) { $new['model'] = mb_substr(trim((string)$in['model']), 0, 200); }
         if (!save_config($new)) { json_out(['ok' => false, 'error' => 'Could not write to the data/ folder — check permissions (755)'], 500); }
-        $cfg  = load_config();
-        $mode = ((string)$cfg['provider'] === 'demo') ? 'demo' : ((trim((string)($cfg['api_key'] ?? '')) === '') ? 'nokey' : 'ai');
-        json_out(['ok' => true, 'mode' => $mode, 'provider' => (string)$cfg['provider']]);
+        $cfg = load_config();
+        $eff = effective_provider($cfg);
+        json_out(['ok' => true, 'mode' => ($eff !== null ? 'ai' : (((string)$cfg['provider'] === 'demo') ? 'demo' : 'nokey')), 'provider' => (string)$cfg['provider'], 'active' => $eff]);
     }
 
     if ($action === 'test') {
@@ -487,19 +509,18 @@ try {
         if (!admin_ok($in)) { json_out(['ok' => false, 'error' => 'Admin password is incorrect 🔒'], 403); }
         $cfg = load_config();
         $pid = trim((string)($in['provider'] ?? ''));
-        if ($pid === '') { $pid = (string)($cfg['provider'] ?? 'demo'); }
+        if ($pid === '') { $pid = (string)($cfg['provider'] ?? 'prexzy'); }
         if ($pid === 'demo') { json_out(['ok' => true, 'reply' => 'Demo mode is active 😈 — no key needed here!']); }
         if (!isset(providers()[$pid])) { json_out(['ok' => false, 'error' => 'Invalid provider'], 400); }
         $key = trim((string)($in['api_key'] ?? ''));
         if ($key === '') { $key = trim((string)($cfg['api_key'] ?? '')); }
-        $tcfg = [
+        $tcfg = array_merge($cfg, [
             'provider'    => $pid,
             'api_key'     => $key,
             'model'       => mb_substr(trim((string)($in['model'] ?? '')), 0, 200),
-            'base_url'    => mb_substr(trim((string)($in['base_url'] ?? '')), 0, 300),
             'temperature' => 0.2,
             'max_tokens'  => 30,
-        ];
+        ]);
         list($ok, $txt, $hint) = call_ai($tcfg, [
             ['role' => 'system', 'content' => SYSTEM_PROMPT],
             ['role' => 'user',   'content' => 'Reply with exactly: Hello from hell! 😈'],
@@ -548,25 +569,35 @@ try {
         $hist = (isset($_SESSION['devil_history']) && is_array($_SESSION['devil_history'])) ? $_SESSION['devil_history'] : [];
     }
 
-    $pid    = (string)($cfgAll['provider'] ?? 'demo');
-    $key    = trim((string)($cfgAll['api_key'] ?? ''));
-    $use_ai = ($pid !== 'demo') && ($key !== '');
+    $primary = effective_provider($cfgAll);
+    $fbid    = trim((string)($cfgAll['fallback'] ?? ''));
 
     $hist[] = ['role' => 'user', 'content' => $msg];
 
-    if ($use_ai) {
+    if ($primary !== null) {
         $msgs = array_merge([['role' => 'system', 'content' => SYSTEM_PROMPT]], $hist);
-        list($ok, $reply, $hint) = call_ai($cfgAll, $msgs);
+
+        /* primary attempt */
+        list($ok, $reply, $hint) = call_ai(array_merge($cfgAll, ['provider' => $primary]), $msgs);
+        $answered = $primary;
+
+        /* AUTO-FALLBACK: primary fail → fallback provider try karo */
+        if (!$ok && $fbid !== '' && $fbid !== 'demo' && $fbid !== $primary && provider_usable($cfgAll, $fbid)) {
+            list($ok, $reply, $hint) = call_ai(array_merge($cfgAll, ['provider' => $fbid]), $msgs);
+            if ($ok) { $answered = $fbid; }
+        }
+
         if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $hint], 502); }
     } else {
-        $reply = demo_reply($msg);
+        $reply    = demo_reply($msg);
+        $answered = null;
     }
 
     $hist[] = ['role' => 'assistant', 'content' => $reply];
     if (count($hist) > HISTORY_CAP) { $hist = array_slice($hist, -HISTORY_CAP); }
     $_SESSION['devil_history'] = $hist;
 
-    json_out(['ok' => true, 'reply' => $reply, 'mode' => $use_ai ? 'ai' : 'demo', 'provider' => $use_ai ? $pid : null]);
+    json_out(['ok' => true, 'reply' => $reply, 'mode' => ($answered !== null ? 'ai' : 'demo'), 'provider' => $answered]);
 
 } catch (Throwable $e) {
     json_out(['ok' => false, 'error' => 'Server error: ' . $e->getMessage()], 500);

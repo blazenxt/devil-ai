@@ -1,9 +1,9 @@
 <?php
 /**
  * ═══════════════════════════════════════════════════════
- *  😈 DEVIL AI — Configuration (config.php)
+ *  😈 DEVIL AI — Configuration (config.php) • v1.1
  * ═══════════════════════════════════════════════════════
- *  You can also change everything from the in-app ⚙️ Settings
+ *  You can also change providers from the in-app ⚙️ Settings
  *  panel — it saves to data/config.json and overrides this
  *  file (so you never have to edit code by hand).
  *
@@ -14,27 +14,30 @@
 
 return [
 
-    // 'gemini'     (FREE — Google) → key: aistudio.google.com/apikey
-    // 'groq'       (FREE — fast)   → key: console.groq.com/keys
-    // 'openrouter' (free models)   → key: openrouter.ai/settings/keys
-    // 'openai'     (paid)
-    // 'custom'     (any OpenAI-compatible API — base_url required)
-    // 'demo'       (offline, no key needed)
-    'provider' => 'gemini',
+    // 'prexzy' — FREE, NO API KEY (prexzyapis.com) ← default, zero setup
+    // 'gemini' — Google Gemini, free key → aistudio.google.com/apikey (best quality)
+    // 'demo'   — offline mode (basic replies only)
+    'provider' => 'prexzy',
 
-    // Paste your API key here (or use the ⚙️ Settings panel).
-    // Until a key is added, the app runs in Demo Mode.
+    // Gemini API key (only needed if provider = gemini).
+    // Prexzy works without any key!
     'api_key' => '',
 
-    // Model — leave empty to use the provider default.
-    //   gemini:      gemini-2.5-flash  |  gemini-2.5-flash-lite
-    //   groq:        llama-3.3-70b-versatile  |  llama-3.1-8b-instant
-    //   openai:      gpt-4o-mini
-    //   openrouter:  meta-llama/llama-3.3-70b-instruct:free
+    // Gemini model — leave empty for default.
+    //   gemini-2.5-flash  (default, best balance)
+    //   gemini-2.5-flash-lite  (faster, higher free limits)
     'model' => '',
 
-    // Only for the 'custom' provider — e.g. https://api.example.com/v1
-    'base_url' => '',
+    // Prexzy endpoint (only for provider = prexzy):
+    //   askgpt5  (default — Qwen 3.5 397B, strong)
+    //   gemini   (Google Gemini via Prexzy)
+    //   qwen
+    'prexzy_endpoint' => 'askgpt5',
+
+    // AUTO-FALLBACK: if the primary provider fails (bad key,
+    // rate limit, downtime), Devil AI automatically retries
+    // with this provider. Set '' to disable.
+    'fallback' => 'prexzy',
 
     /* ═══════ PUBLIC DEPLOYMENT ═══════ */
 
@@ -43,7 +46,7 @@ return [
     // (empty = settings open — fine for local testing only)
     'admin_password' => '',
 
-    // Max messages per user (per IP) per hour — protects your free quota
+    // Max messages per user (per IP) per hour — protects your quota
     'rate_per_hour' => 40,
 
     /* ═══════ FINE TUNING ═══════ */
@@ -52,8 +55,9 @@ return [
     'timezone' => 'Asia/Kolkata',
 
     // Personality heat — 0.0 = plain, 0.8 = perfect, 1.2+ = crazy 😈
+    // (Gemini only — Prexzy manages this itself)
     'temperature' => 0.8,
 
-    // Max length of one answer
+    // Max length of one answer (Gemini only)
     'max_tokens' => 1500,
 ];
