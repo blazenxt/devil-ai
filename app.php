@@ -492,6 +492,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 const I = <?= json_encode($JS_ICONS, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ME = <?= json_encode(['name' => $me['name'], 'email' => $me['email']], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const INITIAL_CHAT_ID = <?= json_encode(preg_match('/^c[a-f0-9]{16}$/', (string)($_GET['chat'] ?? '')) ? (string)$_GET['chat'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const INITIAL_VARIANT = <?= json_encode((preg_match('/^c[a-f0-9]{16}$/', (string)($_GET['variant'] ?? '')) || (string)($_GET['variant'] ?? '') === 'original') ? (string)$_GET['variant'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 (function () {
 'use strict';
 var $ = function (s) { return document.querySelector(s); };
@@ -544,6 +545,23 @@ function providerIcon(key) {
 function activeModelLabel() {
   if (currentModel === 'custom') { return (customById[currentCustom] || {}).label || 'Custom AI'; }
   return (modelById[currentModel] || {}).label || 'Devil AI';
+}
+function rootChatId() {
+  return currentChat ? (currentChat.root_id || currentChat.id || '') : '';
+}
+function activeVariantId() {
+  if (!currentChat) { return ''; }
+  return currentChat.active_variant || currentChat.variant_chat_id || rootChatId();
+}
+function chatUrlFor(rootId, variantId) {
+  var u = 'app.php?chat=' + encodeURIComponent(rootId);
+  if (variantId && variantId !== rootId && variantId !== 'original') { u += '&variant=' + encodeURIComponent(variantId); }
+  return u;
+}
+function replaceChatUrl() {
+  var root = rootChatId();
+  if (!window.history || !root) { return; }
+  history.replaceState(null, '', chatUrlFor(root, activeVariantId()));
 }
 
 /* ── markdown (escape-first, XSS safe) ── */
@@ -694,7 +712,7 @@ function beginEdit(index, text, el) {
   form.appendChild(ta); form.appendChild(row);
   var acts = msgEl.querySelector('.acts');
   msgEl.insertBefore(form, acts || null);
-  inlineEdit = { chatId: currentChat.id, index: index, original: text || '', el: msgEl, form: form, textarea: ta };
+  inlineEdit = { chatId: rootChatId(), variant: activeVariantId(), index: index, original: text || '', el: msgEl, form: form, textarea: ta };
   cancel.addEventListener('click', function () { cancelInlineEdit(true); });
   save.addEventListener('click', submitInlineEdit);
   ta.addEventListener('input', function () { autoGrowTextarea(ta); });
@@ -734,7 +752,7 @@ function submitInlineEdit() {
   resize();
   toast('Regenerating from edited message…', 'pencil');
   var th = addThinking();
-  api('chat_edit', { id: state.chatId, message_index: state.index, message: text }, undefined, activeController ? activeController.signal : null).then(function (j) {
+  api('chat_edit', { id: state.chatId, variant: state.variant, message_index: state.index, message: text }, undefined, activeController ? activeController.signal : null).then(function (j) {
     if (seq !== sendSeq) { return; }
     th.remove();
     if (j.aborted) { toast('Edit paused', 'stop'); renderCurrentMessages(); return; }
@@ -744,7 +762,7 @@ function submitInlineEdit() {
       currentChat = j.chat;
       currentChat.temp = false;
       currentChat.branch_groups = j.branch_groups || currentChat.branch_groups || {};
-      if (window.history && currentChat.id) { history.replaceState(null, '', 'app.php?chat=' + encodeURIComponent(currentChat.id)); }
+      replaceChatUrl();
       renderCurrentMessages();
       loadChats();
       updateChatActions();
@@ -853,8 +871,9 @@ function branchGroupFor(index) {
   return currentChat.branch_groups[String(index)] || currentChat.branch_groups[index] || null;
 }
 function activeVariantIndex(variants) {
-  var id = currentChat && currentChat.id;
-  var n = variants.findIndex(function (v) { return v && v.id === id; });
+  var id = activeVariantId();
+  var root = rootChatId();
+  var n = variants.findIndex(function (v) { return v && (v.id === id || (id === root && v.id === root)); });
   return n < 0 ? 0 : n;
 }
 function makeBranchNav(index, group) {
@@ -881,16 +900,18 @@ function makeBranchNav(index, group) {
   return wrap;
 }
 function switchBranchVariant(id, index) {
-  if (!id || (currentChat && currentChat.id === id)) { return; }
+  var root = rootChatId();
+  if (!id || !root || activeVariantId() === id) { return; }
   if (busy) { toast('Pause the response before switching versions', 'warning'); return; }
   cancelInlineEdit(false);
-  api('chat_load&id=' + encodeURIComponent(id)).then(function (j) {
+  var variant = (id === root) ? 'original' : id;
+  api('chat_load&id=' + encodeURIComponent(root) + '&variant=' + encodeURIComponent(variant)).then(function (j) {
     if (!j.ok) { toast(j.error || 'Could not open that version', 'warning'); return; }
     isTempChat = false;
     currentChat = j.chat;
     currentChat.temp = false;
     currentChat.branch_groups = j.branch_groups || currentChat.branch_groups || {};
-    if (window.history && currentChat.id) { history.replaceState(null, '', 'app.php?chat=' + encodeURIComponent(currentChat.id)); }
+    replaceChatUrl();
     renderCurrentMessages();
     renderList($('#searchInp').value);
     updateChatActions();
@@ -1287,7 +1308,8 @@ function send() {
   inp.value = ''; pendingImg = null; imgChip.classList.remove('show'); imgChip.innerHTML = '';
   resize();
   addUserMsg(text, img);
-  var payload = { message: text, model: currentModel, id: (currentChat && !isTempChat) ? currentChat.id : null };
+  var payload = { message: text, model: currentModel, id: (currentChat && !isTempChat) ? rootChatId() : null };
+  if (currentChat && !isTempChat) { payload.variant = activeVariantId(); }
   if (isTempChat) { payload.temp = true; payload.history = compactHistoryForTemp(); }
   if (currentModel === 'custom') { payload.custom_model = currentCustom; }
   if (img) { payload.image = img; }
@@ -1301,7 +1323,7 @@ function retryLast() {
   /* drop last assistant message visually + in memory */
   m.pop();
   if (msgs.lastElementChild && msgs.lastElementChild.classList.contains('msg-ai')) { msgs.lastElementChild.remove(); }
-  var payload = { id: isTempChat ? null : currentChat.id, retry: true, model: currentModel, custom_model: currentModel === 'custom' ? currentCustom : undefined };
+  var payload = { id: isTempChat ? null : rootChatId(), variant: isTempChat ? '' : activeVariantId(), retry: true, model: currentModel, custom_model: currentModel === 'custom' ? currentCustom : undefined };
   if (isTempChat) { payload.temp = true; payload.history = compactHistoryForTemp(); }
   runSend(payload);
 }
@@ -1322,8 +1344,10 @@ function runSend(payload) {
       isTempChat = !!(payload.temp || j.temp || currentChat.temp);
       currentChat.temp = isTempChat;
       currentChat.id = isTempChat ? null : j.id;
+      currentChat.root_id = isTempChat ? null : (j.id || currentChat.root_id || currentChat.id);
+      if (!isTempChat) { currentChat.active_variant = j.variant || currentChat.active_variant || currentChat.root_id; currentChat.variant_chat_id = j.variant || currentChat.variant_chat_id || ''; }
       currentChat.title = isTempChat ? 'Temporary chat' : j.title;
-      if (window.history && currentChat.id) { history.replaceState(null, '', 'app.php?chat=' + encodeURIComponent(currentChat.id)); }
+      if (!isTempChat) { replaceChatUrl(); }
       if (payload.retry) {
         /* keep existing user msg, replace assistant */
       } else {
@@ -1351,15 +1375,18 @@ function runSend(payload) {
 }
 
 /* ── open / delete / rename chats ── */
-function openChat(id) {
+function openChat(id, variant) {
   if (busy) { return; }
   clearEdit();
-  api('chat_load&id=' + encodeURIComponent(id)).then(function (j) {
+  var q = 'chat_load&id=' + encodeURIComponent(id);
+  if (variant) { q += '&variant=' + encodeURIComponent(variant); }
+  api(q).then(function (j) {
     if (!j.ok) { toast(j.error || 'Could not open chat', 'warning'); return; }
     isTempChat = false;
     currentChat = j.chat;
     currentChat.temp = false;
     currentChat.branch_groups = j.branch_groups || currentChat.branch_groups || {};
+    replaceChatUrl();
     renderCurrentMessages();
     renderList($('#searchInp').value);
     updateChatActions();
@@ -1563,7 +1590,7 @@ api('bootstrap').then(function (j) {
   renderCustomModelMenu('');
 });
 loadChats().then(function () {
-  if (INITIAL_CHAT_ID) { openChat(INITIAL_CHAT_ID); }
+  if (INITIAL_CHAT_ID) { openChat(INITIAL_CHAT_ID, INITIAL_VARIANT); }
   else if (new URLSearchParams(window.location.search).get('temp') === '1') { startTempChat(true); }
   else { updateChatActions(); }
 });
