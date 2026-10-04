@@ -122,13 +122,13 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
   <ul>
     <li>There are no account passwords at all — sign-in works via one-time email codes, so there is nothing to leak.</li>
     <li>Your chats are stored on this server, isolated per account, and can be deleted by you at any time from the app.</li>
-    <li>To request deletion of your entire account, use the delete option in the app or contact the site owner.</li>
+    <li>To request deletion of your entire account, use the delete option in the app or contact BlazeNXT.</li>
   </ul>
 
   <h2><span class="num">6</span>Changes to this policy</h2>
   <p>If we ever change how cookies are used, we will update this page and the banner will ask for your choices again.</p>
 
-  <p style="margin-top:44px">Questions? The owner of this server is the data controller — reach out directly.</p>
+  <p style="margin-top:44px">Questions? BlazeNXT is the data controller for this service — visit <a href="https://www.blazenxt.in" target="_blank" rel="noopener">www.blazenxt.in</a>.</p>
 </main>
 
 <script>

@@ -191,7 +191,7 @@ a{text-decoration:none;color:inherit}button,input{font:inherit}button{cursor:poi
 
     <section class="card">
       <h2><?= icon('flame', 18) ?> About Devil AI</h2>
-      <p class="dev">Developed by: <a href="https://www.blazenxt.in" target="_blank" rel="noopener">BlazeNXT</a><br>Devil AI runs as a private PHP app with separate pages for chat, settings, admin, login, and policies.</p>
+      <p class="dev">Developed by: <a href="https://www.blazenxt.in" target="_blank" rel="noopener">BlazeNXT</a><br>Devil AI uses a clean multi-page experience for chat, settings, admin, login, and policies.</p>
     </section>
   </main>
 </div>

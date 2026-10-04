@@ -190,7 +190,7 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:18
   </div>
 </main>
 
-<div class="foot">Devil AI v1.0.0.0 • 100% PHP</div>
+<div class="foot">Devil AI v1.0.0.0 • Developed by BlazeNXT</div>
 
 <script>
 (function () {

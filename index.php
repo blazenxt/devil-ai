@@ -179,9 +179,9 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
 </nav>
 
 <header class="hero wrap">
-  <span class="pill"><?= icon('flame', 14) ?> Custom-built • Private server • v1.0.0.0</span>
+  <span class="pill"><?= icon('flame', 14) ?> Custom-built • Privacy-first • v1.0.0.0</span>
   <h1>Meet Devil AI.<br>Sinfully smart.</h1>
-  <p class="sub">A one-of-a-kind AI assistant, hand-built and running on a private server. Real answers, real privacy, zero tracking by default.</p>
+  <p class="sub">A one-of-a-kind AI assistant developed by BlazeNXT. Real answers, real privacy, zero tracking by default.</p>
   <div class="cta">
     <a class="btn primary big" href="<?= $me ? 'app.php' : 'login.php' ?>"><?= icon('message', 17) ?> Start chatting</a>
     <a class="btn ghost big" href="#features">See what's inside</a>
@@ -212,7 +212,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
     <div class="sec-head">
       <div class="kicker">Features</div>
       <h2>Everything a serious assistant needs</h2>
-      <p>Built from scratch in pure PHP — no bloat, no middlemen, no surprises.</p>
+      <p>Built from scratch for speed, privacy and a clean multi-page experience — no bloat, no middlemen, no surprises.</p>
     </div>
     <div class="grid">
       <div class="card"><div class="ic"><?= icon('users', 20) ?></div><h3>Private accounts</h3><p>Sign in with just your email — a one-time code or magic link, no passwords to remember or leak. Your chats stay isolated.</p></div>
@@ -220,7 +220,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
       <div class="card"><div class="ic"><?= icon('layers', 20) ?></div><h3>Multiple models</h3><p>Switch between Devil Flash, Pro and Ultra mid-conversation. Pick the right brain for every task — from quick questions to deep work.</p></div>
       <div class="card"><div class="ic"><?= icon('cookie', 20) ?></div><h3>Cookie-first privacy</h3><p>Analytics and personalization are opt-in, never default. Accept all or fine-tune every category — your choice is remembered and respected.</p></div>
       <div class="card"><div class="ic"><?= icon('shield-check', 20) ?></div><h3>Hardened by default</h3><p>Passwordless sign-in, brute-force protection, per-account rate limits and server-side isolation. Security is not an afterthought.</p></div>
-      <div class="card"><div class="ic"><?= icon('server', 20) ?></div><h3>Self-hosted &amp; lean</h3><p>100% PHP on a private server. No third-party scripts, no ads, no data brokers — just you and your devilishly good assistant.</p></div>
+      <div class="card"><div class="ic"><?= icon('server', 20) ?></div><h3>Privacy-first &amp; lean</h3><p>No third-party scripts, no ads, no data brokers — just you and your devilishly good assistant.</p></div>
     </div>
   </div>
 </section>
@@ -269,7 +269,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
       </div>
     </div>
     <div class="fcopy">
-      <span>Devil AI v1.0.0.0 • 100% PHP</span>
+      <span>Devil AI v1.0.0.0</span>
       <span>Developed by <a href="https://www.blazenxt.in" target="_blank" rel="noopener">BlazeNXT</a></span>
     </div>
   </div>
