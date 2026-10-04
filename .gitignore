@@ -6,3 +6,5 @@ data/users.json
 data/chats/
 
 data/sessions/
+data/feedback.json
+data/shares/

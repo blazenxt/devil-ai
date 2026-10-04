@@ -1028,6 +1028,34 @@ function list_chats(string $uid): array {
     return $out;
 }
 
+function shares_dir(): string { return data_dir() . '/shares'; }
+function share_path(string $sid): string { return shares_dir() . '/' . $sid . '.json'; }
+function feedback_path(): string { return data_dir() . '/feedback.json'; }
+
+function public_chat_payload(array $chat, array $user): array {
+    $messages = [];
+    foreach (($chat['messages'] ?? []) as $m) {
+        if (!is_array($m)) { continue; }
+        $role = (string)($m['role'] ?? '');
+        if ($role !== 'user' && $role !== 'assistant') { continue; }
+        $one = [
+            'role' => $role,
+            'content' => (string)($m['content'] ?? ''),
+            'ts' => (int)($m['ts'] ?? 0),
+        ];
+        if (!empty($m['img']) && is_string($m['img'])) { $one['img'] = (string)$m['img']; }
+        if ($role === 'assistant' && !empty($m['model_label'])) { $one['model_label'] = (string)$m['model_label']; }
+        $messages[] = $one;
+    }
+    return [
+        'title' => (string)($chat['title'] ?? 'Shared chat'),
+        'created' => time(),
+        'source_chat' => (string)($chat['id'] ?? ''),
+        'shared_by' => ['name' => (string)($user['name'] ?? 'Devil user')],
+        'messages' => $messages,
+    ];
+}
+
 function rrmdir(string $dir): void {
     if (!is_dir($dir)) { return; }
     foreach (scandir($dir) ?: [] as $f) {
@@ -1221,7 +1249,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_delete', 'chat_rename', 'account_delete'], true)) {
+    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -1270,6 +1298,131 @@ try {
         $chat['title'] = $title;
         save_chat($uid, $chat);
         json_out(['ok' => true]);
+    }
+
+    if ($action === 'feedback' && $method === 'POST') {
+        $in = input_json();
+        $rating = strtolower(trim((string)($in['rating'] ?? '')));
+        if (!in_array($rating, ['good', 'bad'], true)) { json_out(['ok' => false, 'error' => 'Invalid feedback.'], 400); }
+        $content = trim((string)($in['content'] ?? ''));
+        if ($content === '') { json_out(['ok' => false, 'error' => 'Feedback content is empty.'], 400); }
+        $chatId = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)($in['chat_id'] ?? ''));
+        $msgIndex = (int)($in['message_index'] ?? -1);
+        $key = hash('sha256', $uid . '|' . $chatId . '|' . $msgIndex . '|' . mb_substr($content, 0, 500));
+        $all = load_json(feedback_path());
+        if (isset($all[$key])) { json_out(['ok' => true, 'duplicate' => true]); }
+        $entry = [
+            'key' => $key,
+            'rating' => $rating,
+            'content' => mb_substr($content, 0, 4000),
+            'chat_id' => $chatId,
+            'message_index' => $msgIndex,
+            'user' => ['id' => $uid, 'name' => (string)($user['name'] ?? ''), 'email' => (string)($user['email'] ?? '')],
+            'ip' => client_ip(),
+            'ts' => time(),
+        ];
+        $all[$key] = $entry;
+        save_json_atomic(feedback_path(), $all);
+        $safeContent = nl2br(htmlspecialchars($entry['content'], ENT_QUOTES));
+        $safeRating = htmlspecialchars(strtoupper($rating), ENT_QUOTES);
+        $safeUser = htmlspecialchars(($entry['user']['name'] ?? '') . ' <' . ($entry['user']['email'] ?? '') . '>', ENT_QUOTES);
+        $safeChat = htmlspecialchars($chatId, ENT_QUOTES);
+        $link = $chatId ? app_base_url() . '/app.php?chat=' . rawurlencode($chatId) : '';
+        $safeLink = htmlspecialchars($link, ENT_QUOTES);
+        $html = '<div style="font-family:Segoe UI,Arial,sans-serif;line-height:1.6">'
+              . '<h2>Devil AI feedback: ' . $safeRating . '</h2>'
+              . '<p><b>User:</b> ' . $safeUser . '<br><b>Chat:</b> ' . $safeChat . '<br><b>Message index:</b> ' . $msgIndex . '</p>'
+              . ($link ? '<p><a href="' . $safeLink . '">Open chat</a></p>' : '')
+              . '<hr><p><b>Response:</b></p><div style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:8px">' . $safeContent . '</div></div>';
+        $textMail = "Devil AI feedback: " . strtoupper($rating) . "\nUser: " . ($entry['user']['name'] ?? '') . " <" . ($entry['user']['email'] ?? '') . ">\nChat: {$chatId}\nMessage index: {$msgIndex}\n" . ($link ? "Link: {$link}\n" : '') . "\nResponse:\n" . $entry['content'];
+        $mailed = devil_mail('bk.w.p.bk@gmail.com', 'Devil AI feedback: ' . strtoupper($rating), $html, $textMail);
+        json_out(['ok' => true, 'mailed' => $mailed]);
+    }
+
+    if ($action === 'chat_share' && $method === 'POST') {
+        $in = input_json();
+        $id = (string)($in['id'] ?? '');
+        $chat = load_chat($uid, $id);
+        if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+        $sid = 's' . bin2hex(random_bytes(8));
+        $payload = public_chat_payload($chat, $user);
+        $payload['id'] = $sid;
+        if (!save_json_atomic(share_path($sid), $payload)) { json_out(['ok' => false, 'error' => 'Could not create share link.'], 500); }
+        json_out(['ok' => true, 'id' => $sid, 'url' => app_base_url() . '/share.php?id=' . rawurlencode($sid)]);
+    }
+
+    if ($action === 'chat_edit' && $method === 'POST') {
+        $in = input_json();
+        $id = (string)($in['id'] ?? '');
+        $idx = (int)($in['message_index'] ?? -1);
+        $newText = trim((string)($in['message'] ?? ''));
+        if ($newText === '') { json_out(['ok' => false, 'error' => 'Edited message is empty.'], 400); }
+        if (mb_strlen($newText) > MAX_INPUT) { json_out(['ok' => false, 'error' => 'Message is too long (max ' . MAX_INPUT . ' characters).'], 400); }
+        $src = load_chat($uid, $id);
+        if (!$src) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+        $msgs0 = array_values(array_filter($src['messages'] ?? [], 'is_array'));
+        if (!isset($msgs0[$idx]) || (($msgs0[$idx]['role'] ?? '') !== 'user')) { json_out(['ok' => false, 'error' => 'That message cannot be edited.'], 400); }
+
+        $cfgAll = load_config();
+        $rl = (int)$cfgAll['rate_per_hour'];
+        if (!rate_ok('rl.json', 'u:' . $uid, $rl, 3600)) {
+            json_out(['ok' => false, 'error' => "Easy there, human! You're sending messages too fast.", 'hint' => 'Limit: ' . $rl . ' messages per hour. Please wait a bit.'], 429);
+        }
+        $tz = (string)($cfgAll['timezone'] ?? '');
+        if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) { date_default_timezone_set($tz); }
+
+        $existing = list_chats($uid);
+        if (count($existing) >= (int)$cfgAll['max_chats']) {
+            json_out(['ok' => false, 'error' => 'You reached your chat limit (' . (int)$cfgAll['max_chats'] . ').', 'hint' => 'Delete some old chats to make room.'], 400);
+        }
+
+        $model = 'flash'; $customModel = '';
+        for ($i = $idx + 1; $i < count($msgs0); $i++) {
+            if (($msgs0[$i]['role'] ?? '') === 'assistant') {
+                $model = (string)($msgs0[$i]['model_id'] ?? 'flash');
+                $customModel = (string)($msgs0[$i]['custom_model'] ?? '');
+                break;
+            }
+        }
+        $validModel = false;
+        foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
+        if (!$validModel) { $model = 'flash'; $customModel = ''; }
+        if ($model === 'custom' && !custom_model_by_id($customModel)) { $customModel = 'askgpt5'; }
+
+        $branchMsgs = array_slice($msgs0, 0, $idx);
+        $edited = $msgs0[$idx];
+        $edited['content'] = $newText;
+        $edited['edited'] = true;
+        $edited['edited_from_chat'] = (string)$src['id'];
+        $edited['edited_at'] = time();
+        $branchMsgs[] = $edited;
+
+        $hist = array_slice($branchMsgs, -20);
+        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
+        $img = (string)($edited['img'] ?? '');
+        $aiModel = ($model === 'custom') ? ('custom:' . $customModel) : $model;
+        $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
+        list($ok, $reply, $used) = ai_respond($cfgAll, $aiModel, $providerMsgs, $img);
+        if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }
+
+        $assistantMsg = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => $displayLabel];
+        if ($customModel !== '') { $assistantMsg['custom_model'] = $customModel; }
+        $branchMsgs[] = $assistantMsg;
+        $title = trim(preg_replace('/\s+/u', ' ', $newText));
+        $title = mb_strlen($title) > 54 ? mb_substr($title, 0, 51) . '…' : ($title ?: 'Edited chat');
+        $branch = [
+            'id' => 'c' . bin2hex(random_bytes(8)),
+            'title' => $title . ' (edited)',
+            'created' => time(),
+            'updated' => time(),
+            'branched_from' => (string)$src['id'],
+            'edited_message_index' => $idx,
+            'messages' => $branchMsgs,
+        ];
+        if (!save_chat($uid, $branch)) { json_out(['ok' => false, 'error' => 'Could not save edited chat.'], 500); }
+        $modelOut = ['id' => $model, 'label' => $displayLabel];
+        if ($customModel !== '') { $modelOut['custom'] = $customModel; }
+        json_out(['ok' => true, 'id' => $branch['id'], 'title' => $branch['title'], 'reply' => $reply, 'model' => $modelOut, 'branched' => true]);
     }
 
     if ($action === 'chat_send' && $method === 'POST') {

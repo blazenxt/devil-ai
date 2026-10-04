@@ -29,6 +29,7 @@ function icon(string $name, int $size = 20, string $cls = ''): string
             'arrow-up'    => '<path d="M12 19V5M5 12l7-7 7 7"/>',
             'arrow-right' => '<path d="M5 12h14M12 5l7 7-7 7"/>',
             'external'    => '<path d="M15 3h6v6M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>',
+            'share'       => '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5 15.4 6.5M8.6 13.5l6.8 4"/>',
             'download'    => '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
 
             /* ── chat ── */

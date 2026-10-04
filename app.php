@@ -26,7 +26,7 @@ if (!$me) { header('Location: login.php'); exit; }
 
 $JS_ICONS = [
     'send' => icon('send', 17), 'stop' => icon('stop', 17), 'copy' => icon('copy', 15), 'retry' => icon('retry', 15),
-    'thumbUp' => icon('thumb-up', 15), 'thumbDown' => icon('thumb-down', 15),
+    'thumbUp' => icon('thumb-up', 15), 'thumbDown' => icon('thumb-down', 15), 'share' => icon('share', 15),
     'trash' => icon('trash', 15), 'pencil' => icon('pencil', 14), 'check' => icon('check', 15),
     'x' => icon('x', 16), 'chev' => icon('chevron-down', 14), 'zap' => icon('zap', 15),
     'sparkles' => icon('sparkles', 15), 'crown' => icon('crown', 15), 'ghost' => icon('ghost', 15),
@@ -173,6 +173,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 .acts button{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--dim2);padding:5px 9px;border-radius:8px;border:1px solid transparent;transition:.12s}
 .acts button:hover{background:rgba(244,63,94,.12);color:var(--soft);border-color:var(--border)}
 .acts button.on{background:rgba(244,63,94,.14);color:var(--soft);border-color:var(--border-hi)}
+.acts button:disabled{opacity:.55;cursor:default}
 .acts button[hidden]{display:none!important}
 .thinking .content{display:flex;align-items:center;gap:10px;color:var(--dim)}
 .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--pink);animation:blink 1.2s infinite}
@@ -209,6 +210,11 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 #imgChip .meta b{display:block;font-size:.76rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
 #imgChip .rm{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--dim2);flex-shrink:0}
 #imgChip .rm:hover{background:rgba(190,18,60,.15);color:var(--pink)}
+#editChip{display:none;align-items:center;justify-content:space-between;gap:10px;margin:12px 16px 0;padding:9px 11px;background:rgba(244,63,94,.08);border:1px solid var(--border);border-radius:12px;color:var(--soft);font-size:.76rem;line-height:1.45}
+#editChip.show{display:flex}
+#editChip span{display:flex;align-items:center;gap:7px;min-width:0}
+#editChip button{font-size:.72rem;font-weight:700;color:var(--dim);padding:5px 8px;border-radius:8px;flex-shrink:0}
+#editChip button:hover{background:rgba(244,63,94,.12);color:var(--soft)}
 .msg-img{display:block;max-width:min(260px,100%);max-height:280px;border-radius:14px;border:1px solid var(--border);margin-bottom:8px;cursor:zoom-in;object-fit:cover}
 #imgView{position:fixed;inset:0;background:rgba(5,2,4,.85);backdrop-filter:blur(8px);z-index:400;display:none;align-items:center;justify-content:center;padding:24px;cursor:zoom-out}
 #imgView.show{display:flex}
@@ -300,6 +306,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 [data-theme=light] .ctbtn.primary{background:rgba(190,30,60,.08);color:#a63d57;border-color:rgba(190,30,60,.20)}
 [data-theme=light] .ctbtn.on{background:rgba(190,30,60,.16);color:#7f1d1d;border-color:rgba(190,30,60,.38);box-shadow:0 0 0 3px rgba(190,30,60,.08)}
 [data-theme=light] .ctbtn.stop,[data-theme=light] #sendBtn.stopmode{background:rgba(190,18,60,.10);border-color:rgba(190,18,60,.32);color:#9f1239;box-shadow:none}
+[data-theme=light] #editChip{background:rgba(190,30,60,.07);border-color:rgba(190,30,60,.20);color:#9f1239}
 [data-theme=light] body.temp-chat #thread:before{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.22);color:#9f1239}
 [data-theme=light] .sb-search{background:rgba(120,80,90,.08)}
 [data-theme=light] .compbox{box-shadow:0 12px 40px rgba(120,80,90,.16)}
@@ -374,6 +381,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
     <div class="chattools" id="chatTools" aria-label="Chat actions">
       <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
       <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
+      <button class="ctbtn" id="shareChatBtn" type="button" title="Share chat"><?= icon('share', 17) ?><span class="txt">Share</span></button>
     </div>
 
     <div id="scroller"><div id="thread">
@@ -394,6 +402,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
     <div id="composer">
       <div class="compbox">
         <div id="imgChip"></div>
+        <div id="editChip"><span><?= icon('pencil', 14) ?> Editing message — original chat stays saved, a new branch will be created.</span><button id="editCancel" type="button">Cancel</button></div>
         <textarea id="inp" rows="1" maxlength="4000" placeholder="Message Devil AI…"></textarea>
         <div class="comprow">
           <div class="modelwrap">
@@ -466,7 +475,7 @@ var $$ = function (s) { return Array.prototype.slice.call(document.querySelector
 var models = [], modelById = {}, currentModel = 'flash';
 var customModels = [], customById = {}, currentCustom = 'devil-09';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages, temp?} */
-var busy = false, isTempChat = false, activeController = null, sendSeq = 0;
+var busy = false, isTempChat = false, activeController = null, sendSeq = 0, editTarget = null;
 var personalOK = true;
 function rawCookie(name) {
   if (window.devilCookieGet) { return window.devilCookieGet(name); }
@@ -598,6 +607,65 @@ function refreshMessageActions() {
   }
 }
 
+function simpleHash(str) {
+  var h = 0, i, chr;
+  if (!str) { return '0'; }
+  for (i = 0; i < str.length; i++) { chr = str.charCodeAt(i); h = ((h << 5) - h) + chr; h |= 0; }
+  return String(Math.abs(h));
+}
+function feedbackKey(meta, text) {
+  return 'devil_feedback_' + ((currentChat && currentChat.id) || 'temp') + '_' + (meta && meta.index !== undefined ? meta.index : simpleHash(text));
+}
+function markFeedbackButtons(up, down, chosen) {
+  up.disabled = true; down.disabled = true;
+  if (chosen === 'good') { up.classList.add('on'); }
+  if (chosen === 'bad') { down.classList.add('on'); }
+}
+function sendFeedback(rating, text, meta, up, down) {
+  var key = feedbackKey(meta, text);
+  if (read(key)) { markFeedbackButtons(up, down, read(key)); toast('Feedback already sent'); return; }
+  markFeedbackButtons(up, down, rating);
+  store(key, rating);
+  api('feedback', { rating: rating, content: text, chat_id: (currentChat && currentChat.id) || '', message_index: meta && meta.index !== undefined ? meta.index : -1 }).then(function (j) {
+    if (j.ok) { toast(j.duplicate ? 'Feedback already sent' : 'Feedback sent'); }
+    else { toast(j.error || 'Feedback could not be sent', 'warning'); }
+  });
+}
+function beginEdit(index, text) {
+  if (!currentChat || !currentChat.id || isTempChat) { toast('Only saved chats can be edited', 'warning'); return; }
+  editTarget = { chatId: currentChat.id, index: index, original: text };
+  inp.value = text;
+  $('#editChip').classList.add('show');
+  resize();
+  inp.focus();
+}
+function clearEdit() {
+  editTarget = null;
+  $('#editChip').classList.remove('show');
+}
+function submitEdit() {
+  if (!editTarget || busy) { return; }
+  var text = inp.value.trim();
+  if (!text) { toast('Edited message is empty', 'warning'); return; }
+  busy = true;
+  resize();
+  toast('Generating edited branch…', 'pencil');
+  api('chat_edit', { id: editTarget.chatId, message_index: editTarget.index, message: text }).then(function (j) {
+    if (j.ok && j.id) { window.location.href = 'app.php?chat=' + encodeURIComponent(j.id); }
+    else { toast(j.error || 'Edit failed', 'warning'); }
+  }).finally(function () { busy = false; resize(); });
+}
+function shareCurrentChat() {
+  if (!currentChat || !currentChat.id || isTempChat) { toast('Only saved chats can be shared', 'warning'); return; }
+  $('#shareChatBtn').disabled = true;
+  api('chat_share', { id: currentChat.id }).then(function (j) {
+    if (j.ok && j.url) {
+      if (navigator.clipboard) { navigator.clipboard.writeText(j.url).catch(function () {}); }
+      toast('Share link copied');
+    } else { toast(j.error || 'Could not create share link', 'warning'); }
+  }).finally(function () { $('#shareChatBtn').disabled = false; });
+}
+
 /* ── sidebar ── */
 var sb = $('#sidebar'), bd = $('#backdrop');
 function setSb(open) {
@@ -669,7 +737,8 @@ $('#chatList').addEventListener('click', function (e) {
 var msgs = $('#msgs'), welcome = $('#welcome'), scroller = $('#scroller');
 function scrollDown() { scroller.scrollTop = scroller.scrollHeight; }
 
-function addUserMsg(text, img) {
+function addUserMsg(text, img, meta) {
+  meta = meta || {};
   var d = document.createElement('div');
   d.className = 'msg-user';
   var b = document.createElement('div');
@@ -688,13 +757,12 @@ function addUserMsg(text, img) {
     var acts = document.createElement('div');
     acts.className = 'acts';
     acts.appendChild(actionBtn(I.copy, 'Copy', 'Copy message', function () { copyText(text); }));
-    acts.appendChild(actionBtn(I.pencil, 'Edit', 'Load this message into composer', function () {
+    var eb = actionBtn(I.pencil, 'Edit', 'Edit and regenerate from here', function () {
       if (busy) { toast('Pause the response before editing', 'warning'); return; }
-      inp.value = text;
-      resize();
-      inp.focus();
-      toast('Message loaded for editing', 'pencil');
-    }));
+      beginEdit(meta.index, text);
+    });
+    if (meta.index === undefined || isTempChat) { eb.hidden = true; }
+    acts.appendChild(eb);
     d.appendChild(acts);
   }
   msgs.appendChild(d);
@@ -727,22 +795,17 @@ function addAiMsg(opts) {
   return d;
 }
 
-function aiContent(el, text) {
+function aiContent(el, text, meta) {
+  meta = meta || {};
   el.querySelector('.content').innerHTML = md(text);
   enhancePre(el);
   var acts = el.querySelector('.acts');
   acts.innerHTML = '';
   acts.appendChild(actionBtn(I.copy, 'Copy', 'Copy response', function () { copyText(text); }));
-  var up = actionBtn(I.thumbUp, 'Good', 'Good response', function () {
-    up.classList.toggle('on');
-    down.classList.remove('on');
-    toast(up.classList.contains('on') ? 'Feedback saved' : 'Feedback cleared', 'thumbUp');
-  });
-  var down = actionBtn(I.thumbDown, 'Bad', 'Bad response', function () {
-    down.classList.toggle('on');
-    up.classList.remove('on');
-    toast(down.classList.contains('on') ? 'Feedback saved' : 'Feedback cleared', 'thumbDown');
-  });
+  var up = actionBtn(I.thumbUp, 'Good', 'Good response', function () { sendFeedback('good', text, meta, up, down); });
+  var down = actionBtn(I.thumbDown, 'Bad', 'Bad response', function () { sendFeedback('bad', text, meta, up, down); });
+  var saved = read(feedbackKey(meta, text));
+  if (saved) { markFeedbackButtons(up, down, saved); }
   acts.appendChild(up);
   acts.appendChild(down);
   var rt = actionBtn(I.retry, 'Retry', 'Regenerate last response', retryLast);
@@ -864,6 +927,7 @@ function updateChatActions() {
   var tt = tb.querySelector('.txt');
   if (tt) { tt.textContent = isTempChat ? 'Temp on' : 'Temp'; }
   $('#topNewChatBtn').style.display = (currentChat && !isTempChat) ? 'inline-flex' : 'none';
+  $('#shareChatBtn').style.display = (currentChat && currentChat.id && !isTempChat) ? 'inline-flex' : 'none';
 }
 function updateSendButton() {
   if (busy) {
@@ -886,6 +950,7 @@ function compactHistoryForTemp() {
 }
 function startTempChat(forceOn) {
   if (busy) { return; }
+  clearEdit();
   if (isTempChat && forceOn !== true) { stopTempChat(); return; }
   isTempChat = true;
   currentChat = { id: null, title: 'Temporary chat', temp: true, messages: [] };
@@ -899,6 +964,7 @@ function startTempChat(forceOn) {
 }
 function stopTempChat() {
   if (busy) { return; }
+  clearEdit();
   isTempChat = false;
   currentChat = null;
   msgs.innerHTML = '';
@@ -997,8 +1063,11 @@ inp.addEventListener('keydown', function (e) {
 sendBtn.addEventListener('click', function () { if (busy) { pauseSend(); } else { send(); } });
 $('#tempChatBtn').addEventListener('click', startTempChat);
 $('#topNewChatBtn').addEventListener('click', function () { if (busy) { pauseSend(); } window.location.href = 'app.php'; });
+$('#shareChatBtn').addEventListener('click', shareCurrentChat);
+$('#editCancel').addEventListener('click', function () { clearEdit(); inp.value = ''; resize(); inp.focus(); });
 
 function newChatView() {
+  clearEdit();
   isTempChat = false;
   currentChat = null;
   msgs.innerHTML = '';
@@ -1015,6 +1084,7 @@ $$('#welcome .card').forEach(function (c) {
 
 /* ── send / retry ── */
 function send() {
+  if (editTarget) { submitEdit(); return; }
   var text = inp.value.trim();
   var img = pendingImg;
   if ((!text && !img) || busy) { return; }
@@ -1065,8 +1135,9 @@ function runSend(payload) {
         currentChat.messages.push(um);
       }
       currentChat.messages.push({ role: 'assistant', content: j.reply, model_label: (j.model && j.model.label) || activeModelLabel() });
+      var aiIndex = currentChat.messages.length - 1;
       var el = addAiMsg({ modelTag: (j.model && j.model.label) || activeModelLabel() });
-      aiContent(el, j.reply);
+      aiContent(el, j.reply, { index: aiIndex });
       if (!isTempChat) { loadChats(); }
       updateChatActions();
     } else {
@@ -1085,6 +1156,7 @@ function runSend(payload) {
 /* ── open / delete / rename chats ── */
 function openChat(id) {
   if (busy) { return; }
+  clearEdit();
   api('chat_load&id=' + encodeURIComponent(id)).then(function (j) {
     if (!j.ok) { toast(j.error || 'Could not open chat', 'warning'); return; }
     isTempChat = false;
@@ -1092,9 +1164,9 @@ function openChat(id) {
     currentChat.temp = false;
     msgs.innerHTML = '';
     welcome.style.display = currentChat.messages.length ? 'none' : '';
-    currentChat.messages.forEach(function (m) {
-      if (m.role === 'user') { addUserMsg(m.content, m.img); }
-      else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content); }
+    currentChat.messages.forEach(function (m, idx) {
+      if (m.role === 'user') { addUserMsg(m.content, m.img, { index: idx }); }
+      else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content, { index: idx }); }
     });
     renderList($('#searchInp').value);
     updateChatActions();
