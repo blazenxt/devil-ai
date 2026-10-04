@@ -368,7 +368,6 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
     <div class="chattools" id="chatTools" aria-label="Chat actions">
       <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
       <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
-      <button class="ctbtn stop" id="pauseBtn" type="button" title="Pause response"><?= icon('stop', 16) ?><span class="txt">Pause</span></button>
     </div>
 
     <div id="scroller"><div id="thread">
@@ -814,7 +813,6 @@ function updateChatActions() {
   var tt = tb.querySelector('.txt');
   if (tt) { tt.textContent = isTempChat ? 'Temp on' : 'Temp'; }
   $('#topNewChatBtn').style.display = (currentChat && !isTempChat) ? 'inline-flex' : 'none';
-  $('#pauseBtn').classList.toggle('show', busy);
 }
 function updateSendButton() {
   if (busy) {
@@ -946,9 +944,8 @@ inp.addEventListener('keydown', function (e) {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
 });
 sendBtn.addEventListener('click', function () { if (busy) { pauseSend(); } else { send(); } });
-$('#pauseBtn').addEventListener('click', pauseSend);
 $('#tempChatBtn').addEventListener('click', startTempChat);
-$('#topNewChatBtn').addEventListener('click', function () { if (!busy) { window.location.href = 'app.php'; } });
+$('#topNewChatBtn').addEventListener('click', function () { if (busy) { pauseSend(); } window.location.href = 'app.php'; });
 
 function newChatView() {
   isTempChat = false;
