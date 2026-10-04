@@ -26,6 +26,7 @@ if (!$me) { header('Location: login.php'); exit; }
 
 $JS_ICONS = [
     'send' => icon('send', 17), 'stop' => icon('stop', 17), 'copy' => icon('copy', 15), 'retry' => icon('retry', 15),
+    'thumbUp' => icon('thumb-up', 15), 'thumbDown' => icon('thumb-down', 15),
     'trash' => icon('trash', 15), 'pencil' => icon('pencil', 14), 'check' => icon('check', 15),
     'x' => icon('x', 16), 'chev' => icon('chevron-down', 14), 'zap' => icon('zap', 15),
     'sparkles' => icon('sparkles', 15), 'crown' => icon('crown', 15), 'ghost' => icon('ghost', 15),
@@ -145,7 +146,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 .card span{display:block;font-size:.75rem;color:var(--dim2);margin-top:2px;line-height:1.5}
 
 /* messages */
-.msg-user{display:flex;justify-content:flex-end;margin:26px 0}
+.msg-user{display:flex;flex-direction:column;align-items:flex-end;margin:26px 0}
 .msg-user .bub{max-width:78%;background:var(--panel2);border:1px solid var(--border);border-radius:18px;border-bottom-right-radius:6px;padding:12px 16px;font-size:.92rem;line-height:1.6;white-space:pre-wrap;overflow-wrap:break-word}
 .msg-ai{display:flex;gap:12px;margin:28px 0}
 .msg-ai .ava{width:30px;height:30px;border-radius:50%;background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}
@@ -166,10 +167,13 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 .content pre{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;overflow:auto;margin:.6em 0;max-width:100%}
 .content pre code{background:none;padding:0;color:#f3d0d7}
 .content .sp{height:.5em}
-.acts{display:flex;gap:4px;margin-top:8px;opacity:0;transition:.15s}
-.msg-ai:hover .acts{opacity:1}
-.acts button{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--dim2);padding:5px 9px;border-radius:8px}
-.acts button:hover{background:rgba(244,63,94,.12);color:var(--soft)}
+.acts{display:flex;gap:5px;margin-top:8px;opacity:.76;transition:.15s;flex-wrap:wrap}
+.msg-ai:hover .acts,.msg-user:hover .acts{opacity:1}
+.msg-user .acts{justify-content:flex-end;max-width:78%;margin-top:6px}
+.acts button{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--dim2);padding:5px 9px;border-radius:8px;border:1px solid transparent;transition:.12s}
+.acts button:hover{background:rgba(244,63,94,.12);color:var(--soft);border-color:var(--border)}
+.acts button.on{background:rgba(244,63,94,.14);color:var(--soft);border-color:var(--border-hi)}
+.acts button[hidden]{display:none!important}
 .thinking .content{display:flex;align-items:center;gap:10px;color:var(--dim)}
 .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--pink);animation:blink 1.2s infinite}
 .dots span:nth-child(2){animation-delay:.2s}
@@ -275,7 +279,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
   .ctbtn{height:34px;min-width:34px;padding:0 9px}.ctbtn .txt{display:none}
   #thread{padding:20px 16px 24px}
   .cards{grid-template-columns:1fr}
-  .msg-user .bub{max-width:88%}
+  .msg-user .bub{max-width:88%}.msg-user .acts{max-width:88%}
   .hint{padding:0 6px}
 }
 @media (hover:none){.acts{opacity:1}}
@@ -303,6 +307,8 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 [data-theme=light] .iconbtn:hover{background:rgba(190,30,60,.1)}
 [data-theme=light] .content strong{color:#141013}
 [data-theme=light] .content h3,[data-theme=light] .content h4{color:#141013}
+[data-theme=light] .acts button:hover{background:rgba(190,30,60,.09);color:#a63d57;border-color:rgba(190,30,60,.22)}
+[data-theme=light] .acts button.on{background:rgba(190,30,60,.12);color:#9f1239;border-color:rgba(190,30,60,.32)}
 [data-theme=light] .content pre code{color:#43323a}
 [data-theme=light] .msg-err{background:rgba(190,18,60,.07);border-color:rgba(190,18,60,.3);color:#9f1239}
 [data-theme=light] .btn.danger{background:rgba(190,18,60,.08);border-color:rgba(190,18,60,.35);color:#9f1239}
@@ -567,6 +573,31 @@ function toast(msg, ico) {
   toastT = setTimeout(function () { $('#toast').style.display = 'none'; }, 2800);
 }
 
+function copyText(text) {
+  return (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () {
+    toast('Copied to clipboard');
+  }, function () {
+    toast('Copy failed — select the text manually', 'warning');
+  });
+}
+function actionBtn(iconHtml, label, title, fn) {
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.title = title || label;
+  b.innerHTML = iconHtml + ' ' + label;
+  b.addEventListener('click', fn);
+  return b;
+}
+function refreshMessageActions() {
+  var retryBtns = $$('.retryAct');
+  retryBtns.forEach(function (b) { b.hidden = true; });
+  var last = msgs ? msgs.lastElementChild : null;
+  if (last && last.classList.contains('msg-ai') && !last.classList.contains('thinking')) {
+    var rb = last.querySelector('.retryAct');
+    if (rb) { rb.hidden = false; }
+  }
+}
+
 /* ── sidebar ── */
 var sb = $('#sidebar'), bd = $('#backdrop');
 function setSb(open) {
@@ -653,8 +684,22 @@ function addUserMsg(text, img) {
   }
   if (text) { b.appendChild(document.createTextNode(text)); }
   d.appendChild(b);
+  if (text) {
+    var acts = document.createElement('div');
+    acts.className = 'acts';
+    acts.appendChild(actionBtn(I.copy, 'Copy', 'Copy message', function () { copyText(text); }));
+    acts.appendChild(actionBtn(I.pencil, 'Edit', 'Load this message into composer', function () {
+      if (busy) { toast('Pause the response before editing', 'warning'); return; }
+      inp.value = text;
+      resize();
+      inp.focus();
+      toast('Message loaded for editing', 'pencil');
+    }));
+    d.appendChild(acts);
+  }
   msgs.appendChild(d);
   welcome.style.display = 'none';
+  refreshMessageActions();
   scrollDown();
 }
 
@@ -687,18 +732,23 @@ function aiContent(el, text) {
   enhancePre(el);
   var acts = el.querySelector('.acts');
   acts.innerHTML = '';
-  var cp = document.createElement('button');
-  cp.innerHTML = I.copy + ' Copy';
-  cp.addEventListener('click', function () {
-    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Copied to clipboard'); }, function () { toast('Copy failed — select the text manually', 'warning'); });
+  acts.appendChild(actionBtn(I.copy, 'Copy', 'Copy response', function () { copyText(text); }));
+  var up = actionBtn(I.thumbUp, 'Good', 'Good response', function () {
+    up.classList.toggle('on');
+    down.classList.remove('on');
+    toast(up.classList.contains('on') ? 'Feedback saved' : 'Feedback cleared', 'thumbUp');
   });
-  acts.appendChild(cp);
-  if (optsCanRetry(el)) {
-    var rt = document.createElement('button');
-    rt.innerHTML = I.retry + ' Retry';
-    rt.addEventListener('click', retryLast);
-    acts.appendChild(rt);
-  }
+  var down = actionBtn(I.thumbDown, 'Bad', 'Bad response', function () {
+    down.classList.toggle('on');
+    up.classList.remove('on');
+    toast(down.classList.contains('on') ? 'Feedback saved' : 'Feedback cleared', 'thumbDown');
+  });
+  acts.appendChild(up);
+  acts.appendChild(down);
+  var rt = actionBtn(I.retry, 'Retry', 'Regenerate last response', retryLast);
+  rt.className = 'retryAct';
+  acts.appendChild(rt);
+  refreshMessageActions();
   scrollDown();
 }
 
@@ -788,6 +838,7 @@ function addThinking() {
   var d = addAiMsg({ modelTag: activeModelLabel() });
   d.classList.add('thinking');
   d.querySelector('.content').innerHTML = '<span class="dots"><span></span><span></span><span></span></span> thinking…';
+  refreshMessageActions();
   scrollDown();
   return d;
 }

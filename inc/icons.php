@@ -36,6 +36,8 @@ function icon(string $name, int $size = 20, string $cls = ''): string
             'square-pen'  => '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L12 14.6 8 15.6l1-4Z"/>',
             'message'     => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>',
             'copy'        => '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+            'thumb-up'    => '<path d="M7 10v11"/><path d="M15 6.5 14 10h4.8a2 2 0 0 1 2 2.3l-1.1 7a2 2 0 0 1-2 1.7H7l-4-1V10h4l5-7a2 2 0 0 1 3 2.3Z"/>',
+            'thumb-down'  => '<path d="M7 14V3"/><path d="M15 17.5 14 14h4.8a2 2 0 0 0 2-2.3l-1.1-7a2 2 0 0 0-2-1.7H7L3 4v10h4l5 7a2 2 0 0 0 3-2.3Z"/>',
             'retry'       => '<path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/>',
             'paperclip'   => '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
             'image'       => '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
