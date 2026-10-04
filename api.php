@@ -662,27 +662,77 @@ function is_textlike_attachment(string $name, string $mime): bool {
     return strpos($mime, 'text/') === 0 || in_array($ext, $textExt, true) || in_array($mime, ['application/json','application/xml','application/javascript','application/x-php'], true);
 }
 
-function zip_xml_text(string $raw, array $patterns, int $max = 12000): string {
-    if (!class_exists('ZipArchive')) { return ''; }
-    $tmp = tempnam(sys_get_temp_dir(), 'devil_att_');
-    if ($tmp === false) { return ''; }
-    file_put_contents($tmp, $raw);
-    $zip = new ZipArchive();
-    $txt = '';
-    if ($zip->open($tmp) === true) {
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $name = (string)$zip->getNameIndex($i);
-            $match = false;
-            foreach ($patterns as $pat) { if (preg_match($pat, $name)) { $match = true; break; } }
-            if (!$match) { continue; }
-            $xml = (string)$zip->getFromIndex($i);
-            $xml = preg_replace('/<\/(?:w:p|a:p|row|si)>/i', "\n", $xml) ?: $xml;
-            $txt .= "\n" . normalize_extracted_text($xml, $max);
-            if (mb_strlen($txt) >= $max) { break; }
+function zip_entries_matching(string $raw, array $patterns): array {
+    $out = [];
+    if (class_exists('ZipArchive')) {
+        $tmp = tempnam(sys_get_temp_dir(), 'devil_att_');
+        if ($tmp !== false) {
+            file_put_contents($tmp, $raw);
+            $zip = new ZipArchive();
+            if ($zip->open($tmp) === true) {
+                for ($i = 0; $i < $zip->numFiles; $i++) {
+                    $name = (string)$zip->getNameIndex($i);
+                    $match = false;
+                    foreach ($patterns as $pat) { if (preg_match($pat, $name)) { $match = true; break; } }
+                    if ($match) { $out[$name] = (string)$zip->getFromIndex($i); }
+                }
+                $zip->close();
+            }
+            @unlink($tmp);
         }
-        $zip->close();
+        if ($out) { return $out; }
     }
-    @unlink($tmp);
+
+    /* Pure-PHP ZIP fallback for hosts without ZipArchive. Supports stored/deflated entries. */
+    $pos = 0;
+    while (($pos = strpos($raw, "PK\x01\x02", $pos)) !== false) {
+        if ($pos + 46 > strlen($raw)) { break; }
+        $method = unpack('v', substr($raw, $pos + 10, 2))[1] ?? 0;
+        $csize  = unpack('V', substr($raw, $pos + 20, 4))[1] ?? 0;
+        $nlen   = unpack('v', substr($raw, $pos + 28, 2))[1] ?? 0;
+        $elen   = unpack('v', substr($raw, $pos + 30, 2))[1] ?? 0;
+        $clen   = unpack('v', substr($raw, $pos + 32, 2))[1] ?? 0;
+        $loff   = unpack('V', substr($raw, $pos + 42, 4))[1] ?? 0;
+        $name = substr($raw, $pos + 46, $nlen);
+        $pos += 46 + $nlen + $elen + $clen;
+        $match = false;
+        foreach ($patterns as $pat) { if (preg_match($pat, $name)) { $match = true; break; } }
+        if (!$match || $loff < 0 || $loff + 30 > strlen($raw) || substr($raw, $loff, 4) !== "PK\x03\x04") { continue; }
+        $lnlen = unpack('v', substr($raw, $loff + 26, 2))[1] ?? 0;
+        $lelen = unpack('v', substr($raw, $loff + 28, 2))[1] ?? 0;
+        $start = $loff + 30 + $lnlen + $lelen;
+        if ($start < 0 || $start + $csize > strlen($raw)) { continue; }
+        $comp = substr($raw, $start, $csize);
+        if ($method === 0) { $data = $comp; }
+        elseif ($method === 8) { $data = @gzinflate($comp); if ($data === false) { $data = @gzuncompress($comp); } }
+        else { $data = false; }
+        if (is_string($data) && $data !== '') { $out[$name] = $data; }
+    }
+    return $out;
+}
+
+function binary_strings_text(string $raw, int $max = 12000): string {
+    $parts = [];
+    if (preg_match_all('/(?:[\x20-\x7E]\x00){4,}/', $raw, $m)) {
+        foreach ($m[0] as $x) { $parts[] = str_replace("\0", '', $x); if (strlen(implode("\n", $parts)) > $max * 2) { break; } }
+    }
+    if (preg_match_all('/[\x09\x0A\x0D\x20-\x7E]{5,}/', $raw, $m2)) {
+        foreach ($m2[0] as $x) {
+            if (preg_match('/[A-Za-z0-9]/', $x)) { $parts[] = $x; }
+            if (strlen(implode("\n", $parts)) > $max * 2) { break; }
+        }
+    }
+    $txt = normalize_extracted_text(implode("\n", array_unique($parts)), $max);
+    return preg_match('/[\p{L}\p{N}]/u', $txt) ? $txt : '';
+}
+
+function zip_xml_text(string $raw, array $patterns, int $max = 12000): string {
+    $txt = '';
+    foreach (zip_entries_matching($raw, $patterns) as $name => $xml) {
+        $xml = preg_replace('/<\/(?:w:p|a:p|row|si)>/i', "\n", $xml) ?: $xml;
+        $txt .= "\n" . normalize_extracted_text($xml, $max);
+        if (mb_strlen($txt) >= $max) { break; }
+    }
     return normalize_extracted_text($txt, $max);
 }
 
@@ -727,13 +777,14 @@ function rtf_text(string $raw, int $max = 12000): string {
 function attachment_text(string $name, string $mime, string $raw): string {
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
     if (is_textlike_attachment($name, $mime)) { return normalize_extracted_text($raw); }
-    if ($ext === 'pdf' || $mime === 'application/pdf') { return pdf_text($raw); }
+    if ($ext === 'pdf' || $mime === 'application/pdf') { $t = pdf_text($raw); return $t !== '' ? $t : binary_strings_text($raw); }
     if ($ext === 'rtf' || $mime === 'application/rtf') { return rtf_text($raw); }
-    if ($ext === 'docx') { return zip_xml_text($raw, ['#^word/(?:document|footnotes|endnotes|header\d+|footer\d+)\.xml$#']); }
-    if ($ext === 'pptx') { return zip_xml_text($raw, ['#^ppt/slides/slide\d+\.xml$#', '#^ppt/notesSlides/notesSlide\d+\.xml$#']); }
-    if ($ext === 'xlsx') { return zip_xml_text($raw, ['#^xl/sharedStrings\.xml$#', '#^xl/worksheets/sheet\d+\.xml$#']); }
-    if ($ext === 'odt') { return zip_xml_text($raw, ['#^content\.xml$#']); }
-    return '';
+    if ($ext === 'docx') { $t = zip_xml_text($raw, ['#^word/(?:document|footnotes|endnotes|header\d+|footer\d+)\.xml$#']); return $t !== '' ? $t : binary_strings_text($raw); }
+    if ($ext === 'pptx') { $t = zip_xml_text($raw, ['#^ppt/slides/slide\d+\.xml$#', '#^ppt/notesSlides/notesSlide\d+\.xml$#']); return $t !== '' ? $t : binary_strings_text($raw); }
+    if ($ext === 'xlsx') { $t = zip_xml_text($raw, ['#^xl/sharedStrings\.xml$#', '#^xl/worksheets/sheet\d+\.xml$#']); return $t !== '' ? $t : binary_strings_text($raw); }
+    if ($ext === 'odt') { $t = zip_xml_text($raw, ['#^content\.xml$#']); return $t !== '' ? $t : binary_strings_text($raw); }
+    if (in_array($ext, ['doc','ppt','xls','pages','numbers','key'], true)) { return binary_strings_text($raw); }
+    return binary_strings_text($raw, 6000);
 }
 
 function process_attachments($input): array {
