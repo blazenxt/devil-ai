@@ -503,7 +503,7 @@ body.voice-open{overflow:hidden}
           <button id="sendBtn" title="Send (Enter)" type="button" disabled hidden><?= icon('send', 17) ?></button>
         </div>
       </div>
-      <p class="hint">Enter = new line • Ctrl/⌘ + Enter = send • Empty box = voice input • Type = send • Devil AI can make mistakes.</p>
+      <p class="hint">Enter = new line • Ctrl/⌘ + Enter = send • Devil AI can make mistakes.</p>
     </div>
   </main>
 </div>
