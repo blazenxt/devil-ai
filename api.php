@@ -1422,7 +1422,7 @@ try {
         if (!save_chat($uid, $branch)) { json_out(['ok' => false, 'error' => 'Could not save edited chat.'], 500); }
         $modelOut = ['id' => $model, 'label' => $displayLabel];
         if ($customModel !== '') { $modelOut['custom'] = $customModel; }
-        json_out(['ok' => true, 'id' => $branch['id'], 'title' => $branch['title'], 'reply' => $reply, 'model' => $modelOut, 'branched' => true]);
+        json_out(['ok' => true, 'id' => $branch['id'], 'title' => $branch['title'], 'reply' => $reply, 'model' => $modelOut, 'branched' => true, 'chat' => $branch]);
     }
 
     if ($action === 'chat_send' && $method === 'POST') {

@@ -179,6 +179,18 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 .acts button:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none}
 .acts button[hidden]{display:none!important}
 @keyframes act-pop{0%{transform:scale(.86)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
+.msg-user.editing .bub,.msg-user.editing>.acts{display:none!important}
+.inlineEditBox{width:min(78%,100%);align-self:flex-end;background:var(--panel);border:1px solid var(--border-hi);border-radius:18px;border-bottom-right-radius:6px;padding:10px;box-shadow:0 14px 40px rgba(0,0,0,.22);animation:edit-pop .16s ease}
+.inlineEditBox textarea{width:100%;min-height:92px;max-height:260px;resize:none;background:var(--panel2);border:1px solid var(--border);border-radius:13px;color:var(--text);font:inherit;font-size:.92rem;line-height:1.6;padding:11px 12px;outline:none;white-space:pre-wrap}
+.inlineEditBox textarea:focus{border-color:var(--border-hi);box-shadow:0 0 0 3px rgba(244,63,94,.08)}
+.inlineEditActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:9px}
+.inlineEditActions button{border-radius:10px;padding:7px 12px;font-size:.76rem;font-weight:800;transition:.15s}
+.inlineEditActions .cancel{color:var(--dim);border:1px solid var(--border)}
+.inlineEditActions .cancel:hover{background:rgba(244,63,94,.08);color:var(--soft)}
+.inlineEditActions .save{background:linear-gradient(135deg,#f43f5e,#be123c);color:white;box-shadow:0 6px 18px rgba(244,63,94,.28)}
+.inlineEditActions .save:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(244,63,94,.34)}
+.editBadge{display:block;width:max-content;margin-top:7px;margin-left:auto;font-size:.66rem;font-weight:700;color:var(--soft);border:1px solid var(--border);border-radius:999px;padding:2px 8px;background:rgba(244,63,94,.08)}
+@keyframes edit-pop{from{opacity:0;transform:translateY(5px) scale(.98)}to{opacity:1;transform:none}}
 .thinking .content{display:flex;align-items:center;gap:10px;color:var(--dim)}
 .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--pink);animation:blink 1.2s infinite}
 .dots span:nth-child(2){animation-delay:.2s}
@@ -289,7 +301,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
   .ctbtn{height:34px;min-width:34px;padding:0 9px}.ctbtn .txt{display:none}
   #thread{padding:20px 16px 24px}
   .cards{grid-template-columns:1fr}
-  .msg-user .bub{max-width:88%}.msg-user .acts{max-width:88%}
+  .msg-user .bub{max-width:88%}.msg-user .acts{max-width:88%}.inlineEditBox{width:min(88%,100%)}
   .hint{padding:0 6px}
 }
 @media (hover:none){.acts{opacity:1}}
@@ -311,6 +323,9 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 [data-theme=light] .ctbtn.on{background:rgba(190,30,60,.16);color:#7f1d1d;border-color:rgba(190,30,60,.38);box-shadow:0 0 0 3px rgba(190,30,60,.08)}
 [data-theme=light] .ctbtn.stop,[data-theme=light] #sendBtn.stopmode{background:rgba(190,18,60,.10);border-color:rgba(190,18,60,.32);color:#9f1239;box-shadow:none}
 [data-theme=light] #editChip{background:rgba(190,30,60,.07);border-color:rgba(190,30,60,.20);color:#9f1239}
+[data-theme=light] .inlineEditBox{background:#fff;border-color:rgba(190,30,60,.28);box-shadow:0 14px 34px rgba(120,80,90,.14)}
+[data-theme=light] .inlineEditBox textarea{background:#f7f3ef;border-color:rgba(120,80,90,.18)}
+[data-theme=light] .editBadge{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.20);color:#9f1239}
 [data-theme=light] body.temp-chat #thread:before{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.22);color:#9f1239}
 [data-theme=light] .sb-search{background:rgba(120,80,90,.08)}
 [data-theme=light] .compbox{box-shadow:0 12px 40px rgba(120,80,90,.16)}
@@ -478,7 +493,7 @@ var $$ = function (s) { return Array.prototype.slice.call(document.querySelector
 var models = [], modelById = {}, currentModel = 'flash';
 var customModels = [], customById = {}, currentCustom = 'devil-09';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages, temp?} */
-var busy = false, isTempChat = false, activeController = null, sendSeq = 0, editTarget = null;
+var busy = false, isTempChat = false, activeController = null, sendSeq = 0, inlineEdit = null, editRestoreChat = null;
 var personalOK = true;
 function rawCookie(name) {
   if (window.devilCookieGet) { return window.devilCookieGet(name); }
@@ -635,29 +650,113 @@ function sendFeedback(rating, text, meta, up, down) {
     else { toast(j.error || 'Feedback could not be sent', 'warning'); }
   });
 }
-function beginEdit(index, text) {
+function autoGrowTextarea(t) {
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight, 260) + 'px';
+}
+function cancelInlineEdit(focusComposer) {
+  if (!inlineEdit) { return; }
+  if (inlineEdit.form && inlineEdit.form.parentNode) { inlineEdit.form.remove(); }
+  if (inlineEdit.el) { inlineEdit.el.classList.remove('editing'); }
+  inlineEdit = null;
+  if (focusComposer && inp) { inp.focus(); }
+}
+function beginEdit(index, text, el) {
   if (!currentChat || !currentChat.id || isTempChat) { toast('Only saved chats can be edited', 'warning'); return; }
-  editTarget = { chatId: currentChat.id, index: index, original: text };
-  inp.value = text;
-  $('#editChip').classList.add('show');
-  resize();
-  inp.focus();
+  if (index === undefined || index === null || !currentChat.messages || !currentChat.messages[index] || currentChat.messages[index].role !== 'user') {
+    toast('That message cannot be edited', 'warning'); return;
+  }
+  if (busy) { toast('Pause the response before editing', 'warning'); return; }
+  cancelInlineEdit(false);
+  var msgEl = el || (msgs.querySelector('[data-index="' + index + '"]'));
+  if (!msgEl) { toast('Could not open editor for this message', 'warning'); return; }
+  msgEl.classList.add('editing');
+  var form = document.createElement('div');
+  form.className = 'inlineEditBox';
+  var ta = document.createElement('textarea');
+  ta.value = text || '';
+  ta.setAttribute('aria-label', 'Edit message');
+  var row = document.createElement('div');
+  row.className = 'inlineEditActions';
+  var cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'cancel'; cancel.textContent = 'Cancel';
+  var save = document.createElement('button');
+  save.type = 'button'; save.className = 'save'; save.textContent = 'Save & regenerate';
+  row.appendChild(cancel); row.appendChild(save);
+  form.appendChild(ta); form.appendChild(row);
+  var acts = msgEl.querySelector('.acts');
+  msgEl.insertBefore(form, acts || null);
+  inlineEdit = { chatId: currentChat.id, index: index, original: text || '', el: msgEl, form: form, textarea: ta };
+  cancel.addEventListener('click', function () { cancelInlineEdit(true); });
+  save.addEventListener('click', submitInlineEdit);
+  ta.addEventListener('input', function () { autoGrowTextarea(ta); });
+  ta.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitInlineEdit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelInlineEdit(true); }
+  });
+  setTimeout(function () { autoGrowTextarea(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 20);
 }
 function clearEdit() {
-  editTarget = null;
-  $('#editChip').classList.remove('show');
+  cancelInlineEdit(false);
+  var chip = $('#editChip');
+  if (chip) { chip.classList.remove('show'); }
 }
-function submitEdit() {
-  if (!editTarget || busy) { return; }
-  var text = inp.value.trim();
+function submitInlineEdit() {
+  if (!inlineEdit || busy) { return; }
+  var state = inlineEdit;
+  var text = state.textarea.value.trim();
   if (!text) { toast('Edited message is empty', 'warning'); return; }
+  var originalChat = currentChat;
+  editRestoreChat = originalChat;
+  var originalMsg = (originalChat && originalChat.messages && originalChat.messages[state.index]) ? originalChat.messages[state.index] : {};
+
+  if (state.form && state.form.parentNode) { state.form.remove(); }
+  if (state.el) { state.el.classList.remove('editing'); }
+  inlineEdit = null;
+
+  var bubble = state.el ? state.el.querySelector('.bub') : null;
+  if (bubble) { fillUserBubble(bubble, text, originalMsg.img, true); }
+  var acts = state.el ? state.el.querySelector('.acts') : null;
+  if (acts) { acts.style.display = 'none'; }
+  while (state.el && state.el.nextSibling) { state.el.nextSibling.remove(); }
+
   busy = true;
+  var seq = ++sendSeq;
+  activeController = window.AbortController ? new AbortController() : null;
   resize();
-  toast('Generating edited branch…', 'pencil');
-  api('chat_edit', { id: editTarget.chatId, message_index: editTarget.index, message: text }).then(function (j) {
-    if (j.ok && j.id) { window.location.href = 'app.php?chat=' + encodeURIComponent(j.id); }
-    else { toast(j.error || 'Edit failed', 'warning'); }
-  }).finally(function () { busy = false; resize(); });
+  toast('Regenerating from edited message…', 'pencil');
+  var th = addThinking();
+  api('chat_edit', { id: state.chatId, message_index: state.index, message: text }, undefined, activeController ? activeController.signal : null).then(function (j) {
+    if (seq !== sendSeq) { return; }
+    th.remove();
+    if (j.aborted) { toast('Edit paused', 'stop'); renderCurrentMessages(); return; }
+    if (j.ok && j.chat) {
+      editRestoreChat = null;
+      isTempChat = false;
+      currentChat = j.chat;
+      currentChat.temp = false;
+      if (window.history && currentChat.id) { history.replaceState(null, '', 'app.php?chat=' + encodeURIComponent(currentChat.id)); }
+      renderCurrentMessages();
+      loadChats();
+      updateChatActions();
+      toast('Edited branch created');
+    } else if (j.ok && j.id) {
+      editRestoreChat = null;
+      window.location.href = 'app.php?chat=' + encodeURIComponent(j.id);
+    } else {
+      toast((j && j.error) || 'Edit failed', 'warning');
+      editRestoreChat = null;
+      currentChat = originalChat;
+      renderCurrentMessages();
+    }
+  }).finally(function () {
+    if (seq === sendSeq) {
+      busy = false;
+      if (!busy) { editRestoreChat = null; }
+      activeController = null;
+      resize();
+    }
+  });
 }
 function shareCurrentChat(btn) {
   if (!currentChat || !currentChat.id || isTempChat) { toast('Only saved chats can be shared', 'warning'); return; }
@@ -741,12 +840,8 @@ $('#chatList').addEventListener('click', function (e) {
 var msgs = $('#msgs'), welcome = $('#welcome'), scroller = $('#scroller');
 function scrollDown() { scroller.scrollTop = scroller.scrollHeight; }
 
-function addUserMsg(text, img, meta) {
-  meta = meta || {};
-  var d = document.createElement('div');
-  d.className = 'msg-user';
-  var b = document.createElement('div');
-  b.className = 'bub';
+function fillUserBubble(b, text, img, edited) {
+  b.innerHTML = '';
   if (img) {
     var im = document.createElement('img');
     im.className = 'msg-img';
@@ -756,14 +851,29 @@ function addUserMsg(text, img, meta) {
     b.appendChild(im);
   }
   if (text) { b.appendChild(document.createTextNode(text)); }
+  if (edited) {
+    var badge = document.createElement('span');
+    badge.className = 'editBadge';
+    badge.textContent = 'Edited';
+    b.appendChild(badge);
+  }
+}
+
+function addUserMsg(text, img, meta) {
+  meta = meta || {};
+  var d = document.createElement('div');
+  d.className = 'msg-user';
+  if (meta.index !== undefined) { d.dataset.index = String(meta.index); }
+  var b = document.createElement('div');
+  b.className = 'bub';
+  fillUserBubble(b, text, img, !!meta.edited);
   d.appendChild(b);
   if (text) {
     var acts = document.createElement('div');
     acts.className = 'acts';
     acts.appendChild(actionBtn(I.copy, 'Copy', 'Copy message', function () { copyText(text); }));
     var eb = actionBtn(I.pencil, 'Edit', 'Edit and regenerate from here', function () {
-      if (busy) { toast('Pause the response before editing', 'warning'); return; }
-      beginEdit(meta.index, text);
+      beginEdit(meta.index, text, d);
     });
     if (meta.index === undefined || isTempChat) { eb.hidden = true; }
     acts.appendChild(eb);
@@ -818,6 +928,19 @@ function aiContent(el, text, meta) {
   var rt = actionBtn(I.retry, 'Retry', 'Regenerate last response', retryLast);
   rt.className = 'retryAct';
   acts.appendChild(rt);
+  refreshMessageActions();
+  scrollDown();
+}
+
+function renderCurrentMessages() {
+  msgs.innerHTML = '';
+  var arr = (currentChat && currentChat.messages) ? currentChat.messages : [];
+  welcome.style.display = arr.length ? 'none' : '';
+  arr.forEach(function (m, idx) {
+    if (!m || !m.role) { return; }
+    if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited }); }
+    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx }); }
+  });
   refreshMessageActions();
   scrollDown();
 }
@@ -987,6 +1110,11 @@ function pauseSend() {
   if (activeController) { try { activeController.abort(); } catch (e) {} }
   busy = false;
   $$('.thinking').forEach(function (el) { el.remove(); });
+  if (editRestoreChat) {
+    currentChat = editRestoreChat;
+    editRestoreChat = null;
+    renderCurrentMessages();
+  }
   activeController = null;
   resize();
   toast('Response paused', 'stop');
@@ -1089,7 +1217,7 @@ $$('#welcome .card').forEach(function (c) {
 
 /* ── send / retry ── */
 function send() {
-  if (editTarget) { submitEdit(); return; }
+  if (inlineEdit) { toast('Save or cancel the edited message first', 'warning'); return; }
   var text = inp.value.trim();
   var img = pendingImg;
   if ((!text && !img) || busy) { return; }
@@ -1167,12 +1295,7 @@ function openChat(id) {
     isTempChat = false;
     currentChat = j.chat;
     currentChat.temp = false;
-    msgs.innerHTML = '';
-    welcome.style.display = currentChat.messages.length ? 'none' : '';
-    currentChat.messages.forEach(function (m, idx) {
-      if (m.role === 'user') { addUserMsg(m.content, m.img, { index: idx }); }
-      else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content, { index: idx }); }
-    });
+    renderCurrentMessages();
     renderList($('#searchInp').value);
     updateChatActions();
     scrollDown();
