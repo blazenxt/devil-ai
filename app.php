@@ -190,6 +190,13 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 .inlineEditActions .save{background:linear-gradient(135deg,#f43f5e,#be123c);color:white;box-shadow:0 6px 18px rgba(244,63,94,.28)}
 .inlineEditActions .save:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(244,63,94,.34)}
 .editBadge{display:block;width:max-content;margin-top:7px;margin-left:auto;font-size:.66rem;font-weight:700;color:var(--soft);border:1px solid var(--border);border-radius:999px;padding:2px 8px;background:rgba(244,63,94,.08)}
+.branchNav{display:flex;align-items:center;justify-content:flex-end;gap:7px;max-width:78%;margin-top:7px;color:var(--dim2);font-size:.72rem}
+.branchNav button{width:28px;height:28px;border-radius:9px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--dim);background:transparent;font-weight:900;transition:transform .15s ease,background .15s ease,color .15s ease,border-color .15s ease}
+.branchNav button:hover:not(:disabled){background:rgba(244,63,94,.12);color:var(--soft);border-color:var(--border-hi);transform:translateY(-1px) scale(1.05)}
+.branchNav button:active:not(:disabled){transform:scale(.94)}
+.branchNav button:disabled{opacity:.38;cursor:default}
+.branchNav .count{min-width:42px;text-align:center;font-weight:800;color:var(--soft);letter-spacing:.2px}
+.branchNav .hint{margin:0;color:var(--dim2);font-size:.68rem;white-space:nowrap}
 @keyframes edit-pop{from{opacity:0;transform:translateY(5px) scale(.98)}to{opacity:1;transform:none}}
 .thinking .content{display:flex;align-items:center;gap:10px;color:var(--dim)}
 .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--pink);animation:blink 1.2s infinite}
@@ -301,7 +308,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
   .ctbtn{height:34px;min-width:34px;padding:0 9px}.ctbtn .txt{display:none}
   #thread{padding:20px 16px 24px}
   .cards{grid-template-columns:1fr}
-  .msg-user .bub{max-width:88%}.msg-user .acts{max-width:88%}.inlineEditBox{width:min(88%,100%)}
+  .msg-user .bub{max-width:88%}.msg-user .acts{max-width:88%}.branchNav{max-width:88%}.inlineEditBox{width:min(88%,100%)}
   .hint{padding:0 6px}
 }
 @media (hover:none){.acts{opacity:1}}
@@ -326,6 +333,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 [data-theme=light] .inlineEditBox{background:#fff;border-color:rgba(190,30,60,.28);box-shadow:0 14px 34px rgba(120,80,90,.14)}
 [data-theme=light] .inlineEditBox textarea{background:#f7f3ef;border-color:rgba(120,80,90,.18)}
 [data-theme=light] .editBadge{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.20);color:#9f1239}
+[data-theme=light] .branchNav button:hover:not(:disabled){background:rgba(190,30,60,.09);color:#a63d57;border-color:rgba(190,30,60,.28)}
 [data-theme=light] body.temp-chat #thread:before{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.22);color:#9f1239}
 [data-theme=light] .sb-search{background:rgba(120,80,90,.08)}
 [data-theme=light] .compbox{box-shadow:0 12px 40px rgba(120,80,90,.16)}
@@ -735,6 +743,7 @@ function submitInlineEdit() {
       isTempChat = false;
       currentChat = j.chat;
       currentChat.temp = false;
+      currentChat.branch_groups = j.branch_groups || currentChat.branch_groups || {};
       if (window.history && currentChat.id) { history.replaceState(null, '', 'app.php?chat=' + encodeURIComponent(currentChat.id)); }
       renderCurrentMessages();
       loadChats();
@@ -839,6 +848,58 @@ $('#chatList').addEventListener('click', function (e) {
 /* ── messages ── */
 var msgs = $('#msgs'), welcome = $('#welcome'), scroller = $('#scroller');
 function scrollDown() { scroller.scrollTop = scroller.scrollHeight; }
+function branchGroupFor(index) {
+  if (index === undefined || index === null || !currentChat || !currentChat.branch_groups) { return null; }
+  return currentChat.branch_groups[String(index)] || currentChat.branch_groups[index] || null;
+}
+function activeVariantIndex(variants) {
+  var id = currentChat && currentChat.id;
+  var n = variants.findIndex(function (v) { return v && v.id === id; });
+  return n < 0 ? 0 : n;
+}
+function makeBranchNav(index, group) {
+  var variants = group && group.variants ? group.variants : [];
+  if (!variants || variants.length < 2) { return null; }
+  var active = activeVariantIndex(variants);
+  var wrap = document.createElement('div');
+  wrap.className = 'branchNav';
+  var prev = document.createElement('button');
+  prev.type = 'button'; prev.className = 'prev'; prev.innerHTML = '&lt;'; prev.title = active > 0 ? ('Show ' + (variants[active - 1].label || 'previous version')) : 'Oldest version';
+  var count = document.createElement('span');
+  count.className = 'count';
+  count.textContent = (active + 1) + ' / ' + variants.length;
+  count.title = (variants[active] && variants[active].title) ? variants[active].title : 'Message version';
+  var next = document.createElement('button');
+  next.type = 'button'; next.className = 'next'; next.innerHTML = '&gt;'; next.title = active < variants.length - 1 ? ('Show ' + (variants[active + 1].label || 'next version')) : 'Newest version';
+  prev.disabled = active <= 0;
+  next.disabled = active >= variants.length - 1;
+  prev.addEventListener('click', function () { if (active > 0) { switchBranchVariant(variants[active - 1].id, index); } });
+  next.addEventListener('click', function () { if (active < variants.length - 1) { switchBranchVariant(variants[active + 1].id, index); } });
+  wrap.appendChild(prev);
+  wrap.appendChild(count);
+  wrap.appendChild(next);
+  return wrap;
+}
+function switchBranchVariant(id, index) {
+  if (!id || (currentChat && currentChat.id === id)) { return; }
+  if (busy) { toast('Pause the response before switching versions', 'warning'); return; }
+  cancelInlineEdit(false);
+  api('chat_load&id=' + encodeURIComponent(id)).then(function (j) {
+    if (!j.ok) { toast(j.error || 'Could not open that version', 'warning'); return; }
+    isTempChat = false;
+    currentChat = j.chat;
+    currentChat.temp = false;
+    currentChat.branch_groups = j.branch_groups || currentChat.branch_groups || {};
+    if (window.history && currentChat.id) { history.replaceState(null, '', 'app.php?chat=' + encodeURIComponent(currentChat.id)); }
+    renderCurrentMessages();
+    renderList($('#searchInp').value);
+    updateChatActions();
+    setTimeout(function () {
+      var el = msgs.querySelector('[data-index="' + index + '"]');
+      if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    }, 60);
+  });
+}
 
 function fillUserBubble(b, text, img, edited) {
   b.innerHTML = '';
@@ -868,6 +929,8 @@ function addUserMsg(text, img, meta) {
   b.className = 'bub';
   fillUserBubble(b, text, img, !!meta.edited);
   d.appendChild(b);
+  var nav = makeBranchNav(meta.index, meta.branchGroup || branchGroupFor(meta.index));
+  if (nav) { d.appendChild(nav); }
   if (text) {
     var acts = document.createElement('div');
     acts.className = 'acts';
@@ -938,7 +1001,7 @@ function renderCurrentMessages() {
   welcome.style.display = arr.length ? 'none' : '';
   arr.forEach(function (m, idx) {
     if (!m || !m.role) { return; }
-    if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited }); }
+    if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited, branchGroup: branchGroupFor(idx) }); }
     else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx }); }
   });
   refreshMessageActions();
@@ -1254,7 +1317,8 @@ function runSend(payload) {
     th.remove();
     if (j.aborted) { toast('Response paused', 'stop'); return; }
     if (j.ok) {
-      if (!currentChat) { currentChat = { id: j.id || null, title: j.title || 'New chat', temp: !!payload.temp, messages: [] }; }
+      if (!currentChat) { currentChat = { id: j.id || null, title: j.title || 'New chat', temp: !!payload.temp, messages: [], branch_groups: {} }; }
+      if (!currentChat.branch_groups) { currentChat.branch_groups = {}; }
       isTempChat = !!(payload.temp || j.temp || currentChat.temp);
       currentChat.temp = isTempChat;
       currentChat.id = isTempChat ? null : j.id;
@@ -1295,6 +1359,7 @@ function openChat(id) {
     isTempChat = false;
     currentChat = j.chat;
     currentChat.temp = false;
+    currentChat.branch_groups = j.branch_groups || currentChat.branch_groups || {};
     renderCurrentMessages();
     renderList($('#searchInp').value);
     updateChatActions();

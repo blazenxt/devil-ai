@@ -1028,6 +1028,75 @@ function list_chats(string $uid): array {
     return $out;
 }
 
+function chat_branch_root_id(array $chat): string {
+    $id = (string)($chat['id'] ?? '');
+    $root = (string)($chat['branch_root'] ?? '');
+    if ($root !== '' && preg_match('/^c[a-f0-9]{6,32}$/', $root)) { return $root; }
+    $legacy = (string)($chat['branched_from'] ?? '');
+    if ($legacy !== '' && preg_match('/^c[a-f0-9]{6,32}$/', $legacy)) { return $legacy; }
+    return $id;
+}
+
+function branch_variant_summary(array $chat, bool $original = false): array {
+    return [
+        'id' => (string)($chat['id'] ?? ''),
+        'title' => (string)($chat['title'] ?? ($original ? 'Original chat' : 'Edited chat')),
+        'label' => $original ? 'Original' : 'Edit',
+        'original' => $original,
+        'created' => (int)($chat['created'] ?? 0),
+        'updated' => (int)($chat['updated'] ?? 0),
+    ];
+}
+
+function branch_groups_for_chat(string $uid, array $activeChat): array {
+    $activeId = (string)($activeChat['id'] ?? '');
+    if ($activeId === '') { return []; }
+    $rootId = chat_branch_root_id($activeChat);
+    if ($rootId === '') { return []; }
+    $rootChat = load_chat($uid, $rootId);
+    if (!$rootChat) { $rootChat = $activeChat; }
+
+    $groups = [];
+    foreach (glob(chats_dir($uid) . '/*.json') ?: [] as $f) {
+        $j = json_decode((string)file_get_contents($f), true);
+        if (!is_array($j) || empty($j['id'])) { continue; }
+        if (!isset($j['edited_message_index'])) { continue; }
+        $idx = (int)$j['edited_message_index'];
+        if ($idx < 0) { continue; }
+        $br = chat_branch_root_id($j);
+        if ($br !== $rootId) { continue; }
+        $groups[$idx][] = branch_variant_summary($j, false);
+    }
+
+    $out = [];
+    foreach ($groups as $idx => $variants) {
+        $seen = [];
+        $all = [];
+        $rootSummary = branch_variant_summary($rootChat, true);
+        if (!empty($rootSummary['id'])) { $all[] = $rootSummary; $seen[$rootSummary['id']] = true; }
+        usort($variants, function ($a, $b) {
+            $ac = (int)($a['created'] ?? 0); $bc = (int)($b['created'] ?? 0);
+            if ($ac === $bc) { return strcmp((string)$a['id'], (string)$b['id']); }
+            return $ac <=> $bc;
+        });
+        foreach ($variants as $v) {
+            $vid = (string)($v['id'] ?? '');
+            if ($vid === '' || isset($seen[$vid])) { continue; }
+            $all[] = $v;
+            $seen[$vid] = true;
+        }
+        if (count($all) < 2) { continue; }
+        foreach ($all as $i => &$v) {
+            $v['label'] = !empty($v['original']) ? 'Original' : ('Edit ' . $i);
+            $v['active'] = ((string)$v['id'] === $activeId);
+        }
+        unset($v);
+        $out[(string)$idx] = ['index' => (int)$idx, 'variants' => $all];
+    }
+    ksort($out, SORT_NUMERIC);
+    return $out;
+}
+
 function shares_dir(): string { return data_dir() . '/shares'; }
 function share_path(string $sid): string { return shares_dir() . '/' . $sid . '.json'; }
 function feedback_path(): string { return data_dir() . '/feedback.json'; }
@@ -1276,7 +1345,9 @@ try {
     if ($action === 'chat_load' && $method === 'GET') {
         $chat = load_chat($uid, (string)($_GET['id'] ?? ''));
         if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
-        json_out(['ok' => true, 'chat' => $chat]);
+        $branchGroups = branch_groups_for_chat($uid, $chat);
+        $chat['branch_groups'] = $branchGroups;
+        json_out(['ok' => true, 'chat' => $chat, 'branch_groups' => $branchGroups]);
     }
 
     if ($action === 'chat_delete' && $method === 'POST') {
@@ -1410,19 +1481,25 @@ try {
         $branchMsgs[] = $assistantMsg;
         $title = trim(preg_replace('/\s+/u', ' ', $newText));
         $title = mb_strlen($title) > 54 ? mb_substr($title, 0, 51) . '…' : ($title ?: 'Edited chat');
+        $branchRoot = chat_branch_root_id($src);
+        $branchGroup = hash('sha1', $branchRoot . '|' . $idx);
         $branch = [
             'id' => 'c' . bin2hex(random_bytes(8)),
             'title' => $title . ' (edited)',
             'created' => time(),
             'updated' => time(),
+            'branch_root' => $branchRoot,
+            'branch_group' => $branchGroup,
             'branched_from' => (string)$src['id'],
             'edited_message_index' => $idx,
             'messages' => $branchMsgs,
         ];
         if (!save_chat($uid, $branch)) { json_out(['ok' => false, 'error' => 'Could not save edited chat.'], 500); }
+        $branchGroups = branch_groups_for_chat($uid, $branch);
+        $branch['branch_groups'] = $branchGroups;
         $modelOut = ['id' => $model, 'label' => $displayLabel];
         if ($customModel !== '') { $modelOut['custom'] = $customModel; }
-        json_out(['ok' => true, 'id' => $branch['id'], 'title' => $branch['title'], 'reply' => $reply, 'model' => $modelOut, 'branched' => true, 'chat' => $branch]);
+        json_out(['ok' => true, 'id' => $branch['id'], 'title' => $branch['title'], 'reply' => $reply, 'model' => $modelOut, 'branched' => true, 'chat' => $branch, 'branch_groups' => $branchGroups]);
     }
 
     if ($action === 'chat_send' && $method === 'POST') {
