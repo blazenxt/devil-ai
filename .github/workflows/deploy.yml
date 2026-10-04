@@ -1,0 +1,62 @@
+name: CI Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: devil-ai-production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Lint and deploy to SFTP
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PHP CLI and SFTP client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli lftp
+
+      - name: PHP syntax check
+        run: |
+          find . \
+            -path './data' -prune -o \
+            -path './.git' -prune -o \
+            -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Deploy via SFTP
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_TARGET: ${{ secrets.SFTP_TARGET }}
+        run: |
+          set -euo pipefail
+          : "${SFTP_HOST:?Missing SFTP_HOST secret}"
+          : "${SFTP_PORT:?Missing SFTP_PORT secret}"
+          : "${SFTP_USERNAME:?Missing SFTP_USERNAME secret}"
+          : "${SFTP_PASSWORD:?Missing SFTP_PASSWORD secret}"
+          : "${SFTP_TARGET:?Missing SFTP_TARGET secret}"
+
+          lftp -u "$SFTP_USERNAME","$SFTP_PASSWORD" -p "$SFTP_PORT" "sftp://$SFTP_HOST" <<EOF
+          set sftp:auto-confirm yes
+          set net:timeout 30
+          set net:max-retries 2
+          set mirror:parallel-transfer-count 2
+          mkdir -p "$SFTP_TARGET"
+          mirror -R --verbose \
+            --exclude-glob .git/** \
+            --exclude-glob .github/** \
+            --exclude-glob data/** \
+            --exclude-glob node_modules/** \
+            --exclude-glob vendor/** \
+            --exclude-glob .DS_Store \
+            ./ "$SFTP_TARGET"
+          bye
+          EOF
