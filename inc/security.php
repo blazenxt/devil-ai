@@ -172,7 +172,7 @@ function devil_security_email_auth_status(string $email, bool $existingUser): ar
     if (count($labels) >= 3 && !devil_security_trusted_signup_domain($domain)) {
         return [false, devil_security_signup_closed_message(), 'subdomain'];
     }
-    if (!$existingUser && !devil_security_trusted_signup_domain($domain)) {
+    if (!$existingUser) {
         return [false, devil_security_signup_closed_message(), 'closed_signup'];
     }
     return [true, '', 'ok'];
