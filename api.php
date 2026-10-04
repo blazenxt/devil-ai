@@ -617,9 +617,10 @@ function identity_question(array $messages): bool {
 
 /* strict data-URL image check: mime allowlist, size cap, real base64, magic bytes.
    Returns a canonical data URL, or null when the input is not a valid image. */
+
 function validate_image(string $s): ?string {
     $s = trim($s);
-    if (strlen($s) < 40 || strlen($s) > 1600000) { return null; }   /* ≈1.2 MB decoded */
+    if (strlen($s) < 40 || strlen($s) > 2600000) { return null; }   /* ≈1.9 MB decoded */
     if (!preg_match('#^data:image/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]+)$#', $s, $m)) { return null; }
     $raw = base64_decode($m[2], true);
     if ($raw === false || strlen($raw) < 64) { return null; }
@@ -632,6 +633,151 @@ function validate_image(string $s): ?string {
     $mime = strtolower($m[1]);
     if ($mime === 'jpg') { $mime = 'jpeg'; }
     return 'data:image/' . $mime . ';base64,' . base64_encode($raw);
+}
+
+function clean_filename(string $name): string {
+    $name = trim(str_replace(["\0", '/', '\\'], ' ', $name));
+    $name = preg_replace('/\s+/u', ' ', $name) ?: 'attachment';
+    return mb_substr($name, 0, 120);
+}
+
+function normalize_extracted_text(string $raw, int $max = 12000): string {
+    $raw = str_replace("\0", ' ', $raw);
+    if (function_exists('mb_check_encoding') && !mb_check_encoding($raw, 'UTF-8')) {
+        if (function_exists('iconv')) { $raw = (string)@iconv('UTF-8', 'UTF-8//IGNORE', $raw); }
+        if ($raw === '' && function_exists('mb_convert_encoding')) { $raw = mb_convert_encoding($raw, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252'); }
+    }
+    $raw = html_entity_decode(strip_tags($raw), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $raw = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]+/', ' ', $raw) ?: '';
+    $raw = preg_replace('/[ \t]+/u', ' ', $raw) ?: $raw;
+    $raw = preg_replace('/\n{3,}/u', "\n\n", $raw) ?: $raw;
+    $raw = trim($raw);
+    if (mb_strlen($raw) > $max) { $raw = mb_substr($raw, 0, $max - 1) . '…'; }
+    return $raw;
+}
+
+function is_textlike_attachment(string $name, string $mime): bool {
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    $textExt = ['txt','md','markdown','csv','tsv','json','jsonl','xml','html','htm','css','js','ts','jsx','tsx','php','py','rb','go','rs','java','c','cpp','h','hpp','cs','swift','kt','kts','sql','log','ini','env','yaml','yml','toml','sh','bat','ps1','vue','svelte','svg'];
+    return strpos($mime, 'text/') === 0 || in_array($ext, $textExt, true) || in_array($mime, ['application/json','application/xml','application/javascript','application/x-php'], true);
+}
+
+function zip_xml_text(string $raw, array $patterns, int $max = 12000): string {
+    if (!class_exists('ZipArchive')) { return ''; }
+    $tmp = tempnam(sys_get_temp_dir(), 'devil_att_');
+    if ($tmp === false) { return ''; }
+    file_put_contents($tmp, $raw);
+    $zip = new ZipArchive();
+    $txt = '';
+    if ($zip->open($tmp) === true) {
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = (string)$zip->getNameIndex($i);
+            $match = false;
+            foreach ($patterns as $pat) { if (preg_match($pat, $name)) { $match = true; break; } }
+            if (!$match) { continue; }
+            $xml = (string)$zip->getFromIndex($i);
+            $xml = preg_replace('/<\/(?:w:p|a:p|row|si)>/i', "\n", $xml) ?: $xml;
+            $txt .= "\n" . normalize_extracted_text($xml, $max);
+            if (mb_strlen($txt) >= $max) { break; }
+        }
+        $zip->close();
+    }
+    @unlink($tmp);
+    return normalize_extracted_text($txt, $max);
+}
+
+function pdf_text(string $raw, int $max = 12000): string {
+    $chunks = [];
+    if (preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $raw, $streams)) {
+        foreach ($streams[1] as $st) {
+            $dec = function_exists('zlib_decode') ? @zlib_decode($st) : false;
+            if ($dec === false) { $dec = @gzuncompress($st); }
+            if ($dec !== false && is_string($dec)) { $chunks[] = $dec; }
+        }
+    }
+    $chunks[] = $raw;
+    $txt = '';
+    foreach ($chunks as $chunk) {
+        if (preg_match_all('/\((?:\\.|[^\\()]){1,2000}\)/s', $chunk, $m)) {
+            foreach ($m[0] as $str) {
+                $str = substr($str, 1, -1);
+                $str = preg_replace('/\\([nrtbf()\\])/', ' ', $str) ?: $str;
+                $txt .= ' ' . $str;
+                if (mb_strlen($txt) > $max) { break 2; }
+            }
+        }
+        if (preg_match_all('/<([0-9A-Fa-f]{8,})>/', $chunk, $hm)) {
+            foreach ($hm[1] as $hex) {
+                $bin = @hex2bin(strlen($hex) % 2 ? '0' . $hex : $hex);
+                if (is_string($bin)) { $txt .= ' ' . $bin; }
+                if (mb_strlen($txt) > $max) { break 2; }
+            }
+        }
+    }
+    return normalize_extracted_text($txt, $max);
+}
+
+function rtf_text(string $raw, int $max = 12000): string {
+    $raw = preg_replace('/\\\'[0-9a-fA-F]{2}/', ' ', $raw) ?: $raw;
+    $raw = preg_replace('/\\[a-zA-Z]+-?\d* ?/', ' ', $raw) ?: $raw;
+    $raw = str_replace(['{','}'], ' ', $raw);
+    return normalize_extracted_text($raw, $max);
+}
+
+function attachment_text(string $name, string $mime, string $raw): string {
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (is_textlike_attachment($name, $mime)) { return normalize_extracted_text($raw); }
+    if ($ext === 'pdf' || $mime === 'application/pdf') { return pdf_text($raw); }
+    if ($ext === 'rtf' || $mime === 'application/rtf') { return rtf_text($raw); }
+    if ($ext === 'docx') { return zip_xml_text($raw, ['#^word/(?:document|footnotes|endnotes|header\d+|footer\d+)\.xml$#']); }
+    if ($ext === 'pptx') { return zip_xml_text($raw, ['#^ppt/slides/slide\d+\.xml$#', '#^ppt/notesSlides/notesSlide\d+\.xml$#']); }
+    if ($ext === 'xlsx') { return zip_xml_text($raw, ['#^xl/sharedStrings\.xml$#', '#^xl/worksheets/sheet\d+\.xml$#']); }
+    if ($ext === 'odt') { return zip_xml_text($raw, ['#^content\.xml$#']); }
+    return '';
+}
+
+function process_attachments($input): array {
+    $items = is_array($input) ? array_slice($input, 0, 6) : [];
+    $meta = [];
+    $context = [];
+    $firstImage = '';
+    $total = 0;
+    foreach ($items as $i => $a) {
+        if (!is_array($a)) { continue; }
+        $name = clean_filename((string)($a['name'] ?? ('attachment-' . ($i + 1))));
+        $mime = strtolower(trim((string)($a['type'] ?? 'application/octet-stream')));
+        $data = (string)($a['data'] ?? '');
+        if (!preg_match('#^data:([^;,]+)?;base64,([A-Za-z0-9+/=\r\n]+)$#', $data, $m)) { continue; }
+        $raw = base64_decode(preg_replace('/\s+/', '', $m[2]), true);
+        if ($raw === false || $raw === '') { continue; }
+        if ($mime === '' || $mime === 'application/octet-stream') { $mime = strtolower($m[1] ?: $mime); }
+        $size = strlen($raw);
+        $total += $size;
+        if ($size > 4 * 1024 * 1024 || $total > 8 * 1024 * 1024) { continue; }
+        $isImage = preg_match('#^image/(png|jpe?g|gif|webp)$#', $mime) === 1;
+        $one = ['name' => $name, 'type' => $mime, 'size' => $size, 'is_image' => $isImage];
+        if ($isImage) {
+            $img = validate_image('data:' . $mime . ';base64,' . base64_encode($raw));
+            if ($img !== null) {
+                if ($firstImage === '') { $firstImage = $img; }
+                $one['read_status'] = 'image-ready';
+                $context[] = "Attachment " . (count($meta) + 1) . " — {$name}: image file ({$mime}, {$size} bytes). Use the image if available.";
+            } else { $one['read_status'] = 'invalid-image'; }
+        } else {
+            $txt = attachment_text($name, $mime, $raw);
+            if ($txt !== '') {
+                $one['read_status'] = 'read';
+                $context[] = "Attachment " . (count($meta) + 1) . " — {$name} ({$mime}, {$size} bytes):\n" . $txt;
+            } else {
+                $one['read_status'] = 'metadata-only';
+                $context[] = "Attachment " . (count($meta) + 1) . " — {$name}: {$mime}, {$size} bytes. Text could not be extracted here; answer from filename/type/metadata and ask for details if needed.";
+            }
+        }
+        $meta[] = $one;
+    }
+    $ctx = trim(implode("\n\n", $context));
+    if (mb_strlen($ctx) > 18000) { $ctx = mb_substr($ctx, 0, 17999) . '…'; }
+    return [$meta, $ctx, $firstImage];
 }
 
 /* ══════════════ INTRO STRIPPER ══════════════ */
@@ -689,6 +835,8 @@ function build_memory_prompt(array $messages, string $image = ''): string {
         $role = (string)($m['role'] ?? '');
         if ($role !== 'user' && $role !== 'assistant') { continue; }
         $content = compact_prompt_text((string)($m['content'] ?? ''), $role === 'user' ? 1500 : 1100);
+        $attText = compact_prompt_text((string)($m['attachment_text'] ?? ''), 3500);
+        if ($attText !== '') { $content = trim($content . "\n\n" . $attText); }
         if ($content === '' && !empty($m['img'])) { $content = '[attached an image]'; }
         if ($content === '') { continue; }
         $items[] = ($role === 'assistant' ? 'Devil AI' : 'User') . ': ' . $content;
@@ -746,6 +894,8 @@ function latest_user_prompt(array $messages, string $image = ''): string {
     foreach (array_reverse($messages) as $m) {
         if (is_array($m) && (($m['role'] ?? '') === 'user')) {
             $q = compact_prompt_text((string)($m['content'] ?? ''), 5000);
+            $attText = compact_prompt_text((string)($m['attachment_text'] ?? ''), 5000);
+            if ($attText !== '') { $q = trim($q . "\n\n" . $attText); }
             if ($q !== '') { return $q; }
             if ($image !== '' || !empty($m['img'])) { return 'The user attached an image. Respond helpfully to the image.'; }
         }
@@ -1691,8 +1841,10 @@ try {
         $img    = '';
         if (isset($in['image']) && is_string($in['image']) && trim($in['image']) !== '') {
             $img = validate_image($in['image']);
-            if ($img === null) { json_out(['ok' => false, 'error' => 'That image could not be read. Use a PNG, JPEG, GIF or WebP file under 1 MB.'], 400); }
+            if ($img === null) { json_out(['ok' => false, 'error' => 'That image could not be read. Use a PNG, JPEG, GIF or WebP file under 2 MB.'], 400); }
         }
+        list($attachmentsMeta, $attachmentContext, $attachmentImage) = process_attachments($in['attachments'] ?? []);
+        if ($img === '' && $attachmentImage !== '') { $img = $attachmentImage; }
         $validModel = false;
         foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
         if (!$validModel) { $model = 'flash'; }
@@ -1760,10 +1912,12 @@ try {
             if ($lastUser === '' && $lastImg === '') { json_out(['ok' => false, 'error' => 'Nothing to retry.'], 400); }
             $msg = $lastUser; $img = $lastImg;
         } else {
-            if ($msg === '' && $img === '') { json_out(['ok' => false, 'error' => 'Message is empty.'], 400); }
+            if ($msg === '' && $img === '' && empty($attachmentsMeta)) { json_out(['ok' => false, 'error' => 'Message is empty.'], 400); }
             if (mb_strlen($msg) > MAX_INPUT) { json_out(['ok' => false, 'error' => 'Message is too long (max ' . MAX_INPUT . ' characters).'], 400); }
             $newMsg = ['role' => 'user', 'content' => $msg, 'ts' => time()];
             if ($img !== '') { $newMsg['img'] = $img; }
+            if (!empty($attachmentsMeta)) { $newMsg['attachments'] = $attachmentsMeta; }
+            if ($attachmentContext !== '') { $newMsg['attachment_text'] = "Attached files read by Devil AI:\n" . $attachmentContext; }
             $chat['messages'][] = $newMsg;
         }
 
@@ -1789,6 +1943,7 @@ try {
         $chat['messages'][] = $assistantMsg;
         if ($chat['title'] === '') {
             $title = trim(preg_replace('/\s+/u', ' ', $msg));
+            if ($title === '' && !empty($attachmentsMeta)) { $title = 'Attachment: ' . (string)($attachmentsMeta[0]['name'] ?? 'file'); }
             if ($title === '' && $img !== '') { $title = 'Image'; }
             $chat['title'] = mb_strlen($title) > 60 ? mb_substr($title, 0, 57) . '…' : ($title !== '' ? $title : 'New chat');
         }
