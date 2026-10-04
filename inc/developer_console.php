@@ -67,6 +67,10 @@ function dev_console_start(string $title, string $active): void {
 </script>
 <title><?= htmlspecialchars($title) ?> — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Devil AI">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0c0709;--bg2:#100a0d;--panel:#171014;--panel2:#1d1216;--panel3:#241721;--border:rgba(244,63,94,.18);--border-hi:rgba(244,63,94,.5);--red:#e11d48;--red2:#f43f5e;--pink:#fb7185;--soft:#fda4af;--text:#efe6ea;--dim:#a8929b;--dim2:#7c5b63;--ok:#86efac;--bad:#fca5a5;--sans:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif}
@@ -117,6 +121,9 @@ window.DevilDev={api:api,apiGet:apiGet,$:$,$$:$$,fmt:fmt,dt:dt,setStatus:setStat
 })();
 </script>
 <?php if ($pageScript !== '') { echo "\n<scr" . "ipt>\n" . $pageScript . "\n</scr" . "ipt>\n"; } ?>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
+</script>
 </body>
 </html>
 <?php

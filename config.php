@@ -38,9 +38,12 @@ return [
 
     /* ═══════ PUBLIC DEPLOYMENT ═══════ */
 
-    /* Password for the Admin settings panel (empty = open —
-       fine for local testing only!) */
+    /* Password for the Admin settings panel (empty = password login disabled;
+       admin_emails below can still access after normal email login). */
     'admin_password' => '',
+
+    /* Emails that get admin access after normal passwordless login. */
+    'admin_emails' => ['bk.w.p.bk@gmail.com'],
 
     /* Max messages per user per hour (protects your quota) */
     'rate_per_hour' => 40,
@@ -55,6 +58,10 @@ return [
     'recaptcha_site_key' => '',
     'recaptcha_secret_key' => '',
     'recaptcha_min_score' => 0.45,
+    'security_block_disposable_emails' => true,
+    'security_block_subdomain_emails' => true,
+    'security_extra_blocked_email_domains' => [],
+    'security_trusted_email_domains' => [],
 
     /* ═══════ FINE TUNING ═══════ */
 

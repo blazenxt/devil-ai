@@ -84,6 +84,10 @@ if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-co
 document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Sign in — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Devil AI">
 <?php if ($recaptchaSiteKey !== ''): ?><script src="https://www.google.com/recaptcha/api.js?render=<?= htmlspecialchars($recaptchaSiteKey, ENT_QUOTES) ?>" async defer></script><?php endif; ?>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -316,6 +320,9 @@ $('#changeEmail').addEventListener('click', function () {
   setIco();
 })();
 })();
+</script>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
 </script>
 </body>
 </html>

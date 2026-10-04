@@ -108,6 +108,10 @@ document.documentElement.setAttribute('data-theme',t);})();
 </script>
 <title>Account settings — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Devil AI">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0c0709;--panel:#171014;--panel2:#1d1216;--panel3:#241721;--border:rgba(244,63,94,.18);--border-hi:rgba(244,63,94,.5);--red:#e11d48;--red2:#f43f5e;--pink:#fb7185;--soft:#fda4af;--text:#efe6ea;--dim:#a8929b;--dim2:#7c5b63;--sans:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif}
@@ -280,6 +284,9 @@ modal.addEventListener('click',function(e){if(e.target===modal){modal.classList.
 $('#sendDeleteCode').addEventListener('click',function(){ms.className='status';ms.textContent='Sending code…';api('otp_request',{purpose:'delete'}).then(function(j){if(j.ok){ms.className='status ok';ms.textContent='Code sent to '+(j.masked||'your email')+'.'}else{ms.className='status bad';ms.textContent=j.error||'Could not send code.'}})});
 $('#confirmDelete').addEventListener('click',function(){var code=$('#deleteCode').value.replace(/\D/g,'');if(code.length!==6){ms.className='status bad';ms.textContent='Enter the 6-digit code.';return}ms.className='status';ms.textContent='Deleting…';api('account_delete',{code:code}).then(function(j){if(j.ok){location.href='index.php'}else{ms.className='status bad';ms.textContent=j.error||'Delete failed.'}})});
 })();
+</script>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
 </script>
 </body>
 </html>

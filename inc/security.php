@@ -149,8 +149,47 @@ function devil_security_email_domain(string $email): string {
     if (!str_contains($email, '@')) { return ''; }
     return trim(substr(strrchr($email, '@'), 1));
 }
+function devil_security_domain_list(string $key): array {
+    $cfg = devil_security_config();
+    $raw = $cfg[$key] ?? [];
+    if (is_string($raw)) { $raw = preg_split('/[\s,;]+/', $raw) ?: []; }
+    if (!is_array($raw)) { return []; }
+    $out = [];
+    foreach ($raw as $d) {
+        $d = strtolower(trim((string)$d));
+        $d = ltrim($d, '@.');
+        if ($d !== '' && preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $d)) { $out[] = $d; }
+    }
+    return array_values(array_unique($out));
+}
+function devil_security_domain_matches(string $domain, array $list): bool {
+    $domain = strtolower(trim($domain));
+    foreach ($list as $d) {
+        $d = strtolower(trim((string)$d));
+        if ($d !== '' && ($domain === $d || str_ends_with($domain, '.' . $d))) { return true; }
+    }
+    return false;
+}
+function devil_security_is_registered_domain_like(string $domain): bool {
+    $labels = array_values(array_filter(explode('.', strtolower(trim($domain)))));
+    $n = count($labels);
+    if ($n === 2) { return true; }
+    if ($n !== 3) { return false; }
+    $last2 = $labels[$n - 2] . '.' . $labels[$n - 1];
+    $multiPublicSuffixes = [
+        'co.in','firm.in','net.in','org.in','gen.in','ind.in','ac.in','edu.in','res.in','gov.in','nic.in',
+        'co.uk','org.uk','me.uk','ltd.uk','plc.uk','ac.uk','gov.uk','net.uk',
+        'com.au','net.au','org.au','edu.au','gov.au','asn.au','id.au',
+        'co.nz','net.nz','org.nz','ac.nz','school.nz','govt.nz',
+        'com.br','net.br','org.br','com.mx','com.tr','com.sg','com.my','com.ph','com.pk','com.bd','co.jp','ne.jp','or.jp','co.kr','or.kr','com.cn','net.cn','org.cn','com.hk','net.hk','org.hk','co.za','org.za'
+    ];
+    return in_array($last2, $multiPublicSuffixes, true);
+}
 function devil_security_is_disposable_domain(string $domain): bool {
     $domain = strtolower(trim($domain));
+    if (devil_security_domain_matches($domain, devil_security_domain_list('security_extra_blocked_email_domains'))) { return true; }
+    $cfg = devil_security_config();
+    if (isset($cfg['security_block_disposable_emails']) && empty($cfg['security_block_disposable_emails'])) { return false; }
     $blocked = [
         'mailinator.com','tempmail.com','temp-mail.org','10minutemail.com','10minutemail.net','guerrillamail.com','guerrillamail.net','guerrillamail.org','sharklasers.com','grr.la','guerrillamailblock.com','yopmail.com','yopmail.fr','yopmail.net','maildrop.cc','getnada.com','inboxkitten.com','trashmail.com','trashmail.de','dispostable.com','fakeinbox.com','mailnesia.com','mohmal.com','mohmal.in','tempail.com','emailondeck.com','throwawaymail.com','mintemail.com','mytemp.email','tmpmail.org','tempmailo.com','tempmail.plus','tempinbox.com','burnermail.io','simplelogin.com','anonaddy.com','addy.io','duck.com','mail.tm','maxxspace.com','1secmail.com','1secmail.org','1secmail.net','wwjmp.com','esiix.com','xojxe.com','yoggm.com','rteet.com','dpptd.com','laafd.com','txcct.com','vjuum.com','mailto.plus','fexpost.com','fexbox.org','mailbox.in.ua','rover.info','chitthi.in','moakt.com','tmailor.com','tempmail.email','smailpro.com','emailfake.com','generator.email','mail-temp.com','linshiyouxiang.net','bccto.me','mailcatch.com','spamgourmet.com','spam4.me','spamdecoy.net','mailnull.com','mailforspam.com','dropmail.me','33mail.com','tempm.com','tmpeml.com'
     ];
@@ -160,7 +199,8 @@ function devil_security_is_disposable_domain(string $domain): bool {
 }
 function devil_security_trusted_signup_domain(string $domain): bool {
     $trusted = ['gmail.com','googlemail.com','outlook.com','hotmail.com','live.com','msn.com','yahoo.com','ymail.com','icloud.com','me.com','mac.com','proton.me','protonmail.com','pm.me','zoho.com','zohomail.com','aol.com'];
-    return in_array(strtolower($domain), $trusted, true);
+    $trusted = array_values(array_unique(array_merge($trusted, devil_security_domain_list('security_trusted_email_domains'))));
+    return devil_security_domain_matches(strtolower($domain), $trusted);
 }
 function devil_security_email_auth_status(string $email, bool $existingUser): array {
     $domain = devil_security_email_domain($email);
@@ -168,8 +208,9 @@ function devil_security_email_auth_status(string $email, bool $existingUser): ar
     if (filter_var($domain, FILTER_VALIDATE_IP) || devil_security_is_disposable_domain($domain)) {
         return [false, devil_security_signup_closed_message(), 'disposable'];
     }
-    $labels = explode('.', $domain);
-    if (count($labels) >= 3 && !devil_security_trusted_signup_domain($domain)) {
+    $cfg = devil_security_config();
+    $blockSubdomains = !isset($cfg['security_block_subdomain_emails']) || !empty($cfg['security_block_subdomain_emails']);
+    if ($blockSubdomains && !devil_security_is_registered_domain_like($domain) && !devil_security_trusted_signup_domain($domain)) {
         return [false, devil_security_signup_closed_message(), 'subdomain'];
     }
     return [true, '', 'ok'];

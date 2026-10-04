@@ -50,6 +50,19 @@ console.log(data.choices[0].message.content);</div>
 </section>
 
 <section class="card">
+  <h2><?= icon('zap', 18) ?> Streaming responses</h2>
+  <p class="sub">Set <code>stream:true</code> to receive Server-Sent Events using OpenAI-style chat completion chunks.</p>
+  <div class="code">curl <?= htmlspecialchars($baseUrl) ?>/v1/chat/completions \
+  -H "Authorization: Bearer dv_live_YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "devil-flash",
+    "stream": true,
+    "messages": [{"role": "user", "content": "Give 5 startup ideas."}]
+  }'</div>
+</section>
+
+<section class="card">
   <h2><?= icon('globe', 18) ?> Browser usage</h2>
   <p class="sub">For quick browser-side tests you can pass the key in the URL or use the <code>X-Devil-API-Key</code> header. For production, keep keys on your server.</p>
   <div class="code">const res = await fetch('<?= htmlspecialchars($baseUrl) ?>/v1/chat/completions?key=dv_live_YOUR_KEY', {

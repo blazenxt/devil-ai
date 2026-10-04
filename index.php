@@ -35,6 +35,10 @@ if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-co
 document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Devil AI — Sinfully smart AI assistant</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Devil AI">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -297,5 +301,8 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
 </script>
 
 <?php require __DIR__ . '/inc/cookiebar.php'; ?>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
+</script>
 </body>
 </html>

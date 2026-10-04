@@ -36,7 +36,7 @@ $JS_ICONS = [
     'panel' => icon('panel-left', 18), 'newchat' => icon('square-pen', 17), 'search' => icon('search', 15),
     'loader' => icon('loader', 16), 'warning' => icon('warning', 16), 'lock' => icon('lock', 16),
     'message' => icon('message', 16), 'menu' => icon('menu', 18), 'flame' => icon('flame', 15),
-    'lightbulb' => icon('lightbulb', 17), 'shield' => icon('shield', 16),
+    'lightbulb' => icon('lightbulb', 17), 'shield' => icon('shield', 16), 'code' => icon('code', 16), 'gauge' => icon('gauge', 16),
     'sun' => icon('sun', 17), 'moon' => icon('moon', 17), 'play' => icon('play', 13),
     'layers' => icon('layers', 15), 'brain' => icon('brain', 15), 'server' => icon('server', 15),
 ];
@@ -54,6 +54,10 @@ if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-co
 document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Devil AI — Chat</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Devil AI">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -236,8 +240,8 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
 #quickVoiceBtn.speaking{color:#fff;background:linear-gradient(135deg,#f43f5e,#be123c);border-color:transparent;box-shadow:0 5px 16px rgba(244,63,94,.32)}
 #sendBtn[hidden],#quickVoiceBtn[hidden]{display:none!important}
 .hint{text-align:center;font-size:.68rem;color:var(--dim2);margin-top:9px}
-#attachBtn,#voiceBtn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.15s;flex-shrink:0;position:relative}
-#attachBtn:hover,#voiceBtn:hover{background:rgba(244,63,94,.12);color:var(--soft)}
+#attachBtn,#voiceBtn,#promptBtn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.15s;flex-shrink:0;position:relative}
+#attachBtn:hover,#voiceBtn:hover,#promptBtn:hover{background:rgba(244,63,94,.12);color:var(--soft)}
 #voiceBtn.on{background:rgba(244,63,94,.16);color:var(--soft);box-shadow:0 0 0 3px rgba(244,63,94,.08)}
 #voiceBtn.listening:after{content:'';position:absolute;inset:-3px;border-radius:50%;border:1px solid rgba(244,63,94,.55);animation:voice-pulse 1.25s infinite}
 #voiceBtn.speaking{color:#fff;background:linear-gradient(135deg,#f43f5e,#be123c);box-shadow:0 5px 16px rgba(244,63,94,.32)}
@@ -293,6 +297,12 @@ body.voice-open{overflow:hidden}
 #modelMenu.open{display:block}
 #customModelMenu{position:absolute;bottom:calc(100% + 8px);left:0;width:390px;max-width:calc(100vw - 44px);background:var(--panel2);border:1px solid var(--border-hi);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:8px;display:none;z-index:75}
 #customModelMenu.open{display:block}
+#promptMenu{position:absolute;bottom:calc(100% + 8px);left:0;width:330px;max-width:calc(100vw - 44px);background:var(--panel2);border:1px solid var(--border-hi);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:7px;display:none;z-index:78}
+#promptMenu.open{display:block}
+.popt{display:flex;gap:10px;align-items:flex-start;width:100%;padding:10px 11px;border-radius:11px;text-align:left;transition:.12s;color:var(--text)}
+.popt:hover{background:rgba(244,63,94,.1)}
+.popt .ic{width:30px;height:30px;border-radius:9px;background:rgba(244,63,94,.1);display:flex;align-items:center;justify-content:center;color:var(--pink);flex-shrink:0}
+.popt b{display:block;font-size:.82rem}.popt span{display:block;font-size:.7rem;color:var(--dim2);line-height:1.4;margin-top:1px}
 .csearch{width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:11px;padding:10px 12px;font:inherit;font-size:.8rem;outline:none;margin-bottom:6px}
 .csearch:focus{border-color:var(--border-hi)}
 .cmlist{max-height:360px;overflow:auto;padding-right:2px}
@@ -308,7 +318,7 @@ body.voice-open{overflow:hidden}
 .mopt .tick,.cmopt .tick{color:var(--pink);opacity:0;flex-shrink:0}
 .mopt.on .tick,.cmopt.on .tick{opacity:1}
 .cmempty{padding:14px;text-align:center;color:var(--dim2);font-size:.78rem}
-@media(max-width:680px){#customModelBtn{max-width:150px}#customModelMenu{left:auto;right:0;width:340px}.modelwrap{gap:6px}#modelBtn{max-width:150px}}
+@media(max-width:680px){#customModelBtn{max-width:150px}#customModelMenu,#promptMenu{left:auto;right:0;width:340px}.modelwrap{gap:6px}#modelBtn{max-width:150px}}
 
 /* ═══════════ MODALS ═══════════ */
 .modal{position:fixed;inset:0;background:rgba(5,2,4,.72);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
@@ -404,7 +414,7 @@ body.voice-open{overflow:hidden}
 [data-theme=light] .btn.danger:hover{background:rgba(190,18,60,.15)}
 [data-theme=light] .status.ok{color:#15803d}
 [data-theme=light] .status.bad{color:#b91c1c}
-[data-theme=light] #userMenu,[data-theme=light] #modelMenu,[data-theme=light] #customModelMenu{box-shadow:0 18px 50px rgba(120,80,90,.18)}
+[data-theme=light] #userMenu,[data-theme=light] #modelMenu,[data-theme=light] #customModelMenu,[data-theme=light] #promptMenu{box-shadow:0 18px 50px rgba(120,80,90,.18)}
 [data-theme=light] #sendBtn.stopmode svg{color:#9f1239}
 [data-theme=light] #quickVoiceBtn{background:rgba(190,30,60,.07);border-color:rgba(190,30,60,.20);color:#a63d57}
 [data-theme=light] #quickVoiceBtn:hover,[data-theme=light] #quickVoiceBtn.on{background:rgba(190,30,60,.12);border-color:rgba(190,30,60,.34);color:#9f1239}
@@ -439,6 +449,7 @@ body.voice-open{overflow:hidden}
     <nav id="chatList" aria-label="Chat history"></nav>
     <div class="sb-bottom">
       <div id="userMenu">
+        <?php if (strtolower((string)($me['email'] ?? '')) === 'bk.w.p.bk@gmail.com'): ?><a class="mi" href="admin.php"><?= icon('shield-check', 16) ?> Admin control</a><?php endif; ?>
         <a class="mi" href="developers.php"><?= icon('code', 16) ?> Developer API</a>
         <a class="mi" href="settings.php"><?= icon('settings', 16) ?> Account settings</a>
         <button class="mi" id="mCookies"><?= icon('cookie', 16) ?> Cookie settings</button>
@@ -493,6 +504,8 @@ body.voice-open{overflow:hidden}
           <div class="modelwrap">
             <button id="attachBtn" title="Attach files" type="button"><?= icon('paperclip', 16) ?></button>
             <button id="voiceBtn" title="Live voice chat" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
+            <button id="promptBtn" title="Prompt library" type="button"><?= icon('lightbulb', 16) ?></button>
+            <div id="promptMenu"></div>
             <button id="modelBtn" title="Choose model"><span id="modelIco"><?= icon('zap', 14) ?></span><span class="lb" id="modelLbl">Devil Flash</span><?= icon('chevron-down', 13) ?></button>
             <div id="modelMenu"></div>
             <div id="customWrap" class="customwrap">
@@ -1258,6 +1271,39 @@ function addErr(text) {
 
 /* ── composer ── */
 var inp = $('#inp'), sendBtn = $('#sendBtn'), quickVoiceBtn = $('#quickVoiceBtn');
+var promptBtn = $('#promptBtn'), promptMenu = $('#promptMenu');
+var PROMPT_LIBRARY = [
+  { icon: 'lightbulb', title: 'Explain simply', desc: 'Make any topic easy to understand', text: 'Explain this in simple Hinglish with examples:\n\n' },
+  { icon: 'sparkles', title: 'Brainstorm ideas', desc: 'Generate strong creative options', text: 'Brainstorm 10 high-quality ideas for:\n\n' },
+  { icon: 'pencil', title: 'Rewrite better', desc: 'Improve tone, clarity and impact', text: 'Rewrite this to be clear, professional, and engaging:\n\n' },
+  { icon: 'code', title: 'Debug code', desc: 'Find bugs and provide fixed code', text: 'Debug this code. Explain the issue and give the corrected version:\n\n' },
+  { icon: 'message', title: 'Draft message', desc: 'Email, WhatsApp, caption or reply', text: 'Draft a concise and polished message for this situation:\n\n' },
+  { icon: 'gauge', title: 'Make a plan', desc: 'Step-by-step action plan', text: 'Create a practical step-by-step plan for:\n\n' }
+];
+function renderPromptMenu() {
+  if (!promptMenu) { return; }
+  promptMenu.innerHTML = PROMPT_LIBRARY.map(function (p, i) {
+    return '<button class="popt" type="button" data-prompt="' + i + '"><span class="ic">' + (I[p.icon] || I.sparkles) + '</span><span><b>' + p.title + '</b><span>' + p.desc + '</span></span></button>';
+  }).join('');
+  $$('#promptMenu .popt').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var p = PROMPT_LIBRARY[parseInt(b.getAttribute('data-prompt'), 10)] || PROMPT_LIBRARY[0];
+      inp.value = p.text;
+      promptMenu.classList.remove('open');
+      inp.focus();
+      resize();
+    });
+  });
+}
+renderPromptMenu();
+if (promptBtn && promptMenu) {
+  promptBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    $('#modelMenu').classList.remove('open');
+    $('#customModelMenu').classList.remove('open');
+    promptMenu.classList.toggle('open');
+  });
+}
 
 /* ── live voice chat (browser speech recognition + speech synthesis) ── */
 var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1993,10 +2039,11 @@ function renderCustomModelMenu(filter) {
   menu.appendChild(list);
   syncModelMenu();
 }
-$('#modelBtn').addEventListener('click', function (e) { e.stopPropagation(); $('#customModelMenu').classList.remove('open'); $('#modelMenu').classList.toggle('open'); });
+$('#modelBtn').addEventListener('click', function (e) { e.stopPropagation(); $('#customModelMenu').classList.remove('open'); if (promptMenu) { promptMenu.classList.remove('open'); } $('#modelMenu').classList.toggle('open'); });
 $('#customModelBtn').addEventListener('click', function (e) {
   e.stopPropagation();
   $('#modelMenu').classList.remove('open');
+  if (promptMenu) { promptMenu.classList.remove('open'); }
   renderCustomModelMenu('');
   $('#customModelMenu').classList.toggle('open');
   setTimeout(function () { var s = $('#customModelMenu .csearch'); if (s) { s.focus(); } }, 20);
@@ -2004,6 +2051,7 @@ $('#customModelBtn').addEventListener('click', function (e) {
 document.addEventListener('click', function (e) {
   if (!e.target.closest('#modelMenu') && !e.target.closest('#modelBtn')) { $('#modelMenu').classList.remove('open'); }
   if (!e.target.closest('#customModelMenu') && !e.target.closest('#customModelBtn')) { $('#customModelMenu').classList.remove('open'); }
+  if (promptMenu && !e.target.closest('#promptMenu') && !e.target.closest('#promptBtn')) { promptMenu.classList.remove('open'); }
 });
 
 /* ── user menu ── */
@@ -2078,6 +2126,9 @@ loadChats();
 resize();
 if (window.innerWidth > 900) { inp.focus(); }
 })();
+</script>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
 </script>
 </body>
 </html>

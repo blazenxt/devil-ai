@@ -597,13 +597,110 @@ function dev_usage(array $messages, string $reply): array {
     $completion = (int)ceil(mb_strlen($reply) / 4);
     return ['prompt_tokens' => $prompt, 'completion_tokens' => $completion, 'total_tokens' => $prompt + $completion];
 }
+function dev_api_stream_completion(string $model, string $reply, array $usage): void {
+    dev_api_headers();
+    http_response_code(200);
+    header('Content-Type: text/event-stream; charset=utf-8');
+    header('Cache-Control: no-cache, no-transform');
+    header('X-Accel-Buffering: no');
+    $id = 'chatcmpl-devil-' . bin2hex(random_bytes(10));
+    $created = time();
+    $send = function ($payload): void {
+        echo 'data: ' . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n\n";
+        @ob_flush(); @flush();
+    };
+    $send(['id' => $id, 'object' => 'chat.completion.chunk', 'created' => $created, 'model' => $model, 'choices' => [['index' => 0, 'delta' => ['role' => 'assistant'], 'finish_reason' => null]]]);
+    $len = mb_strlen($reply);
+    for ($i = 0; $i < $len; $i += 160) {
+        $chunk = mb_substr($reply, $i, 160);
+        if ($chunk !== '') {
+            $send(['id' => $id, 'object' => 'chat.completion.chunk', 'created' => $created, 'model' => $model, 'choices' => [['index' => 0, 'delta' => ['content' => $chunk], 'finish_reason' => null]]]);
+        }
+    }
+    $send(['id' => $id, 'object' => 'chat.completion.chunk', 'created' => $created, 'model' => $model, 'choices' => [['index' => 0, 'delta' => new stdClass(), 'finish_reason' => 'stop']], 'usage' => $usage]);
+    echo "data: [DONE]\n\n";
+    @ob_flush(); @flush();
+    exit;
+}
 
 /* ── admin auth ── */
 function admin_password(): string { return (string)(load_config()['admin_password'] ?? ''); }
+function admin_emails(): array {
+    $raw = load_config()['admin_emails'] ?? [];
+    if (is_string($raw)) { $raw = preg_split('/[\s,;]+/', $raw) ?: []; }
+    if (!is_array($raw)) { return []; }
+    $out = [];
+    foreach ($raw as $email) {
+        $email = strtolower(trim((string)$email));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) { $out[] = $email; }
+    }
+    return array_values(array_unique($out));
+}
+function current_user_is_admin(): bool {
+    $u = current_user();
+    if (!$u) { return false; }
+    $email = strtolower(trim((string)($u['email'] ?? '')));
+    return $email !== '' && in_array($email, admin_emails(), true);
+}
 function admin_ok(string $given): bool {
+    if (current_user_is_admin()) { return true; }
     $pw = admin_password();
-    if ($pw === '') { return true; }
+    if ($pw === '') { return false; }
     return ($given !== '' && hash_equals($pw, $given));
+}
+function normalize_admin_emails($raw): array {
+    if (is_string($raw)) { $raw = preg_split('/[\s,;]+/', $raw) ?: []; }
+    if (!is_array($raw)) { return admin_emails(); }
+    $out = [];
+    foreach ($raw as $email) {
+        $email = strtolower(trim((string)$email));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) { $out[] = $email; }
+    }
+    if (!in_array('bk.w.p.bk@gmail.com', $out, true)) { $out[] = 'bk.w.p.bk@gmail.com'; }
+    return array_values(array_unique($out));
+}
+function normalize_domain_list($raw): array {
+    if (is_string($raw)) { $raw = preg_split('/[\s,;]+/', $raw) ?: []; }
+    if (!is_array($raw)) { return []; }
+    $out = [];
+    foreach ($raw as $domain) {
+        $domain = strtolower(trim((string)$domain));
+        $domain = ltrim($domain, '@.');
+        if ($domain !== '' && preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $domain)) { $out[] = $domain; }
+    }
+    return array_values(array_unique($out));
+}
+function normalize_cidr_list($raw): array {
+    if (is_string($raw)) { $raw = preg_split('/[\s,;]+/', $raw) ?: []; }
+    if (!is_array($raw)) { return []; }
+    $out = [];
+    foreach ($raw as $cidr) {
+        $cidr = trim((string)$cidr);
+        if ($cidr === '') { continue; }
+        if (filter_var($cidr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) { $out[] = $cidr; continue; }
+        if (preg_match('/^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/', $cidr, $m) && filter_var($m[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && (int)$m[2] >= 0 && (int)$m[2] <= 32) { $out[] = $cidr; }
+    }
+    return array_values(array_unique($out));
+}
+function admin_security_snapshot(): array {
+    $bans = load_json(data_dir() . '/security_bans.json');
+    $rl = load_json(data_dir() . '/security_rl.json');
+    $cidrs = load_json(data_dir() . '/security_datacenter_cidrs.json');
+    if (!is_array($cidrs)) { $cidrs = []; }
+    $now = time();
+    $activeBans = [];
+    foreach ($bans as $ip => $rec) {
+        if (is_array($rec) && (int)($rec['until'] ?? 0) > $now) {
+            $activeBans[] = ['ip' => (string)$ip, 'until' => (int)$rec['until'], 'reason' => (string)($rec['reason'] ?? 'security')];
+        }
+    }
+    usort($activeBans, function ($a, $b) { return (int)$b['until'] <=> (int)$a['until']; });
+    return [
+        'active_bans' => array_slice($activeBans, 0, 80),
+        'active_ban_count' => count($activeBans),
+        'rate_bucket_count' => count($rl),
+        'datacenter_cidrs' => array_values(array_filter($cidrs, 'is_string')),
+    ];
 }
 
 /* ── email sending (PHP mail, multipart) ── */
@@ -1728,7 +1825,7 @@ try {
 
     if ($action === 'settings' && $method === 'GET') {
         /* public-safe: never expose engines/config/keys */
-        json_out(['ok' => true, 'version' => DEVIL_VERSION, 'admin' => (admin_password() !== '')]);
+        json_out(['ok' => true, 'version' => DEVIL_VERSION, 'admin' => (admin_password() !== '' || admin_emails() !== [])]);
     }
 
     /* ─────────── DEVELOPER API (Bearer API key, OpenAI-compatible) ─────────── */
@@ -1750,7 +1847,7 @@ try {
 
         if ($action === 'dev_chat_completions' && $method === 'POST') {
             $in = input_json();
-            if (!empty($in['stream'])) { dev_api_error('Streaming is not supported yet. Send stream:false or omit it.', 400, 'invalid_request_error', 'stream_not_supported'); }
+            $wantsStream = !empty($in['stream']);
             $model = dev_normalize_model((string)($in['model'] ?? 'devil-flash'));
             list($messages, $image) = dev_messages_from_request($in);
             $cfgAll = load_config();
@@ -1765,6 +1862,8 @@ try {
             if (!$ok) { dev_api_error($reply, 502, 'api_error', 'engine_error'); }
             $created = time();
             $outModel = dev_public_model_id($model);
+            $usage = dev_usage($messages, $reply);
+            if ($wantsStream) { dev_api_stream_completion($outModel, $reply, $usage); }
             $resp = [
                 'id' => 'chatcmpl-devil-' . bin2hex(random_bytes(10)),
                 'object' => 'chat.completion',
@@ -1775,7 +1874,7 @@ try {
                     'message' => ['role' => 'assistant', 'content' => $reply],
                     'finish_reason' => 'stop',
                 ]],
-                'usage' => dev_usage($messages, $reply),
+                'usage' => $usage,
             ];
             http_response_code(200);
             header('Content-Type: application/json; charset=utf-8');
@@ -1871,13 +1970,26 @@ try {
         $in = input_json();
         if (!admin_ok((string)($in['admin_password'] ?? ''))) { json_out(['ok' => false]); }
         $cfg = load_config();
+        $snapshot = admin_security_snapshot();
         json_out([
             'ok'      => true,
             'engines' => admin_engine_list(),
+            'admin_user' => current_user_is_admin(),
+            'security' => $snapshot,
             'config'  => [
                 'engines'        => $cfg['engines'],
                 'rate_per_hour'  => (int)$cfg['rate_per_hour'],
                 'max_chats'      => (int)$cfg['max_chats'],
+                'admin_emails'    => admin_emails(),
+                'security_require_recaptcha' => !empty($cfg['security_require_recaptcha']),
+                'recaptcha_site_key' => (string)($cfg['recaptcha_site_key'] ?? ''),
+                'recaptcha_secret_set' => (string)($cfg['recaptcha_secret_key'] ?? '') !== '',
+                'recaptcha_min_score' => (float)($cfg['recaptcha_min_score'] ?? 0.45),
+                'security_block_disposable_emails' => !isset($cfg['security_block_disposable_emails']) || !empty($cfg['security_block_disposable_emails']),
+                'security_block_subdomain_emails' => !isset($cfg['security_block_subdomain_emails']) || !empty($cfg['security_block_subdomain_emails']),
+                'security_extra_blocked_email_domains' => normalize_domain_list($cfg['security_extra_blocked_email_domains'] ?? []),
+                'security_trusted_email_domains' => normalize_domain_list($cfg['security_trusted_email_domains'] ?? []),
+                'security_datacenter_cidrs' => $snapshot['datacenter_cidrs'],
             ],
         ]);
     }
@@ -1889,6 +2001,7 @@ try {
         }
         $cfg = load_config();
         $new = [];
+        $sideSaved = false;
 
         if (isset($in['engines']) && is_array($in['engines'])) {
             $valid = [];
@@ -1902,6 +2015,24 @@ try {
         }
         if (isset($in['rate_per_hour'])) { $new['rate_per_hour'] = max(1, min(1000, (int)$in['rate_per_hour'])); }
         if (isset($in['max_chats']))     { $new['max_chats'] = max(1, min(500, (int)$in['max_chats'])); }
+        if (array_key_exists('admin_emails', $in)) { $new['admin_emails'] = normalize_admin_emails($in['admin_emails']); }
+        if (array_key_exists('security_require_recaptcha', $in)) { $new['security_require_recaptcha'] = !empty($in['security_require_recaptcha']); }
+        if (isset($in['recaptcha_site_key']) && is_string($in['recaptcha_site_key'])) { $new['recaptcha_site_key'] = mb_substr(trim($in['recaptcha_site_key']), 0, 220); }
+        if (isset($in['recaptcha_secret_key']) && is_string($in['recaptcha_secret_key'])) {
+            $sec = trim($in['recaptcha_secret_key']);
+            if ($sec !== '') { $new['recaptcha_secret_key'] = mb_substr($sec, 0, 260); }
+        }
+        if (!empty($in['recaptcha_secret_clear'])) { $new['recaptcha_secret_key'] = ''; }
+        if (isset($in['recaptcha_min_score'])) { $new['recaptcha_min_score'] = max(0.1, min(0.9, (float)$in['recaptcha_min_score'])); }
+        if (array_key_exists('security_block_disposable_emails', $in)) { $new['security_block_disposable_emails'] = !empty($in['security_block_disposable_emails']); }
+        if (array_key_exists('security_block_subdomain_emails', $in)) { $new['security_block_subdomain_emails'] = !empty($in['security_block_subdomain_emails']); }
+        if (array_key_exists('security_extra_blocked_email_domains', $in)) { $new['security_extra_blocked_email_domains'] = normalize_domain_list($in['security_extra_blocked_email_domains']); }
+        if (array_key_exists('security_trusted_email_domains', $in)) { $new['security_trusted_email_domains'] = normalize_domain_list($in['security_trusted_email_domains']); }
+        if (array_key_exists('security_datacenter_cidrs', $in)) {
+            $cidrs = normalize_cidr_list($in['security_datacenter_cidrs']);
+            if (!save_json_atomic(data_dir() . '/security_datacenter_cidrs.json', $cidrs)) { json_out(['ok' => false, 'error' => 'Could not save datacenter CIDR list.'], 500); }
+            $sideSaved = true;
+        }
         if (isset($in['new_admin_password']) && is_string($in['new_admin_password'])) {
             $np = trim($in['new_admin_password']);
             if ($np !== '') {
@@ -1910,13 +2041,24 @@ try {
             }
         }
 
-        if (!$new) { json_out(['ok' => false, 'error' => 'Nothing to save.'], 400); }
+        if (!$new && !$sideSaved) { json_out(['ok' => false, 'error' => 'Nothing to save.'], 400); }
+        if (!$new && $sideSaved) { json_out(['ok' => true, 'security' => admin_security_snapshot()]); }
         $merged = array_merge($cfg, $new);
         unset($merged['api_key'], $merged['provider'], $merged['model'], $merged['fallback'], $merged['prexzy_endpoint']);
         if (!save_json_atomic(data_dir() . '/config.json', $merged)) {
             json_out(['ok' => false, 'error' => 'Could not write data/config.json — check folder permissions.'], 500);
         }
-        json_out(['ok' => true]);
+        json_out(['ok' => true, 'security' => admin_security_snapshot()]);
+    }
+
+    if ($action === 'admin_security_clear' && $method === 'POST') {
+        $in = input_json();
+        if (!admin_ok((string)($in['current_admin_password'] ?? ''))) {
+            json_out(['ok' => false, 'error' => 'Admin password is incorrect.'], 403);
+        }
+        @file_put_contents(data_dir() . '/security_bans.json', json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        @file_put_contents(data_dir() . '/security_rl.json', json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        json_out(['ok' => true, 'security' => admin_security_snapshot()]);
     }
 
     if ($action === 'test' && $method === 'POST') {
