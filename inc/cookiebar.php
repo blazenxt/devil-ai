@@ -47,7 +47,21 @@ $devilCookieSecure = function_exists('devil_is_https') ? devil_is_https() : (!em
 .dcb-switch input:disabled + .dcb-slider{opacity:.55;cursor:not-allowed}
 .dcb-foot{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
 @keyframes dcb-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-@media (max-width:480px){.dcb-banner{left:10px;right:10px;bottom:10px;max-width:none}}
+[data-theme=light] .dcb-banner{background:#fff;border-color:rgba(120,80,90,.18);box-shadow:0 18px 48px rgba(120,80,90,.18);color:#262023}
+[data-theme=light] .dcb-banner h4,[data-theme=light] .dcb-sheet h3,[data-theme=light] .dcb-cat-txt b{color:#262023}
+[data-theme=light] .dcb-banner p,[data-theme=light] .dcb-sheet>p,[data-theme=light] .dcb-cat-txt span{color:#6e5f65}
+[data-theme=light] .dcb-banner p b{color:#262023}
+[data-theme=light] .dcb-banner p a,[data-theme=light] .dcb-manage{color:#a63d57}
+[data-theme=light] .dcb-modal{background:rgba(60,40,48,.34)}
+[data-theme=light] .dcb-sheet{background:#fff;border-color:rgba(120,80,90,.18);color:#262023;box-shadow:0 24px 70px rgba(120,80,90,.22)}
+[data-theme=light] .dcb-cat{border-bottom-color:rgba(120,80,90,.14)}
+[data-theme=light] .dcb-manage{border-color:rgba(190,30,60,.28);background:rgba(190,30,60,.04)}
+[data-theme=light] .dcb-manage:hover{background:rgba(190,30,60,.1)}
+[data-theme=light] .dcb-slider{background:#e7e3dd;border-color:rgba(120,80,90,.22)}
+[data-theme=light] .dcb-slider:before{background:#82696f}
+[data-theme=light] .dcb-switch input:checked + .dcb-slider{background:rgba(190,30,60,.35)}
+[data-theme=light] .dcb-switch input:checked + .dcb-slider:before{background:#a63d57}
+@media (max-width:480px){.dcb-banner{left:10px;right:10px;bottom:10px;max-width:none}.dcb-sheet{max-height:86vh;padding:18px}.dcb-foot .dcb-btn{flex:1 1 auto}}
 </style>
 
 <div class="dcb dcb-banner" id="dcbBanner" style="display:none">

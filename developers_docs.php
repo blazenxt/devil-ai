@@ -50,6 +50,20 @@ console.log(data.choices[0].message.content);</div>
 </section>
 
 <section class="card">
+  <h2><?= icon('globe', 18) ?> Browser usage</h2>
+  <p class="sub">For quick browser-side tests you can pass the key in the URL or use the <code>X-Devil-API-Key</code> header. For production, keep keys on your server.</p>
+  <div class="code">const res = await fetch('<?= htmlspecialchars($baseUrl) ?>/v1/chat/completions?key=dv_live_YOUR_KEY', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({
+    model: 'devil-flash',
+    messages: [{role: 'user', content: 'Hello from browser'}]
+  })
+});
+const data = await res.json();</div>
+</section>
+
+<section class="card">
   <h2><?= icon('info', 18) ?> Response shape</h2>
   <div class="code">{
   "id": "chatcmpl-devil-...",

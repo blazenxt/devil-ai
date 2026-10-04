@@ -442,8 +442,9 @@ function save_dev_keys(array $keys): bool { return save_json_atomic(dev_keys_pat
 
 function dev_api_headers(): void {
     header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Headers: Authorization, Content-Type');
+    header('Access-Control-Allow-Headers: Authorization, X-Devil-API-Key, Content-Type');
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Max-Age: 86400');
     header('X-Robots-Tag: noindex');
 }
 
@@ -478,6 +479,12 @@ function dev_clean_key_name(string $name): string {
 function dev_bearer_token(): string {
     $h = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''));
     if (preg_match('/^Bearer\s+(.+)$/i', trim($h), $m)) { return trim($m[1]); }
+    $x = trim((string)($_SERVER['HTTP_X_DEVIL_API_KEY'] ?? ''));
+    if ($x !== '') { return $x; }
+    foreach (['key', 'api_key', 'apikey'] as $k) {
+        $v = trim((string)($_GET[$k] ?? ''));
+        if ($v !== '') { return $v; }
+    }
     return '';
 }
 
