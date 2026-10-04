@@ -53,6 +53,8 @@ li{margin:6px 0}
 table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.84rem}
 th,td{border:1px solid var(--border);padding:10px 12px;text-align:left;vertical-align:top}
 th{background:rgba(244,63,94,.07);color:var(--soft);font-size:.76rem;letter-spacing:.4px;text-transform:uppercase}
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:14px 0}
+.tablewrap table{min-width:640px}
 td{color:var(--dim)}
 td b{color:var(--text)}
 code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);padding:2px 7px;border-radius:6px;font-size:.8em;font-family:ui-monospace,Consolas,monospace}
@@ -66,7 +68,7 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
   --bg:#faf9f7; --panel:#ffffff; --panel2:#f0ede9;
   --border:rgba(120,80,90,.18); --border-hi:rgba(190,30,60,.45);
   --red:#e11d48; --red2:#f43f5e; --pink:#c2415f; --soft:#a63d57;
-  --text:#262023; --dim:#6e5f65; --dim2:#9c8b91;
+  --text:#262023; --dim:#6e5f65; --dim2:#82696f;
 }
 [data-theme=light] body{background:radial-gradient(1100px 500px at 80% -10%,rgba(225,29,72,.06),transparent 60%),var(--bg)}
 [data-theme=light] .top{background:rgba(250,249,247,.9)}
@@ -96,6 +98,7 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
   <p>Cookies are small text files that a website stores in your browser. They let a site remember things between page loads — for example, that you are signed in, or which preferences you chose. They cannot read your files or install anything on your device.</p>
 
   <h2><span class="num">2</span>The cookies we use</h2>
+  <div class="tablewrap">
   <table>
     <tr><th>Category</th><th>Cookie</th><th>Purpose</th><th>Duration</th><th>Consent</th></tr>
     <tr><td><b>Essential</b></td><td><code>PHPSESSID</code></td><td>Keeps you signed in to your account and protects against session hijacking (HTTP-only).</td><td>Session</td><td>Always on — required</td></tr>
@@ -103,6 +106,7 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
     <tr><td><b>Analytics</b> (optional)</td><td><code>devil_analytics</code></td><td>Anonymous, aggregated usage counters that help improve the service.</td><td>1 year</td><td>Opt-in only</td></tr>
     <tr><td><b>Personalization</b> (optional)</td><td><code>devil_personal</code></td><td>Remembers UI preferences such as your last selected model and sidebar state.</td><td>1 year</td><td>Opt-in only</td></tr>
   </table>
+  </div>
   <p><b>We do not use advertising cookies, third-party trackers, or fingerprinting.</b> There are no external scripts on this site — no ad networks, no trackers, no data brokers.</p>
 
   <h2><span class="num">3</span>Managing your preferences</h2>

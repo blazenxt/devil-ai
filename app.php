@@ -240,6 +240,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
   .msg-user .bub{max-width:88%}
   .hint{padding:0 6px}
 }
+@media (hover:none){.acts{opacity:1}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* ═══════════ LIGHT THEME (Claude-style warm) ═══════════ */
@@ -247,7 +248,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
   --bg:#faf9f7; --bg2:#f4f2ee; --sb:#f2f0ea; --panel:#ffffff; --panel2:#f0ede9; --panel3:#e7e3dd;
   --border:rgba(120,80,90,.18); --border-hi:rgba(190,30,60,.45);
   --red:#e11d48; --red2:#f43f5e; --pink:#c2415f; --soft:#a63d57;
-  --text:#262023; --dim:#6e5f65; --dim2:#9c8b91;
+  --text:#262023; --dim:#6e5f65; --dim2:#82696f;
 }
 [data-theme=light] body{background:radial-gradient(1000px 500px at 70% -10%,rgba(225,29,72,.05),transparent 55%),var(--bg)}
 [data-theme=light] .m-top{background:rgba(250,249,247,.92)}
@@ -258,6 +259,12 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 [data-theme=light] .content strong{color:#141013}
 [data-theme=light] .content h3,[data-theme=light] .content h4{color:#141013}
 [data-theme=light] .content pre code{color:#43323a}
+[data-theme=light] .msg-err{background:rgba(190,18,60,.07);border-color:rgba(190,18,60,.3);color:#9f1239}
+[data-theme=light] .btn.danger{background:rgba(190,18,60,.08);border-color:rgba(190,18,60,.35);color:#9f1239}
+[data-theme=light] .btn.danger:hover{background:rgba(190,18,60,.15)}
+[data-theme=light] .status.ok{color:#15803d}
+[data-theme=light] .status.bad{color:#b91c1c}
+[data-theme=light] #userMenu .mi.danger:hover{background:rgba(190,18,60,.12);color:#b91c1c}
 
 /* ═══════════ CODE PREVIEW (mini artifacts) ═══════════ */
 .pvwrap{margin:.6em 0}

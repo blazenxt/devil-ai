@@ -143,7 +143,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
   --bg:#faf9f7; --bg2:#f4f2ee; --panel:#ffffff; --panel2:#f0ede9;
   --border:rgba(120,80,90,.18); --border-hi:rgba(190,30,60,.45);
   --red:#e11d48; --red2:#f43f5e; --pink:#c2415f; --soft:#a63d57;
-  --text:#262023; --dim:#6e5f65; --dim2:#9c8b91;
+  --text:#262023; --dim:#6e5f65; --dim2:#82696f;
 }
 [data-theme=light] body{background:radial-gradient(1200px 600px at 80% -10%,rgba(225,29,72,.06),transparent 60%),radial-gradient(900px 500px at -10% 110%,rgba(190,18,60,.05),transparent 55%),var(--bg)}
 [data-theme=light] nav{background:rgba(250,249,247,.88)}
@@ -151,6 +151,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
 [data-theme=light] .mock{box-shadow:0 30px 80px rgba(120,80,90,.18),0 0 0 1px rgba(120,80,90,.07)}
 [data-theme=light] .mock-bar{background:rgba(120,80,90,.06)}
 [data-theme=light] .mk-user{color:#262023}
+[data-theme=light] .mk-bot .txt b{color:#141013}
 [data-theme=light] .card{box-shadow:none}
 [data-theme=light] .card:hover{box-shadow:0 14px 40px rgba(120,80,90,.14)}
 </style>

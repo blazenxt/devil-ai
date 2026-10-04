@@ -121,10 +121,13 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:18
 .steps span.on{background:linear-gradient(90deg,#f43f5e,#be123c);border-color:transparent}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 /* light theme */
-[data-theme=light]{--bg:#faf9f7;--panel:#ffffff;--panel2:#f0ede9;--border:rgba(120,80,90,.18);--border-hi:rgba(190,30,60,.45);--red:#e11d48;--red2:#f43f5e;--pink:#c2415f;--soft:#a63d57;--text:#262023;--dim:#6e5f65;--dim2:#9c8b91}
+[data-theme=light]{--bg:#faf9f7;--panel:#ffffff;--panel2:#f0ede9;--border:rgba(120,80,90,.18);--border-hi:rgba(190,30,60,.45);--red:#e11d48;--red2:#f43f5e;--pink:#c2415f;--soft:#a63d57;--text:#262023;--dim:#6e5f65;--dim2:#82696f}
 [data-theme=light] body{background:radial-gradient(1100px 500px at 80% -10%,rgba(225,29,72,.06),transparent 60%),radial-gradient(800px 400px at -10% 110%,rgba(190,18,60,.05),transparent 55%),var(--bg)}
 [data-theme=light] .card{box-shadow:0 24px 70px rgba(120,80,90,.16)}
-[data-theme=light] .card h1,[data-theme=light] .err{color:#7f1d1d}
+[data-theme=light] .card h1{color:#1a1518}
+[data-theme=light] .err{color:#9f1239;background:rgba(190,18,60,.07);border-color:rgba(190,18,60,.3)}
+[data-theme=light] .err svg{color:#b91c1c}
+[data-theme=light] .ok-note{color:#166534;background:rgba(6,148,110,.08);border-color:rgba(6,148,110,.3)}
 </style>
 </head>
 <body>
