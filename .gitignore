@@ -1,3 +1,6 @@
-# Local runtime files (never commit secrets or rate-limit data)
+# Local runtime files (never commit secrets, accounts or rate-limit data)
 data/config.json
 data/rl.json
+data/authrl.json
+data/users.json
+data/chats/
