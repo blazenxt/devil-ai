@@ -30,7 +30,7 @@ if (isset($_SESSION['devil_uid'])) {
 <meta name="theme-color" content="#0c0709">
 <meta name="description" content="Devil AI — a custom-built AI assistant. Sinfully smart, surprisingly helpful. Private accounts, isolated chats, multiple models.">
 <script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
-(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+(function(){function ck(n){var m=document.cookie.match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}var t=ck('devil_theme');try{t=t||localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Devil AI — Sinfully smart AI assistant</title>
@@ -288,7 +288,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
     document.documentElement.setAttribute('data-theme', t);
     try {
       var prefs = JSON.parse(localStorage.getItem('devil_cookie_prefs') || 'null');
-      if (!prefs || prefs.personalization !== false) { localStorage.setItem('devil_theme', t); }
+      if (!prefs || prefs.personalization !== false) { localStorage.setItem('devil_theme', t); if(window.devilCookieSet){window.devilCookieSet('devil_theme',t,365);}else{document.cookie='devil_theme='+encodeURIComponent(t)+'; Max-Age=31536000; Path=/devil-ai/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');} }
     } catch (e) {}
     setIco();
   });

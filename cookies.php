@@ -14,7 +14,7 @@ require_once __DIR__ . '/inc/icons.php';
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0c0709">
 <script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
-(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+(function(){function ck(n){var m=document.cookie.match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}var t=ck('devil_theme');try{t=t||localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Cookie Policy — Devil AI</title>
@@ -99,10 +99,10 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
   <div class="tablewrap">
   <table>
     <tr><th>Category</th><th>Cookie</th><th>Purpose</th><th>Duration</th><th>Consent</th></tr>
-    <tr><td><b>Essential</b></td><td><code>PHPSESSID</code></td><td>Keeps you signed in to your account and protects against session hijacking (HTTP-only).</td><td>Session</td><td>Always on — required</td></tr>
-    <tr><td><b>Essential</b></td><td><code>devil_cookies</code></td><td>Remembers your cookie choices so we stop asking on every visit.</td><td>1 year</td><td>Always on — required</td></tr>
-    <tr><td><b>Analytics</b> (optional)</td><td><code>devil_analytics</code></td><td>Anonymous, aggregated usage counters that help improve the service.</td><td>1 year</td><td>Opt-in only</td></tr>
-    <tr><td><b>Personalization</b> (optional)</td><td><code>devil_personal</code></td><td>Remembers UI preferences such as your last selected model and sidebar state.</td><td>1 year</td><td>Opt-in only</td></tr>
+    <tr><td><b>Essential</b></td><td><code>DEVILAISESSID</code></td><td>Keeps you signed in to your account and protects against session hijacking (HTTP-only, Secure).</td><td>30 days rolling</td><td>Always on — required</td></tr>
+    <tr><td><b>Essential</b></td><td><code>devil_cookies</code>, <code>devil_cookie_version</code></td><td>Remembers your cookie choices so we stop asking on every visit.</td><td>1 year</td><td>Always on — required</td></tr>
+    <tr><td><b>Analytics</b> (optional)</td><td><code>devil_analytics</code></td><td>Anonymous usage preference flag for future improvements. No third-party tracker is loaded.</td><td>1 year</td><td>Opt-in only</td></tr>
+    <tr><td><b>Personalization</b> (optional)</td><td><code>devil_personal</code>, <code>devil_theme</code>, <code>devil_model</code>, <code>devil_custom_model</code>, <code>devil_sb</code></td><td>Remembers theme, selected model/custom engine, sidebar state and UI preferences across pages.</td><td>1 year</td><td>Opt-in only</td></tr>
   </table>
   </div>
   <p><b>We do not use advertising cookies, third-party trackers, or fingerprinting.</b> There are no external scripts on this site — no ad networks, no trackers, no data brokers.</p>
@@ -115,8 +115,8 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
   </ul>
   <p>When you decline optional categories, we actively delete any leftover optional cookies — declining is a real action here, not a theater.</p>
 
-  <h2><span class="num">4</span>Local storage</h2>
-  <p>Your cookie choices are additionally stored in the browser's local storage (key <code>devil_cookie_prefs</code>) so the preference survives even if cookies are cleared by aggressive browser settings. Clearing site data in your browser removes it.</p>
+  <h2><span class="num">4</span>Cookies + local storage mirror</h2>
+  <p>Cookie choices and personalization preferences are stored as first-party cookies and mirrored in local storage (key <code>devil_cookie_prefs</code>) for faster UI loading. If you turn personalization off, Devil AI deletes optional preference cookies and their local-storage copies.</p>
 
   <h2><span class="num">5</span>Your data &amp; your rights</h2>
   <ul>
@@ -144,7 +144,7 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
     document.documentElement.setAttribute('data-theme', t);
     try {
       var prefs = JSON.parse(localStorage.getItem('devil_cookie_prefs') || 'null');
-      if (!prefs || prefs.personalization !== false) { localStorage.setItem('devil_theme', t); }
+      if (!prefs || prefs.personalization !== false) { localStorage.setItem('devil_theme', t); if(window.devilCookieSet){window.devilCookieSet('devil_theme',t,365);}else{document.cookie='devil_theme='+encodeURIComponent(t)+'; Max-Age=31536000; Path=/devil-ai/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');} }
     } catch (e) {}
     setIco();
   });

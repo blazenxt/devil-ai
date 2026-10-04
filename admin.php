@@ -17,7 +17,7 @@ require_once __DIR__ . '/inc/icons.php';
 <meta name="theme-color" content="#0c0709">
 <meta name="robots" content="noindex">
 <script>/* theme boot */
-(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+(function(){function ck(n){var m=document.cookie.match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}var t=ck('devil_theme');try{t=t||localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Admin — Devil AI</title>
@@ -212,7 +212,7 @@ $('#testBtn').addEventListener('click', function () {
   b.addEventListener('click', function () {
     var t = cur() === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', t);
-    try { localStorage.setItem('devil_theme', t); } catch (e) {}
+    try { localStorage.setItem('devil_theme', t); if(window.devilCookieSet){window.devilCookieSet('devil_theme',t,365);}else{document.cookie='devil_theme='+encodeURIComponent(t)+'; Max-Age=31536000; Path=/devil-ai/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');} } catch (e) {}
     setIco();
   });
   setIco();

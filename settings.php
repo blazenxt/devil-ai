@@ -102,7 +102,7 @@ $created = !empty($me['created']) ? date('d M Y', (int)$me['created']) : '—';
 <meta name="theme-color" content="#0c0709">
 <meta name="robots" content="noindex">
 <script>
-(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+(function(){function ck(n){var m=document.cookie.match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}var t=ck('devil_theme');try{t=t||localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();
 </script>
@@ -215,7 +215,7 @@ a{text-decoration:none;color:inherit}button,input{font:inherit}button{cursor:poi
 var $=function(s){return document.querySelector(s)};
 function api(action, body){return fetch('api.php?action='+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}).then(function(r){return r.json()}).catch(function(){return{ok:false,error:'Network error.'}})}
 function cur(){return document.documentElement.getAttribute('data-theme')==='light'?'light':'dark'}
-function applyTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('devil_theme',t)}catch(e){};syncTheme()}
+function applyTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('devil_theme',t);if(window.devilCookieSet){window.devilCookieSet('devil_theme',t,365);}else{document.cookie='devil_theme='+encodeURIComponent(t)+'; Max-Age=31536000; Path=/devil-ai/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');}}catch(e){};syncTheme()}
 function syncTheme(){var t=cur();document.querySelectorAll('[data-theme-pick]').forEach(function(b){b.classList.toggle('on',b.dataset.themePick===t)});var btn=$('#themeBtn');if(btn){btn.innerHTML=t==='dark'?<?= json_encode(icon('sun', 16)) ?>:<?= json_encode(icon('moon', 16)) ?>}}
 $('#themeBtn').addEventListener('click',function(){applyTheme(cur()==='dark'?'light':'dark')});
 document.querySelectorAll('[data-theme-pick]').forEach(function(b){b.addEventListener('click',function(){applyTheme(b.dataset.themePick)})});

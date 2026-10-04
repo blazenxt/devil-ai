@@ -45,7 +45,7 @@ $JS_ICONS = [
 <meta name="theme-color" content="#0c0709">
 <meta name="robots" content="noindex">
 <script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
-(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+(function(){function ck(n){var m=document.cookie.match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}var t=ck('devil_theme');try{t=t||localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Devil AI — Chat</title>
@@ -435,13 +435,32 @@ var customModels = [], customById = {}, currentCustom = 'devil-09';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages} */
 var busy = false;
 var personalOK = true;
+function rawCookie(name) {
+  if (window.devilCookieGet) { return window.devilCookieGet(name); }
+  var m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : null;
+}
 try {
-  var prefs = JSON.parse(localStorage.getItem('devil_cookie_prefs') || 'null');
+  var prefsRaw = rawCookie('devil_cookies') || localStorage.getItem('devil_cookie_prefs') || 'null';
+  var prefs = JSON.parse(prefsRaw);
   if (prefs && prefs.personalization === false) { personalOK = false; }
 } catch (e) {}
 
-function store(key, val) { if (!personalOK) { return; } try { localStorage.setItem(key, val); } catch (e) {} }
-function read(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+function store(key, val) {
+  if (!personalOK) { return; }
+  try { localStorage.setItem(key, val); } catch (e) {}
+  if (window.devilCookieSet) { window.devilCookieSet(key, val, 365); }
+}
+function read(key) {
+  var v = null;
+  try { v = localStorage.getItem(key); } catch (e) {}
+  if (v === null || v === '') { v = rawCookie(key); }
+  return v;
+}
+window.devilOnCookiePrefs = function (prefs) {
+  personalOK = !!(prefs && prefs.personalization);
+  if (personalOK && window.devilSyncPersonalCookies) { window.devilSyncPersonalCookies(); }
+};
 
 function providerIcon(key) {
   var k = String(key || 'devil').toLowerCase();
