@@ -1100,6 +1100,8 @@ function chat_branch_root_id(array $chat): string {
 function migrate_branch_files(string $uid): void {
     $dir = chats_dir($uid);
     if (!is_dir($dir)) { return; }
+    $marker = $dir . '/.branches_embedded_v3';
+    if (is_file($marker)) { return; }
     foreach (glob($dir . '/*.json') ?: [] as $f) {
         $branch = load_chat_raw_file($f);
         if (!is_array($branch) || empty($branch['id'])) { continue; }
@@ -1135,6 +1137,7 @@ function migrate_branch_files(string $uid): void {
         save_chat($uid, $root);
         @unlink($f);
     }
+    @file_put_contents($marker, (string)time(), LOCK_EX);
 }
 
 function list_chats(string $uid): array {
@@ -1488,6 +1491,10 @@ try {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
+
+    /* Release the PHP session lock before chat/file/AI work so parallel requests
+       (chat_load + sidebar list, or page refresh + API calls) do not block each other. */
+    if ($action !== 'account_delete' && session_status() === PHP_SESSION_ACTIVE) { @session_write_close(); }
 
     if ($action === 'account_delete' && $method === 'POST') {
         $in = input_json();

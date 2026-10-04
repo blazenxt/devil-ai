@@ -141,6 +141,8 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 #welcome img.big{width:72px;height:72px;filter:drop-shadow(0 0 24px rgba(244,63,94,.5));margin-bottom:18px}
 #welcome h2{font-family:var(--serif);font-weight:500;font-size:clamp(1.7rem,4vw,2.4rem)}
 #welcome .sub{color:var(--dim);font-size:.9rem;margin-top:8px}
+body.loading-chat #welcome{display:none!important}
+body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:18vh auto 0;width:max-content;max-width:90%;color:var(--dim);font-size:.86rem;border:1px solid var(--border);background:var(--panel);border-radius:999px;padding:9px 14px;box-shadow:0 12px 32px rgba(0,0,0,.18)}
 .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:34px}
 .card{display:flex;gap:12px;align-items:flex-start;text-align:left;background:var(--panel);border:1px solid var(--border);border-radius:15px;padding:15px;transition:.18s;cursor:pointer}
 .card:hover{border-color:var(--border-hi);transform:translateY(-2px);box-shadow:0 10px 30px rgba(225,29,72,.1)}
@@ -369,7 +371,7 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 #previewModal .sheet{max-width:880px;width:94vw}
 </style>
 </head>
-<body>
+<body class="<?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? 'loading-chat' : '' ?>">
 
 <div id="app">
 
@@ -1047,6 +1049,7 @@ function aiContent(el, text, meta) {
 }
 
 function renderCurrentMessages() {
+  document.body.classList.remove('loading-chat');
   msgs.innerHTML = '';
   var arr = (currentChat && currentChat.messages) ? currentChat.messages : [];
   welcome.style.display = arr.length ? 'none' : '';
@@ -1314,6 +1317,7 @@ $('#topNewChatBtn').addEventListener('click', function () { if (busy) { pauseSen
 $('#editCancel').addEventListener('click', function () { clearEdit(); inp.value = ''; resize(); inp.focus(); });
 
 function newChatView() {
+  document.body.classList.remove('loading-chat');
   clearEdit();
   isTempChat = false;
   currentChat = null;
@@ -1417,7 +1421,7 @@ function openChat(id, variant) {
   var q = 'chat_load&id=' + encodeURIComponent(id);
   if (variant) { q += '&variant=' + encodeURIComponent(variant); }
   api(q).then(function (j) {
-    if (!j.ok) { toast(j.error || 'Could not open chat', 'warning'); return; }
+    if (!j.ok) { document.body.classList.remove('loading-chat'); toast(j.error || 'Could not open chat', 'warning'); return; }
     isTempChat = false;
     currentChat = j.chat;
     currentChat.temp = false;
@@ -1625,11 +1629,14 @@ api('bootstrap').then(function (j) {
   renderModelMenu();
   renderCustomModelMenu('');
 });
-loadChats().then(function () {
-  if (INITIAL_CHAT_ID) { openChat(INITIAL_CHAT_ID, INITIAL_VARIANT); }
-  else if (new URLSearchParams(window.location.search).get('temp') === '1') { startTempChat(true); }
-  else { updateChatActions(); }
-});
+if (INITIAL_CHAT_ID) {
+  openChat(INITIAL_CHAT_ID, INITIAL_VARIANT);
+} else if (new URLSearchParams(window.location.search).get('temp') === '1') {
+  startTempChat(true);
+} else {
+  updateChatActions();
+}
+loadChats();
 resize();
 if (window.innerWidth > 900) { inp.focus(); }
 })();
