@@ -25,7 +25,7 @@ if (isset($_SESSION['devil_uid'])) {
 if (!$me) { header('Location: login.php'); exit; }
 
 $JS_ICONS = [
-    'send' => icon('send', 17), 'copy' => icon('copy', 15), 'retry' => icon('retry', 15),
+    'send' => icon('send', 17), 'stop' => icon('stop', 17), 'copy' => icon('copy', 15), 'retry' => icon('retry', 15),
     'trash' => icon('trash', 15), 'pencil' => icon('pencil', 14), 'check' => icon('check', 15),
     'x' => icon('x', 16), 'chev' => icon('chevron-down', 14), 'zap' => icon('zap', 15),
     'sparkles' => icon('sparkles', 15), 'crown' => icon('crown', 15), 'ghost' => icon('ghost', 15),
@@ -119,6 +119,15 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 .m-top{display:none;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(12,7,9,.85);backdrop-filter:blur(10px)}
 .m-top .brand{display:flex;align-items:center;gap:8px;font-weight:700;flex:1}
 .m-top .brand img{width:24px;height:24px}
+.chattools{position:absolute;top:14px;right:18px;z-index:25;display:flex;align-items:center;gap:9px;padding:6px;border:1px solid var(--border);background:rgba(23,16,20,.72);backdrop-filter:blur(14px);border-radius:18px;box-shadow:0 14px 40px rgba(0,0,0,.22)}
+.ctbtn{height:36px;min-width:36px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;color:var(--dim);padding:0 11px;font-size:.8rem;font-weight:700;transition:.16s;border:1px solid transparent;white-space:nowrap}
+.ctbtn:hover{background:rgba(244,63,94,.12);color:var(--soft);border-color:var(--border)}
+.ctbtn.primary{background:linear-gradient(135deg,rgba(244,63,94,.18),rgba(190,18,60,.12));color:var(--soft);border-color:var(--border)}
+.ctbtn.on{background:rgba(244,63,94,.22);color:#fff;border-color:var(--border-hi);box-shadow:0 0 0 3px rgba(244,63,94,.08)}
+.ctbtn.stop{display:none;color:#fecaca;background:rgba(190,18,60,.18);border-color:rgba(248,113,113,.35)}
+.ctbtn.stop.show{display:inline-flex}
+.ctbtn .txt{display:inline}
+body.temp-chat #thread:before{content:'Temporary chat — not saved in history';display:block;width:max-content;max-width:100%;margin:0 auto 12px;padding:7px 12px;border-radius:999px;border:1px solid var(--border);background:rgba(244,63,94,.08);color:var(--soft);font-size:.72rem;font-weight:700;letter-spacing:.2px}
 
 #scroller{flex:1;overflow-y:auto;scroll-behavior:smooth}
 #thread{max-width:760px;margin:0 auto;padding:28px 20px 30px}
@@ -185,6 +194,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 #sendBtn{margin-left:auto;width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 16px rgba(244,63,94,.4);transition:.15s;flex-shrink:0}
 #sendBtn:hover{transform:scale(1.06)}
 #sendBtn:disabled{opacity:.45;transform:none;cursor:default}
+#sendBtn.stopmode{background:rgba(190,18,60,.22);border:1px solid rgba(248,113,113,.45);color:#fecaca;box-shadow:none}
 .hint{text-align:center;font-size:.68rem;color:var(--dim2);margin-top:9px}
 #attachBtn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.15s;flex-shrink:0}
 #attachBtn:hover{background:rgba(244,63,94,.12);color:var(--soft)}
@@ -261,6 +271,8 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
   #sidebar.closed{margin-left:-272px;box-shadow:none}
   #backdrop.show{display:block}
   .m-top{display:flex}
+  .chattools{top:8px;right:56px;padding:4px;border-radius:14px;background:rgba(23,16,20,.86)}
+  .ctbtn{height:34px;min-width:34px;padding:0 9px}.ctbtn .txt{display:none}
   #thread{padding:20px 16px 24px}
   .cards{grid-template-columns:1fr}
   .msg-user .bub{max-width:88%}
@@ -278,6 +290,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 }
 [data-theme=light] body{background:radial-gradient(1000px 500px at 70% -10%,rgba(225,29,72,.05),transparent 55%),var(--bg)}
 [data-theme=light] .m-top{background:rgba(250,249,247,.92)}
+[data-theme=light] .chattools{background:rgba(255,255,255,.78);box-shadow:0 14px 40px rgba(120,80,90,.14)}
 [data-theme=light] .sb-search{background:rgba(120,80,90,.08)}
 [data-theme=light] .compbox{box-shadow:0 12px 40px rgba(120,80,90,.16)}
 [data-theme=light] .modal{background:rgba(60,40,48,.35)}
@@ -343,6 +356,12 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
       <button class="iconbtn" id="themeBtnM" title="Switch theme"><?= icon('sun', 17) ?></button>
     </header>
 
+    <div class="chattools" id="chatTools" aria-label="Chat actions">
+      <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
+      <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
+      <button class="ctbtn stop" id="pauseBtn" type="button" title="Pause response"><?= icon('stop', 16) ?><span class="txt">Pause</span></button>
+    </div>
+
     <div id="scroller"><div id="thread">
       <div id="welcome">
         <img class="big" src="assets/logo.svg" alt="Devil AI logo">
@@ -375,7 +394,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
           <button id="sendBtn" title="Send (Enter)" disabled><?= icon('send', 17) ?></button>
         </div>
       </div>
-      <p class="hint">Devil AI v1.0.0.0 — can make mistakes. Double-check important info.</p>
+      <p class="hint">Enter = new line • Ctrl/⌘ + Enter = send • Devil AI can make mistakes.</p>
     </div>
   </main>
 </div>
@@ -432,8 +451,8 @@ var $$ = function (s) { return Array.prototype.slice.call(document.querySelector
 /* ── state ── */
 var models = [], modelById = {}, currentModel = 'flash';
 var customModels = [], customById = {}, currentCustom = 'devil-09';
-var chats = [], currentChat = null;   /* currentChat = {id, title, messages} */
-var busy = false;
+var chats = [], currentChat = null;   /* currentChat = {id, title, messages, temp?} */
+var busy = false, isTempChat = false, activeController = null, sendSeq = 0;
 var personalOK = true;
 function rawCookie(name) {
   if (window.devilCookieGet) { return window.devilCookieGet(name); }
@@ -513,16 +532,20 @@ function md(src) {
 }
 
 /* ── api ── */
-function api(action, body, method) {
+function api(action, body, method, signal) {
   method = method || (body === undefined ? 'GET' : 'POST');
   var opt = { method: method, headers: { 'Content-Type': 'application/json' } };
+  if (signal) { opt.signal = signal; }
   if (method === 'POST') { opt.body = JSON.stringify(body || {}); }
   /* NOTE: action may carry extra query params (chat_load&id=…) whose values
      are already encodeURIComponent'd by the caller — so don't re-encode here */
   return fetch('api.php' + (action ? '?action=' + action : ''), opt).then(function (r) {
     if (r.status === 401) { window.location.href = 'login.php'; throw new Error('signed out'); }
     return r.json();
-  }).catch(function (e) { return { ok: false, error: 'Network error — please try again.' }; });
+  }).catch(function (e) {
+    if (e && e.name === 'AbortError') { return { ok: false, aborted: true, error: 'Paused.' }; }
+    return { ok: false, error: 'Network error — please try again.' };
+  });
 }
 
 /* ── toast ── */
@@ -771,7 +794,53 @@ function addErr(text) {
 
 /* ── composer ── */
 var inp = $('#inp'), sendBtn = $('#sendBtn');
-function resize() { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 190) + 'px'; sendBtn.disabled = busy || (!inp.value.trim() && !pendingImg); }
+function updateChatActions() {
+  document.body.classList.toggle('temp-chat', isTempChat);
+  $('#tempChatBtn').classList.toggle('on', isTempChat);
+  $('#topNewChatBtn').style.display = (currentChat && !isTempChat) ? 'inline-flex' : 'none';
+  $('#pauseBtn').classList.toggle('show', busy);
+}
+function updateSendButton() {
+  if (busy) {
+    sendBtn.disabled = false;
+    sendBtn.classList.add('stopmode');
+    sendBtn.title = 'Pause response';
+    sendBtn.innerHTML = I.stop;
+  } else {
+    sendBtn.classList.remove('stopmode');
+    sendBtn.title = 'Send (Ctrl/⌘ + Enter)';
+    sendBtn.innerHTML = I.send;
+    sendBtn.disabled = (!inp.value.trim() && !pendingImg);
+  }
+  updateChatActions();
+}
+function resize() { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 190) + 'px'; updateSendButton(); }
+function compactHistoryForTemp() {
+  if (!currentChat || !currentChat.messages) { return []; }
+  return currentChat.messages.slice(-18).map(function (m) { return { role: m.role, content: m.content || '' }; }).filter(function (m) { return m.content; });
+}
+function startTempChat() {
+  if (busy) { return; }
+  isTempChat = true;
+  currentChat = { id: null, title: 'Temporary chat', temp: true, messages: [] };
+  msgs.innerHTML = '';
+  welcome.style.display = '';
+  if (window.history) { history.replaceState(null, '', 'app.php?temp=1'); }
+  renderList($('#searchInp').value);
+  updateChatActions();
+  toast('Temporary chat started — it will not be saved', 'ghost');
+  if (window.innerWidth > 900) { inp.focus(); }
+}
+function pauseSend() {
+  if (!busy) { return; }
+  sendSeq++;
+  if (activeController) { try { activeController.abort(); } catch (e) {} }
+  busy = false;
+  $$('.thinking').forEach(function (el) { el.remove(); });
+  activeController = null;
+  resize();
+  toast('Response paused', 'stop');
+}
 
 /* ── image attach ── */
 var pendingImg = null;   /* data URL */
@@ -845,15 +914,20 @@ document.addEventListener('paste', function (e) {
 });
 inp.addEventListener('input', resize);
 inp.addEventListener('keydown', function (e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
 });
-sendBtn.addEventListener('click', function () { send(); });
+sendBtn.addEventListener('click', function () { if (busy) { pauseSend(); } else { send(); } });
+$('#pauseBtn').addEventListener('click', pauseSend);
+$('#tempChatBtn').addEventListener('click', startTempChat);
+$('#topNewChatBtn').addEventListener('click', function () { if (!busy) { window.location.href = 'app.php'; } });
 
 function newChatView() {
+  isTempChat = false;
   currentChat = null;
   msgs.innerHTML = '';
   welcome.style.display = '';
   renderList($('#searchInp').value);
+  updateChatActions();
   if (window.innerWidth > 900) { inp.focus(); }
 }
 $('#newChatBtn').addEventListener('click', function () { window.location.href = 'app.php'; });
@@ -870,7 +944,8 @@ function send() {
   inp.value = ''; pendingImg = null; imgChip.classList.remove('show'); imgChip.innerHTML = '';
   resize();
   addUserMsg(text, img);
-  var payload = { message: text, model: currentModel, id: currentChat ? currentChat.id : null };
+  var payload = { message: text, model: currentModel, id: (currentChat && !isTempChat) ? currentChat.id : null };
+  if (isTempChat) { payload.temp = true; payload.history = compactHistoryForTemp(); }
   if (currentModel === 'custom') { payload.custom_model = currentCustom; }
   if (img) { payload.image = img; }
   runSend(payload);
@@ -883,17 +958,27 @@ function retryLast() {
   /* drop last assistant message visually + in memory */
   m.pop();
   if (msgs.lastElementChild && msgs.lastElementChild.classList.contains('msg-ai')) { msgs.lastElementChild.remove(); }
-  runSend({ id: currentChat.id, retry: true, model: currentModel, custom_model: currentModel === 'custom' ? currentCustom : undefined });
+  var payload = { id: isTempChat ? null : currentChat.id, retry: true, model: currentModel, custom_model: currentModel === 'custom' ? currentCustom : undefined };
+  if (isTempChat) { payload.temp = true; payload.history = compactHistoryForTemp(); }
+  runSend(payload);
 }
 
 function runSend(payload) {
-  busy = true; sendBtn.disabled = true;
+  busy = true;
+  var seq = ++sendSeq;
+  activeController = window.AbortController ? new AbortController() : null;
+  resize();
   var th = addThinking();
-  api('chat_send', payload).then(function (j) {
+  api('chat_send', payload, undefined, activeController ? activeController.signal : null).then(function (j) {
+    if (seq !== sendSeq) { return; }
     th.remove();
+    if (j.aborted) { toast('Response paused', 'stop'); return; }
     if (j.ok) {
-      if (!currentChat) { currentChat = { id: j.id, title: j.title, messages: [] }; }
-      currentChat.id = j.id; currentChat.title = j.title;
+      if (!currentChat) { currentChat = { id: j.id || null, title: j.title || 'New chat', temp: !!payload.temp, messages: [] }; }
+      isTempChat = !!(payload.temp || j.temp || currentChat.temp);
+      currentChat.temp = isTempChat;
+      currentChat.id = isTempChat ? null : j.id;
+      currentChat.title = isTempChat ? 'Temporary chat' : j.title;
       if (window.history && currentChat.id) { history.replaceState(null, '', 'app.php?chat=' + encodeURIComponent(currentChat.id)); }
       if (payload.retry) {
         /* keep existing user msg, replace assistant */
@@ -902,16 +987,21 @@ function runSend(payload) {
         if (payload.image) { um.img = payload.image; }
         currentChat.messages.push(um);
       }
-      currentChat.messages.push({ role: 'assistant', content: j.reply });
+      currentChat.messages.push({ role: 'assistant', content: j.reply, model_label: (j.model && j.model.label) || activeModelLabel() });
       var el = addAiMsg({ modelTag: (j.model && j.model.label) || activeModelLabel() });
       aiContent(el, j.reply);
-      loadChats();
+      if (!isTempChat) { loadChats(); }
+      updateChatActions();
     } else {
       if (payload.retry) { /* put a placeholder assistant error, keep chat usable */ }
       addErr(j.error + (j.hint ? '\nHint: ' + j.hint : ''));
     }
   }).finally(function () {
-    busy = false; resize();
+    if (seq === sendSeq) {
+      busy = false;
+      activeController = null;
+      resize();
+    }
   });
 }
 
@@ -920,7 +1010,9 @@ function openChat(id) {
   if (busy) { return; }
   api('chat_load&id=' + encodeURIComponent(id)).then(function (j) {
     if (!j.ok) { toast(j.error || 'Could not open chat', 'warning'); return; }
+    isTempChat = false;
     currentChat = j.chat;
+    currentChat.temp = false;
     msgs.innerHTML = '';
     welcome.style.display = currentChat.messages.length ? 'none' : '';
     currentChat.messages.forEach(function (m) {
@@ -928,6 +1020,7 @@ function openChat(id) {
       else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content); }
     });
     renderList($('#searchInp').value);
+    updateChatActions();
     scrollDown();
   });
 }
@@ -1129,6 +1222,8 @@ api('bootstrap').then(function (j) {
 });
 loadChats().then(function () {
   if (INITIAL_CHAT_ID) { openChat(INITIAL_CHAT_ID); }
+  else if (new URLSearchParams(window.location.search).get('temp') === '1') { startTempChat(); }
+  else { updateChatActions(); }
 });
 resize();
 if (window.innerWidth > 900) { inp.focus(); }

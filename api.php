@@ -1275,6 +1275,7 @@ try {
     if ($action === 'chat_send' && $method === 'POST') {
         $in     = input_json();
         $retry  = !empty($in['retry']);
+        $temp   = !empty($in['temp']);
         $msg    = trim((string)($in['message'] ?? ''));
         $model  = (string)($in['model'] ?? 'flash');
         $img    = '';
@@ -1303,18 +1304,31 @@ try {
         $tz = (string)($cfgAll['timezone'] ?? '');
         if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) { date_default_timezone_set($tz); }
 
-        /* load or create chat */
+        /* load/create saved chat, or build an unsaved temporary chat from client history */
         $chat = null;
-        if (!empty($in['id'])) {
-            $chat = load_chat($uid, (string)$in['id']);
-            if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
-        }
-        if (!$chat) {
-            $existing = list_chats($uid);
-            if (count($existing) >= (int)$cfgAll['max_chats']) {
-                json_out(['ok' => false, 'error' => 'You reached your chat limit (' . (int)$cfgAll['max_chats'] . ').', 'hint' => 'Delete some old chats to make room.'], 400);
+        if ($temp) {
+            $chat = ['id' => null, 'title' => 'Temporary chat', 'created' => time(), 'updated' => time(), 'messages' => []];
+            $histIn = isset($in['history']) && is_array($in['history']) ? array_slice($in['history'], -20) : [];
+            foreach ($histIn as $hm) {
+                if (!is_array($hm)) { continue; }
+                $r = (string)($hm['role'] ?? '');
+                if ($r !== 'user' && $r !== 'assistant') { continue; }
+                $c = trim((string)($hm['content'] ?? ''));
+                if ($c === '') { continue; }
+                $chat['messages'][] = ['role' => $r, 'content' => mb_substr($c, 0, MAX_INPUT), 'ts' => time()];
             }
-            $chat = ['id' => 'c' . bin2hex(random_bytes(8)), 'title' => '', 'created' => time(), 'updated' => time(), 'messages' => []];
+        } else {
+            if (!empty($in['id'])) {
+                $chat = load_chat($uid, (string)$in['id']);
+                if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+            }
+            if (!$chat) {
+                $existing = list_chats($uid);
+                if (count($existing) >= (int)$cfgAll['max_chats']) {
+                    json_out(['ok' => false, 'error' => 'You reached your chat limit (' . (int)$cfgAll['max_chats'] . ').', 'hint' => 'Delete some old chats to make room.'], 400);
+                }
+                $chat = ['id' => 'c' . bin2hex(random_bytes(8)), 'title' => '', 'created' => time(), 'updated' => time(), 'messages' => []];
+            }
         }
         $chat['messages'] = array_values(array_filter($chat['messages'] ?? [], 'is_array'));
 
@@ -1363,10 +1377,15 @@ try {
         }
         if (count($chat['messages']) > MAX_MSGS_PER_CHAT) { $chat['messages'] = array_slice($chat['messages'], -MAX_MSGS_PER_CHAT); }
         $chat['updated'] = time();
-        if (!save_chat($uid, $chat)) { json_out(['ok' => false, 'error' => 'Could not save the chat — check data/ permissions.'], 500); }
 
         $modelOut = ['id' => $model, 'label' => $displayLabel];
         if ($customModel !== '') { $modelOut['custom'] = $customModel; }
+
+        if ($temp) {
+            json_out(['ok' => true, 'id' => null, 'temp' => true, 'title' => 'Temporary chat', 'reply' => $reply, 'model' => $modelOut]);
+        }
+
+        if (!save_chat($uid, $chat)) { json_out(['ok' => false, 'error' => 'Could not save the chat — check data/ permissions.'], 500); }
         json_out(['ok' => true, 'id' => $chat['id'], 'title' => $chat['title'], 'reply' => $reply, 'model' => $modelOut]);
     }
 
