@@ -1,5 +1,5 @@
 <?php
-/* 😈 DEVIL AI — index.php (Chat UI) • v1.0 • Pure PHP */
+/* 😈 DEVIL AI — index.php (Chat UI) • v1.0.0.0 • Pure PHP */
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 $history = (isset($_SESSION['devil_history']) && is_array($_SESSION['devil_history'])) ? $_SESSION['devil_history'] : [];
 $boot = json_encode($history, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
@@ -118,7 +118,7 @@ footer{padding:10px 4vw 14px;background:rgba(10,5,7,.85);backdrop-filter:blur(10
 .btn.primary{background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;box-shadow:0 4px 15px rgba(244,63,94,.35)}
 .btn.primary:hover{transform:translateY(-1px)}
 .btn.ghost{background:none;border:1px solid var(--border);color:var(--soft)}
-#sStatus{margin-top:12px;font-size:.8rem;min-height:1.3em;white-space:pre-wrap;color:var(--dim)}
+#sStatus,#lockStatus{margin-top:12px;font-size:.8rem;min-height:1.3em;white-space:pre-wrap;color:var(--dim)}
 .note{margin-top:14px;font-size:.72rem;color:var(--dim2);line-height:1.5}
 
 /* ── toast ── */
@@ -161,7 +161,7 @@ footer{padding:10px 4vw 14px;background:rgba(10,5,7,.85);backdrop-filter:blur(10
         <button class="chip">😈 Who are you?</button>
         <button class="chip">🔥 Tell me a devil joke</button>
         <button class="chip">🧮 What is 45*12+8?</button>
-        <button class="chip">⚙️ How do I enable full AI mode?</button>
+        <button class="chip">🌍 Tell me a fun fact</button>
       </div>
     </div>
     <div id="msgs"></div>
@@ -173,7 +173,7 @@ footer{padding:10px 4vw 14px;background:rgba(10,5,7,.85);backdrop-filter:blur(10
     <textarea id="inp" rows="1" maxlength="4000" placeholder="Ask Devil AI anything… 😈"></textarea>
     <button id="send" title="Send (Enter)">🔥</button>
   </div>
-  <div class="foot">😈 Devil AI v1.0 • 100% PHP • <span id="mode2">…</span></div>
+  <div class="foot">😈 Devil AI v1.0.0.0 • 100% PHP • <span id="mode2">…</span></div>
 </footer>
 
 <!-- ⚙️ Settings -->
@@ -181,32 +181,41 @@ footer{padding:10px 4vw 14px;background:rgba(10,5,7,.85);backdrop-filter:blur(10
   <div class="sheet">
     <div class="sheethead"><span>⚙️ Devil AI Settings</span><button id="sClose" class="ghostbtn">✕</button></div>
 
-    <label for="sProvider">AI Brain (Provider)</label>
-    <select id="sProvider"></select>
-    <div id="sHelper" class="helper hidden"></div>
-
-    <label for="sKey">API Key <span id="keyState" class="dim"></span></label>
-    <input id="sKey" type="password" placeholder="Paste your key here…" autocomplete="off">
-
-    <label for="sModel">Model <span class="dim">(empty = default)</span></label>
-    <input id="sModel" type="text" placeholder="gemini-2.5-flash">
-
-    <div id="baseRow">
-      <label for="sBase">Base URL <span class="dim">(Custom provider only)</span></label>
-      <input id="sBase" type="text" placeholder="https://api.example.com/v1">
+    <!-- 🔒 Lock screen (public visitors see only this) -->
+    <div id="lockView" class="hidden">
+      <label for="lockPw">Admin Password 🔒</label>
+      <input id="lockPw" type="password" placeholder="Enter the admin password" autocomplete="off">
+      <div class="btnrow"><button id="lockBtn" class="btn primary">🔓 Unlock</button></div>
+      <div id="lockStatus"></div>
+      <p class="note">These settings are for the owner only. Visitors can just chat — no password needed 😈</p>
     </div>
 
-    <div id="pwRow" class="hidden">
-      <label for="sPw">Admin Password 🔒</label>
-      <input id="sPw" type="password" placeholder="Password set in config.php" autocomplete="off">
-    </div>
+    <!-- ⚙️ Main settings (visible to the owner only) -->
+    <div id="mainView">
+      <label for="sProvider">AI Brain (Provider)</label>
+      <select id="sProvider"></select>
+      <div id="sHelper" class="helper hidden"></div>
 
-    <div class="btnrow">
-      <button id="sSave" class="btn primary">💾 Save</button>
-      <button id="sTest" class="btn ghost">🔌 Test Connection</button>
+      <div id="keyRow">
+        <label for="sKey">API Key <span id="keyState" class="dim"></span></label>
+        <input id="sKey" type="password" placeholder="Paste your key here…" autocomplete="off">
+      </div>
+
+      <label for="sModel">Model <span class="dim">(empty = default)</span></label>
+      <input id="sModel" type="text" placeholder="gemini-2.5-flash">
+
+      <div id="pwRow" class="hidden">
+        <label for="sPw">Admin Password 🔒</label>
+        <input id="sPw" type="password" placeholder="Password set in config.php" autocomplete="off">
+      </div>
+
+      <div class="btnrow">
+        <button id="sSave" class="btn primary">💾 Save</button>
+        <button id="sTest" class="btn ghost">🔌 Test Connection</button>
+      </div>
+      <div id="sStatus"></div>
+      <div class="note">🔒 The key is stored only on your server (<code>data/config.json</code>) — it is never sent to the browser.</div>
     </div>
-    <div id="sStatus"></div>
-    <div class="note">🔒 The key is stored only on your server (<code>data/config.json</code>) — it is never sent to the browser. Before deploying publicly, set <code>admin_password</code> in config.php!</div>
   </div>
 </div>
 
@@ -222,12 +231,13 @@ const msgs = $('#msgs'), inp = $('#inp'), sendBtn = $('#send'), chat = $('#chat'
 const welcome = $('#welcome'), badge = $('#badge'), mode2 = $('#mode2'), toast = $('#toast');
 const overlay = $('#overlay');
 
-const SHORT = { gemini: 'Gemini', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', custom: 'Custom', demo: 'Demo' };
 const AVA = '<img src="assets/logo.svg" width="22" height="22" alt="" draggable="false">';
 
 let hist = Array.isArray(BOOT_HISTORY) ? BOOT_HISTORY.filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string') : [];
 let busy = false;
 let PROVIDERS = {};
+let adminUnlocked = false;
+let unlockedPw = '';
 
 /* ── mini markdown (escape first, then format — XSS safe) ── */
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -326,10 +336,11 @@ async function api(action, body, method) {
   }
 }
 
-function setMode(mode, pid) {
-  let cls = 'badge warn', txt = '⚠️ Key Missing';
+/* Badge — never shows the provider name to the public */
+function setMode(mode) {
+  let cls = 'badge warn', txt = '⚠️ Setup Needed';
   if (mode === 'demo') { cls = 'badge demo'; txt = '😈 Demo Mode'; }
-  else if (mode === 'ai') { cls = 'badge ai'; txt = '🔥 AI Mode · ' + (SHORT[pid] || pid || ''); }
+  else if (mode === 'ai') { cls = 'badge ai'; txt = '🔥 AI Mode'; }
   badge.className = cls; badge.textContent = txt;
   mode2.textContent = txt;
 }
@@ -349,7 +360,7 @@ async function send(text) {
     hist.push({ role: 'user', content: text });
     hist.push({ role: 'assistant', content: j.reply });
     addMsg('bot', j.reply);
-    if (j.mode) { setMode(j.mode, j.provider); }
+    if (j.mode) { setMode(j.mode); }
   } else {
     addMsg('err', (j.error || 'Unknown error') + (j.hint ? '\n💡 ' + j.hint : ''));
   }
@@ -364,7 +375,7 @@ function updateProviderUI() {
   const h = $('#sHelper');
   const keyRow = $('#keyRow');
   if (pid === 'prexzy') {
-    h.innerHTML = '✅ <b>No API key needed!</b> Free AI via prexzyapis.com — just hit Save. Docs: <a href="https://docs.prexzyapis.com/" target="_blank" rel="noopener">docs.prexzyapis.com ↗</a>';
+    h.innerHTML = '✅ <b>No API key needed!</b> Free AI — just hit Save.';
     h.classList.remove('hidden');
     keyRow.style.display = 'none';
   } else if (pid === 'demo') {
@@ -389,25 +400,63 @@ function fillSettings(j) {
     o.value = p.id; o.textContent = p.label;
     sel.appendChild(o);
   });
-  sel.value = j.provider || 'demo';
+  sel.value = j.provider || 'prexzy';
   $('#sKey').value = '';
   $('#keyState').textContent = j.has_key ? ('✅ Saved: ' + (j.key_mask || '****')) : '';
   $('#sKey').placeholder = j.has_key ? 'New key — or leave empty' : 'Paste your key here…';
   $('#sModel').value = j.model || '';
-  $('#sBase').value = j.base_url || '';
   $('#pwRow').classList.toggle('hidden', !j.admin);
   $('#sPw').value = '';
   $('#sStatus').textContent = '';
   updateProviderUI();
-  setMode(j.mode, j.provider);
+  setMode(j.mode);
+}
+
+/* j must be a FULL settings payload (open mode GET, or POST auth response) */
+function showMainSettings(j) {
+  $('#lockView').classList.add('hidden');
+  $('#mainView').classList.remove('hidden');
+  fillSettings(j);
+  overlay.classList.remove('hidden');
 }
 
 async function openSettings() {
   const j = await api('settings', null, 'GET');
   if (!j.ok) { showToast('Settings failed to load: ' + (j.error || '')); return; }
-  fillSettings(j);
-  overlay.classList.remove('hidden');
+  /* Password-locked: the public GET returns only {ok, version, mode, admin} */
+  if (j.admin && !adminUnlocked) {
+    $('#mainView').classList.add('hidden');
+    $('#lockView').classList.remove('hidden');
+    $('#lockPw').value = '';
+    $('#lockStatus').textContent = '';
+    overlay.classList.remove('hidden');
+    setTimeout(() => { $('#lockPw').focus(); }, 60);
+    return;
+  }
+  showMainSettings(j);
 }
+
+async function unlockSettings() {
+  const pw = $('#lockPw').value;
+  if (!pw) { $('#lockStatus').textContent = 'Enter the password first.'; return; }
+  $('#lockStatus').textContent = 'Checking…';
+  const r = await api('auth', { admin_password: pw });
+  if (r.ok && r.providers) {
+    adminUnlocked = true;
+    unlockedPw = pw;
+    showMainSettings(r);
+    $('#sPw').value = pw;
+    showToast('🔓 Unlocked!');
+  } else if (r.ok) {
+    /* no password was set after all — settings GET is already full */
+    adminUnlocked = true;
+    const j = await api('settings', null, 'GET');
+    if (j.ok) { showMainSettings(j); showToast('🔓 Unlocked!'); }
+  } else {
+    $('#lockStatus').textContent = '❌ Wrong password!';
+  }
+}
+
 function closeSettings() { overlay.classList.add('hidden'); }
 
 function settingsPayload() {
@@ -415,7 +464,6 @@ function settingsPayload() {
     provider: $('#sProvider').value,
     api_key: $('#sKey').value.trim(),
     model: $('#sModel').value.trim(),
-    base_url: $('#sBase').value.trim(),
     admin_password: $('#sPw').value
   };
 }
@@ -425,10 +473,16 @@ async function saveSettings() {
   const j = await api('settings', settingsPayload());
   if (j.ok) {
     $('#sStatus').textContent = '✅ Saved!';
-    setMode(j.mode, j.provider);
+    setMode(j.mode);
     showToast('✅ Settings saved 😈');
-    const j2 = await api('settings', null, 'GET');
-    if (j2.ok) { fillSettings(j2); }
+    /* refresh the full form (locked mode: full payload only via auth) */
+    if (adminUnlocked && unlockedPw) {
+      const r2 = await api('auth', { admin_password: unlockedPw });
+      if (r2.ok && r2.providers) { fillSettings(r2); $('#sPw').value = unlockedPw; }
+    } else {
+      const j2 = await api('settings', null, 'GET');
+      if (j2.ok && j2.providers) { fillSettings(j2); }
+    }
   } else {
     $('#sStatus').textContent = '❌ ' + (j.error || 'Save failed');
   }
@@ -465,6 +519,8 @@ $('#newBtn').addEventListener('click', async () => {
 $('#setBtn').addEventListener('click', openSettings);
 badge.addEventListener('click', openSettings);
 $('#sClose').addEventListener('click', closeSettings);
+$('#lockBtn').addEventListener('click', unlockSettings);
+$('#lockPw').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); unlockSettings(); } });
 overlay.addEventListener('click', (e) => { if (e.target === overlay) { closeSettings(); } });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeSettings(); } });
 $('#sProvider').addEventListener('change', updateProviderUI);
@@ -479,9 +535,9 @@ if (hist.length) {
   const j = await api('settings', null, 'GET');
   if (j.ok) {
     (j.providers || []).forEach((p) => { PROVIDERS[p.id] = p; });
-    setMode(j.mode, j.provider);
+    setMode(j.mode);
   } else {
-    setMode('demo', 'demo');
+    setMode('demo');
   }
 })();
 })();

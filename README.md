@@ -143,4 +143,4 @@ Otherwise any visitor could open ⚙️ Settings and change your provider! 🔒
 
 ---
 
-**Made with 🔥 in pure PHP • Devil AI v1.1 😈**
+**Made with 🔥 in pure PHP • Devil AI v1.0.0.0 😈**

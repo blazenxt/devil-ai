@@ -1,7 +1,7 @@
 <?php
 /**
  * ═══════════════════════════════════════════════════════
- *  😈 DEVIL AI — Configuration (config.php) • v1.1
+ *  😈 DEVIL AI — Configuration (config.php) • v1.0.0.0
  * ═══════════════════════════════════════════════════════
  *  You can also change providers from the in-app ⚙️ Settings
  *  panel — it saves to data/config.json and overrides this
