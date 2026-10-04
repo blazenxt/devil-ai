@@ -1418,6 +1418,8 @@ function update_root_variant_messages(array &$rootChat, string $variant, array $
 
 function shares_dir(): string { return data_dir() . '/shares'; }
 function share_path(string $sid): string { return shares_dir() . '/' . $sid . '.json'; }
+function share_id(): string { return bin2hex(random_bytes(64)); }
+function share_public_url(string $sid): string { return app_base_url() . '/share/' . rawurlencode($sid); }
 function feedback_path(): string { return data_dir() . '/feedback.json'; }
 
 function public_chat_payload(array $chat, array $user): array {
@@ -1432,6 +1434,21 @@ function public_chat_payload(array $chat, array $user): array {
             'ts' => (int)($m['ts'] ?? 0),
         ];
         if (!empty($m['img']) && is_string($m['img'])) { $one['img'] = (string)$m['img']; }
+        if (!empty($m['attachments']) && is_array($m['attachments'])) {
+            $atts = [];
+            foreach (array_slice($m['attachments'], 0, 12) as $a) {
+                if (!is_array($a)) { continue; }
+                $atts[] = [
+                    'name' => clean_filename((string)($a['name'] ?? 'attachment')),
+                    'type' => (string)($a['type'] ?? 'application/octet-stream'),
+                    'size' => (int)($a['size'] ?? 0),
+                    'is_image' => !empty($a['is_image']),
+                    'read_status' => (string)($a['read_status'] ?? ''),
+                ];
+            }
+            if ($atts) { $one['attachments'] = $atts; }
+        }
+        if (!empty($m['edited'])) { $one['edited'] = true; }
         if ($role === 'assistant' && !empty($m['model_label'])) { $one['model_label'] = (string)$m['model_label']; }
         $messages[] = $one;
     }
@@ -1439,7 +1456,10 @@ function public_chat_payload(array $chat, array $user): array {
         'title' => (string)($chat['title'] ?? 'Shared chat'),
         'created' => time(),
         'source_chat' => (string)($chat['id'] ?? ''),
+        'source_slug' => (string)($chat['slug'] ?? ''),
+        'source_variant' => (string)($chat['active_variant'] ?? ''),
         'shared_by' => ['name' => (string)($user['name'] ?? 'Devil user')],
+        'message_count' => count($messages),
         'messages' => $messages,
     ];
 }
@@ -1742,13 +1762,17 @@ try {
     if ($action === 'chat_share' && $method === 'POST') {
         $in = input_json();
         $id = (string)($in['id'] ?? '');
+        $variant = (string)($in['variant'] ?? '');
+        if ($variant !== '' && $variant !== 'original' && !preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $variant)) { $variant = ''; }
         $chat = load_chat($uid, $id);
         if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
-        $sid = 's' . bin2hex(random_bytes(8));
-        $payload = public_chat_payload($chat, $user);
+        list($displayChat) = display_chat_variant($uid, $chat, $variant);
+        $sid = share_id();
+        $payload = public_chat_payload($displayChat, $user);
         $payload['id'] = $sid;
+        $payload['legacy_url'] = app_base_url() . '/share.php?id=' . rawurlencode($sid);
         if (!save_json_atomic(share_path($sid), $payload)) { json_out(['ok' => false, 'error' => 'Could not create share link.'], 500); }
-        json_out(['ok' => true, 'id' => $sid, 'url' => app_base_url() . '/share.php?id=' . rawurlencode($sid)]);
+        json_out(['ok' => true, 'id' => $sid, 'url' => share_public_url($sid), 'legacy_url' => $payload['legacy_url']]);
     }
 
     if ($action === 'chat_edit' && $method === 'POST') {

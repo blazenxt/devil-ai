@@ -819,7 +819,7 @@ function submitInlineEdit() {
 function shareCurrentChat(btn) {
   if (!currentChat || !currentChat.id || isTempChat) { toast('Only saved chats can be shared', 'warning'); return; }
   if (btn) { btn.disabled = true; }
-  api('chat_share', { id: currentChat.id }).then(function (j) {
+  api('chat_share', { id: rootChatId(), variant: activeVariantId() }).then(function (j) {
     if (j.ok && j.url) {
       if (navigator.clipboard) { navigator.clipboard.writeText(j.url).catch(function () {}); }
       toast('Share link copied');
