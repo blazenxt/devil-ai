@@ -73,7 +73,7 @@ $devilCookieSecure = function_exists('devil_is_https') ? devil_is_https() : (!em
       <label class="dcb-switch"><input type="checkbox" id="dcbAnalytics"><span class="dcb-slider"></span></label>
     </div>
     <div class="dcb-cat">
-      <div class="dcb-cat-txt"><b>Personalization</b><span>Remembers theme, last model, custom engine, sidebar state and cookie/settings choices on this device.</span></div>
+      <div class="dcb-cat-txt"><b>Personalization</b><span>Remembers theme, last model, custom engine, voice choice, sidebar state and cookie/settings choices on this device.</span></div>
       <label class="dcb-switch"><input type="checkbox" id="dcbPersonal"><span class="dcb-slider"></span></label>
     </div>
 
@@ -92,7 +92,7 @@ $devilCookieSecure = function_exists('devil_is_https') ? devil_is_https() : (!em
   var KEY = 'devil_cookie_prefs';
   var COOKIE_PATH = <?= json_encode($devilCookiePath) ?>;
   var COOKIE_SECURE = <?= $devilCookieSecure ? 'true' : 'false' ?>;
-  var PERSONAL_KEYS = ['devil_theme', 'devil_model', 'devil_custom_model', 'devil_sb'];
+  var PERSONAL_KEYS = ['devil_theme', 'devil_model', 'devil_custom_model', 'devil_sb', 'devil_voice'];
   var $ = function (id) { return document.getElementById(id); };
   function cookieSuffix(days) {
     var maxAge = Math.max(0, Math.floor(days * 24 * 60 * 60));

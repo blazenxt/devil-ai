@@ -376,8 +376,15 @@ body.voice-open{overflow:hidden}
 [data-theme=light] .ctbtn.stop,[data-theme=light] #sendBtn.stopmode{background:rgba(190,18,60,.10);border-color:rgba(190,18,60,.32);color:#9f1239;box-shadow:none}
 [data-theme=light] #editChip,[data-theme=light] #voiceChip{background:rgba(190,30,60,.07);border-color:rgba(190,30,60,.20);color:#9f1239}
 [data-theme=light] #voiceLive{background:radial-gradient(700px 420px at 50% 28%,rgba(190,30,60,.14),transparent 62%),rgba(250,249,247,.78)}
-[data-theme=light] .voiceShell{background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(244,242,238,.88));box-shadow:0 30px 90px rgba(120,80,90,.22)}
-[data-theme=light] .voiceLine{background:rgba(190,30,60,.045)}
+[data-theme=light] .voiceShell{background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(244,242,238,.94));border-color:rgba(190,30,60,.22);box-shadow:0 30px 90px rgba(120,80,90,.22)}
+[data-theme=light] .voiceHead b,[data-theme=light] .voiceState,[data-theme=light] .voiceLine p{color:#262023}
+[data-theme=light] .voiceHead span,[data-theme=light] .voiceHint,[data-theme=light] .voiceLine p.ghost{color:#82696f}
+[data-theme=light] .voiceLine{background:rgba(190,30,60,.045);border-color:rgba(120,80,90,.18)}
+[data-theme=light] .voiceCtl{background:rgba(190,30,60,.055);border-color:rgba(120,80,90,.18);color:#a63d57}
+[data-theme=light] .voiceCtl:hover:not(:disabled),[data-theme=light] .voiceCtl.on{background:rgba(190,30,60,.12);border-color:rgba(190,30,60,.35);color:#9f1239}
+[data-theme=light] .voiceCtl.end{background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;border:none}
+[data-theme=light] .voiceCloseTop{background:rgba(255,255,255,.55);border-color:rgba(120,80,90,.18);color:#6e5f65}
+[data-theme=light] .voiceCloseTop:hover{background:rgba(190,30,60,.1);color:#9f1239;border-color:rgba(190,30,60,.3)}
 [data-theme=light] .inlineEditBox{background:#fff;border-color:rgba(190,30,60,.28);box-shadow:0 14px 34px rgba(120,80,90,.14)}
 [data-theme=light] .inlineEditBox textarea{background:#f7f3ef;border-color:rgba(120,80,90,.18)}
 [data-theme=light] .editBadge{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.20);color:#9f1239}
@@ -1267,6 +1274,23 @@ function voiceCleanText(text) {
     .replace(/\s+/g, ' ')
     .trim();
 }
+function voicePref() {
+  try { return JSON.parse(read('devil_voice') || '{}') || {}; } catch (e) { return {}; }
+}
+function voiceKey(v) { return (v.voiceURI || v.name || '') + '|' + (v.lang || ''); }
+function pickSpeechVoice(pref) {
+  if (!('speechSynthesis' in window) || !speechSynthesis.getVoices) { return null; }
+  var voices = speechSynthesis.getVoices() || [];
+  if (!voices.length || !pref) { return null; }
+  return voices.filter(function (v) {
+    return (pref.uri && v.voiceURI === pref.uri) ||
+      (pref.name && v.name === pref.name && (!pref.lang || v.lang === pref.lang)) ||
+      (pref.key && voiceKey(v) === pref.key);
+  })[0] || null;
+}
+if (window.speechSynthesis && typeof speechSynthesis.onvoiceschanged !== 'undefined') {
+  speechSynthesis.onvoiceschanged = function () { speechSynthesis.getVoices(); };
+}
 function voiceShort(text, max) {
   text = voiceCleanText(text);
   max = max || 260;
@@ -1484,8 +1508,11 @@ function speakText(text) {
   stopVoiceListening();
   try { window.speechSynthesis.cancel(); } catch (e) {}
   var u = new SpeechSynthesisUtterance(clean.slice(0, 3800));
-  u.lang = navigator.language || 'en-US';
-  u.rate = 1;
+  var pref = voicePref();
+  var chosenVoice = pickSpeechVoice(pref);
+  if (chosenVoice) { u.voice = chosenVoice; u.lang = chosenVoice.lang || u.lang; }
+  else { u.lang = (pref && pref.lang) || navigator.language || 'en-US'; }
+  u.rate = Math.min(1.35, Math.max(0.75, parseFloat(pref.rate) || 1));
   u.pitch = 1;
   setVoiceStatus('Devil AI is speaking…');
   if (voicePanelOpen) { setVoiceAi(voiceShort(clean, 360), false); }
