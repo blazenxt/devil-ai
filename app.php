@@ -290,7 +290,13 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 }
 [data-theme=light] body{background:radial-gradient(1000px 500px at 70% -10%,rgba(225,29,72,.05),transparent 55%),var(--bg)}
 [data-theme=light] .m-top{background:rgba(250,249,247,.92)}
-[data-theme=light] .chattools{background:rgba(255,255,255,.78);box-shadow:0 14px 40px rgba(120,80,90,.14)}
+[data-theme=light] .chattools{background:rgba(255,255,255,.86);box-shadow:0 14px 40px rgba(120,80,90,.14)}
+[data-theme=light] .ctbtn{color:#6e5f65}
+[data-theme=light] .ctbtn:hover{background:rgba(190,30,60,.09);color:#a63d57;border-color:rgba(190,30,60,.22)}
+[data-theme=light] .ctbtn.primary{background:rgba(190,30,60,.08);color:#a63d57;border-color:rgba(190,30,60,.20)}
+[data-theme=light] .ctbtn.on{background:rgba(190,30,60,.16);color:#7f1d1d;border-color:rgba(190,30,60,.38);box-shadow:0 0 0 3px rgba(190,30,60,.08)}
+[data-theme=light] .ctbtn.stop,[data-theme=light] #sendBtn.stopmode{background:rgba(190,18,60,.10);border-color:rgba(190,18,60,.32);color:#9f1239;box-shadow:none}
+[data-theme=light] body.temp-chat #thread:before{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.22);color:#9f1239}
 [data-theme=light] .sb-search{background:rgba(120,80,90,.08)}
 [data-theme=light] .compbox{box-shadow:0 12px 40px rgba(120,80,90,.16)}
 [data-theme=light] .modal{background:rgba(60,40,48,.35)}
@@ -303,6 +309,9 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 [data-theme=light] .btn.danger:hover{background:rgba(190,18,60,.15)}
 [data-theme=light] .status.ok{color:#15803d}
 [data-theme=light] .status.bad{color:#b91c1c}
+[data-theme=light] #userMenu,[data-theme=light] #modelMenu,[data-theme=light] #customModelMenu{box-shadow:0 18px 50px rgba(120,80,90,.18)}
+[data-theme=light] #sendBtn.stopmode svg{color:#9f1239}
+[data-theme=light] #toast{box-shadow:0 14px 40px rgba(120,80,90,.18)}
 [data-theme=light] #userMenu .mi.danger:hover{background:rgba(190,18,60,.12);color:#b91c1c}
 
 /* ═══════════ CODE PREVIEW (mini artifacts) ═══════════ */
