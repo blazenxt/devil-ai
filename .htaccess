@@ -8,8 +8,12 @@ Options -Indexes
   Header set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
 
-# Block direct browser access to the data/ folder (config.json etc.)
 <IfModule mod_rewrite.c>
   RewriteEngine On
+
+  # Block direct browser access to the data/ folder (config.json etc.)
   RewriteRule ^data/ - [F,L]
+
+  # Pretty chat URLs: /chat/{model}/{type}/{128-char-slug}
+  RewriteRule ^chat/([A-Za-z0-9-]+)/([A-Za-z0-9-]+)/([A-Fa-f0-9]{128})/?$ app.php?route_model=$1&route_type=$2&chat=$3 [L,QSA]
 </IfModule>

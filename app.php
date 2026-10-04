@@ -22,7 +22,9 @@ if (isset($_SESSION['devil_uid'])) {
         }
     }
 }
-if (!$me) { header('Location: login.php'); exit; }
+$APP_BASE_PATH = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/app.php'))), '/');
+if ($APP_BASE_PATH === '.' || $APP_BASE_PATH === '/') { $APP_BASE_PATH = ''; }
+if (!$me) { header('Location: ' . ($APP_BASE_PATH ?: '') . '/login.php'); exit; }
 
 $JS_ICONS = [
     'send' => icon('send', 17), 'stop' => icon('stop', 17), 'copy' => icon('copy', 15), 'retry' => icon('retry', 15),
@@ -43,6 +45,7 @@ $JS_ICONS = [
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<base href="<?= htmlspecialchars(($APP_BASE_PATH ?: '') . '/', ENT_QUOTES) ?>">
 <meta name="theme-color" content="#0c0709">
 <meta name="robots" content="noindex">
 <script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
@@ -491,8 +494,9 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 <script>
 const I = <?= json_encode($JS_ICONS, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ME = <?= json_encode(['name' => $me['name'], 'email' => $me['email']], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
-const INITIAL_CHAT_ID = <?= json_encode(preg_match('/^c[a-f0-9]{16}$/', (string)($_GET['chat'] ?? '')) ? (string)$_GET['chat'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
-const INITIAL_VARIANT = <?= json_encode((preg_match('/^c[a-f0-9]{16}$/', (string)($_GET['variant'] ?? '')) || (string)($_GET['variant'] ?? '') === 'original') ? (string)$_GET['variant'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const APP_BASE_PATH = <?= json_encode($APP_BASE_PATH, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const INITIAL_CHAT_ID = <?= json_encode(preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? (string)$_GET['chat'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const INITIAL_VARIANT = <?= json_encode((preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['variant'] ?? '')) || (string)($_GET['variant'] ?? '') === 'original') ? (string)$_GET['variant'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 (function () {
 'use strict';
 var $ = function (s) { return document.querySelector(s); };
@@ -546,22 +550,43 @@ function activeModelLabel() {
   if (currentModel === 'custom') { return (customById[currentCustom] || {}).label || 'Custom AI'; }
   return (modelById[currentModel] || {}).label || 'Devil AI';
 }
-function rootChatId() {
+function rootVariantId() {
   return currentChat ? (currentChat.root_id || currentChat.id || '') : '';
+}
+function rootChatId() {
+  return currentChat ? (currentChat.slug || currentChat.chat_slug || currentChat.root_slug || currentChat.root_id || currentChat.id || '') : '';
 }
 function activeVariantId() {
   if (!currentChat) { return ''; }
-  return currentChat.active_variant || currentChat.variant_chat_id || rootChatId();
+  return currentChat.active_variant || currentChat.variant_chat_id || rootVariantId();
 }
-function chatUrlFor(rootId, variantId) {
-  var u = 'app.php?chat=' + encodeURIComponent(rootId);
-  if (variantId && variantId !== rootId && variantId !== 'original') { u += '&variant=' + encodeURIComponent(variantId); }
-  return u;
+function routeModel() {
+  if (currentChat && currentChat.url_model) { return currentChat.url_model; }
+  return currentModel === 'custom' ? 'custom' : (currentModel || 'flash');
+}
+function routeType() {
+  if (currentChat && currentChat.url_type) { return currentChat.url_type; }
+  return currentModel === 'custom' ? (currentCustom || 'custom') : 'chat';
+}
+function seg(s, fallback) {
+  s = String(s || fallback || 'chat').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  return s || fallback || 'chat';
+}
+function chatUrlFor(slug) {
+  var base = APP_BASE_PATH || '';
+  return base + '/chat/' + encodeURIComponent(seg(routeModel(), 'flash')) + '/' + encodeURIComponent(seg(routeType(), 'chat')) + '/' + encodeURIComponent(slug);
 }
 function replaceChatUrl() {
-  var root = rootChatId();
-  if (!window.history || !root) { return; }
-  history.replaceState(null, '', chatUrlFor(root, activeVariantId()));
+  var slug = rootChatId();
+  if (!window.history || !slug) { return; }
+  history.replaceState(null, '', chatUrlFor(slug));
+}
+function chatUrlForItem(c) {
+  var base = APP_BASE_PATH || '';
+  var slug = (c && (c.slug || c.id)) || '';
+  var m = (c && c.url_model) || 'flash';
+  var t = (c && c.url_type) || 'chat';
+  return base + '/chat/' + encodeURIComponent(seg(m, 'flash')) + '/' + encodeURIComponent(seg(t, 'chat')) + '/' + encodeURIComponent(slug);
 }
 
 /* ── markdown (escape-first, XSS safe) ── */
@@ -769,7 +794,7 @@ function submitInlineEdit() {
       toast('Edited branch created');
     } else if (j.ok && j.id) {
       editRestoreChat = null;
-      window.location.href = 'app.php?chat=' + encodeURIComponent(j.id);
+      window.location.href = chatUrlFor(j.slug || j.id);
     } else {
       toast((j && j.error) || 'Edit failed', 'warning');
       editRestoreChat = null;
@@ -835,7 +860,8 @@ function renderList(filter) {
     any = true;
     html += '<div class="grp">' + labels[k] + '</div>';
     groups[k].forEach(function (c) {
-      html += '<div class="chatitem' + (currentChat && currentChat.id === c.id ? ' on' : '') + '" data-id="' + c.id + '">' +
+      var isOn = currentChat && (currentChat.id === c.id || currentChat.root_id === c.id || (currentChat.slug && currentChat.slug === c.slug));
+      html += '<div class="chatitem' + (isOn ? ' on' : '') + '" data-id="' + c.id + '" data-slug="' + (c.slug || '') + '">' +
         '<span class="t"></span><span class="act">' +
         '<button data-rename="' + c.id + '" title="Rename">' + I.pencil + '</button>' +
         '<button data-del="' + c.id + '" title="Delete">' + I.trash + '</button></span></div>';
@@ -860,7 +886,10 @@ $('#chatList').addEventListener('click', function (e) {
   if (rn) { e.stopPropagation(); openRename(rn.dataset.rename); return; }
   if (del) { e.stopPropagation(); deleteChat(del.dataset.del); return; }
   var it = e.target.closest('.chatitem');
-  if (it) { window.location.href = 'app.php?chat=' + encodeURIComponent(it.dataset.id); }
+  if (it) {
+    var c = chats.filter(function (x) { return x.id === it.dataset.id; })[0] || { id: it.dataset.id, slug: it.dataset.slug };
+    window.location.href = chatUrlForItem(c);
+  }
 });
 
 /* ── messages ── */
@@ -872,7 +901,7 @@ function branchGroupFor(index) {
 }
 function activeVariantIndex(variants) {
   var id = activeVariantId();
-  var root = rootChatId();
+  var root = rootVariantId();
   var n = variants.findIndex(function (v) { return v && (v.id === id || (id === root && v.id === root)); });
   return n < 0 ? 0 : n;
 }
@@ -901,10 +930,11 @@ function makeBranchNav(index, group) {
 }
 function switchBranchVariant(id, index) {
   var root = rootChatId();
+  var original = rootVariantId();
   if (!id || !root || activeVariantId() === id) { return; }
   if (busy) { toast('Pause the response before switching versions', 'warning'); return; }
   cancelInlineEdit(false);
-  var variant = (id === root) ? 'original' : id;
+  var variant = (id === original) ? 'original' : id;
   api('chat_load&id=' + encodeURIComponent(root) + '&variant=' + encodeURIComponent(variant)).then(function (j) {
     if (!j.ok) { toast(j.error || 'Could not open that version', 'warning'); return; }
     isTempChat = false;
@@ -1345,7 +1375,13 @@ function runSend(payload) {
       currentChat.temp = isTempChat;
       currentChat.id = isTempChat ? null : j.id;
       currentChat.root_id = isTempChat ? null : (j.id || currentChat.root_id || currentChat.id);
-      if (!isTempChat) { currentChat.active_variant = j.variant || currentChat.active_variant || currentChat.root_id; currentChat.variant_chat_id = j.variant || currentChat.variant_chat_id || ''; }
+      if (!isTempChat) {
+        currentChat.slug = j.slug || currentChat.slug || currentChat.root_id;
+        currentChat.url_model = j.url_model || currentChat.url_model || routeModel();
+        currentChat.url_type = j.url_type || currentChat.url_type || routeType();
+        currentChat.active_variant = j.variant || currentChat.active_variant || currentChat.root_id;
+        currentChat.variant_chat_id = j.variant || currentChat.variant_chat_id || '';
+      }
       currentChat.title = isTempChat ? 'Temporary chat' : j.title;
       if (!isTempChat) { replaceChatUrl(); }
       if (payload.retry) {
