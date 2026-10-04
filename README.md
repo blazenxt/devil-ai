@@ -19,6 +19,8 @@ A complete Claude-style AI chat product in **100% pure PHP**. No frameworks, no 
 
 - **Isolated accounts** — email + password sign-up, bcrypt-hashed passwords, per-user chat storage (`data/chats/{user_id}/`), brute-force protection, account deletion.
 - **Claude-style chat UI** — sidebar with chat history (grouped Today / Yesterday / Previous 7 days), search, rename, delete, collapsible on mobile, user menu, markdown rendering, copy & retry per message.
+- **Light & dark themes** — Claude-style warm light palette + devil dark, system-preference aware, one-click toggle on every page (respects the personalization cookie choice).
+- **Code preview (mini artifacts)** — HTML/CSS/JS code blocks get a "Preview" button that renders them live in a sandboxed iframe (with console capture for JS), plus "Open in new tab".
 - **Multiple models** — pick **Devil Flash**, **Devil Pro**, **Devil Ultra** or **Demo Mode** from the chat box. Public visitors only see the devil names — which real engine powers each model is a server-side secret configurable in Admin settings.
 - **Automatic fallback** — if any engine fails (bad key, rate limit, downtime), Devil AI automatically retries on the free Prexzy engine. The chat never dies; the offline brain is the last resort.
 - **Cookie consent system** — first-visit banner (Accept all / Manage), per-category toggles (Essential locked, Analytics & Personalization opt-in), choices stored in localStorage + a 1-year cookie, full policy page, footer link to reopen settings.

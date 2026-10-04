@@ -18,6 +18,10 @@ $mode = (isset($_GET['mode']) && $_GET['mode'] === 'register') ? 'register' : 'l
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0c0709">
+<script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
+(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
+document.documentElement.setAttribute('data-theme',t);})();</script>
 <title><?= $mode === 'register' ? 'Create your account' : 'Sign in' ?> — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <style>
@@ -68,13 +72,29 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:16
 .foot{text-align:center;padding:18px;font-size:.72rem;color:var(--dim2)}
 .hidden{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ═══════════ LIGHT THEME (Claude-style warm) ═══════════ */
+[data-theme=light]{
+  --bg:#faf9f7; --panel:#ffffff; --panel2:#f0ede9;
+  --border:rgba(120,80,90,.18); --border-hi:rgba(190,30,60,.45);
+  --red:#e11d48; --red2:#f43f5e; --pink:#c2415f; --soft:#a63d57;
+  --text:#262023; --dim:#6e5f65; --dim2:#9c8b91;
+}
+[data-theme=light] body{background:radial-gradient(1100px 500px at 80% -10%,rgba(225,29,72,.06),transparent 60%),radial-gradient(800px 400px at -10% 110%,rgba(190,18,60,.05),transparent 55%),var(--bg)}
+[data-theme=light] .tabs{background:rgba(120,80,90,.08)}
+[data-theme=light] .card{box-shadow:0 24px 70px rgba(120,80,90,.16)}
+[data-theme=light] .tabs button.on{background:#fff;color:#262023}
+[data-theme=light] .top a.back:hover,[data-theme=light] .inrow .eye:hover{color:#a63d57}
 </style>
 </head>
 <body>
 
 <div class="top">
   <a class="brand" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
-  <a class="back" href="index.php"><?= icon('chevron-right', 14) ?> Back to home</a>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button class="back" id="themeBtn" title="Switch theme" style="border:none;background:none;cursor:pointer;display:inline-flex;align-items:center;padding:6px" type="button"><?= icon('sun', 16) ?></button>
+    <a class="back" href="index.php"><?= icon('chevron-right', 14) ?> Back to home</a>
+  </div>
 </div>
 
 <main>
@@ -195,6 +215,24 @@ regForm.addEventListener('submit', async function (e) {
   if (j.ok) { window.location.href = 'app.php'; }
   else { showErr($('#rerr'), j.error || 'Registration failed.'); }
 });
+/* theme toggle (respects the personalization cookie choice) */
+(function () {
+  var SUN = <?= json_encode(icon('sun', 16)) ?>;
+  var MOON = <?= json_encode(icon('moon', 16)) ?>;
+  var b = document.getElementById('themeBtn');
+  function cur() { return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+  function setIco() { b.innerHTML = cur() === 'dark' ? SUN : MOON; }
+  b.addEventListener('click', function () {
+    var t = cur() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    try {
+      var prefs = JSON.parse(localStorage.getItem('devil_cookie_prefs') || 'null');
+      if (!prefs || prefs.personalization !== false) { localStorage.setItem('devil_theme', t); }
+    } catch (e) {}
+    setIco();
+  });
+  setIco();
+})();
 })();
 </script>
 </body>

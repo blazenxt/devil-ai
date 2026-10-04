@@ -31,6 +31,10 @@ if (isset($_SESSION['devil_uid'])) {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0c0709">
 <meta name="description" content="Devil AI — a custom-built AI assistant. Sinfully smart, surprisingly helpful. Private accounts, isolated chats, multiple models.">
+<script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
+(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
+document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Devil AI — Sinfully smart AI assistant</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <style>
@@ -133,6 +137,22 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
 @media (max-width:860px){.grid,.models{grid-template-columns:1fr 1fr}.navlinks{display:none}}
 @media (max-width:600px){.grid,.models{grid-template-columns:1fr}.hero{padding:60px 0 40px}.navbtns .btn.ghost.hide-sm{display:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ═══════════ LIGHT THEME (Claude-style warm) ═══════════ */
+[data-theme=light]{
+  --bg:#faf9f7; --bg2:#f4f2ee; --panel:#ffffff; --panel2:#f0ede9;
+  --border:rgba(120,80,90,.18); --border-hi:rgba(190,30,60,.45);
+  --red:#e11d48; --red2:#f43f5e; --pink:#c2415f; --soft:#a63d57;
+  --text:#262023; --dim:#6e5f65; --dim2:#9c8b91;
+}
+[data-theme=light] body{background:radial-gradient(1200px 600px at 80% -10%,rgba(225,29,72,.06),transparent 60%),radial-gradient(900px 500px at -10% 110%,rgba(190,18,60,.05),transparent 55%),var(--bg)}
+[data-theme=light] nav{background:rgba(250,249,247,.88)}
+[data-theme=light] .hero h1{background:linear-gradient(100deg,#1a1518 15%,#c2415f 55%,#e11d48 90%);-webkit-background-clip:text;background-clip:text}
+[data-theme=light] .mock{box-shadow:0 30px 80px rgba(120,80,90,.18),0 0 0 1px rgba(120,80,90,.07)}
+[data-theme=light] .mock-bar{background:rgba(120,80,90,.06)}
+[data-theme=light] .mk-user{color:#262023}
+[data-theme=light] .card{box-shadow:none}
+[data-theme=light] .card:hover{box-shadow:0 14px 40px rgba(120,80,90,.14)}
 </style>
 </head>
 <body>
@@ -147,6 +167,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
       <a href="cookies.php">Cookies</a>
     </div>
     <div class="navbtns">
+      <button class="btn ghost" id="themeBtn" title="Switch theme" style="padding:10px 12px" type="button"><?= icon('sun', 16) ?></button>
       <?php if ($me): ?>
         <span class="userchip"><span class="av"><?= htmlspecialchars(strtoupper(mb_substr($me['name'], 0, 1))) ?></span><?= htmlspecialchars($me['name']) ?></span>
         <a class="btn primary" href="app.php">Open app <?= icon('arrow-right', 15) ?></a>
@@ -254,6 +275,27 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
     </div>
   </div>
 </footer>
+
+<script>
+/* ── theme toggle (respects the personalization cookie choice) ── */
+(function () {
+  var SUN = <?= json_encode(icon('sun', 16)) ?>;
+  var MOON = <?= json_encode(icon('moon', 16)) ?>;
+  var b = document.getElementById('themeBtn');
+  function cur() { return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+  function setIco() { b.innerHTML = cur() === 'dark' ? SUN : MOON; }
+  b.addEventListener('click', function () {
+    var t = cur() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    try {
+      var prefs = JSON.parse(localStorage.getItem('devil_cookie_prefs') || 'null');
+      if (!prefs || prefs.personalization !== false) { localStorage.setItem('devil_theme', t); }
+    } catch (e) {}
+    setIco();
+  });
+  setIco();
+})();
+</script>
 
 <?php require __DIR__ . '/inc/cookiebar.php'; ?>
 </body>

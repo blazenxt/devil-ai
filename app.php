@@ -36,6 +36,7 @@ $JS_ICONS = [
     'loader' => icon('loader', 16), 'warning' => icon('warning', 16), 'lock' => icon('lock', 16),
     'message' => icon('message', 16), 'menu' => icon('menu', 18), 'flame' => icon('flame', 15),
     'lightbulb' => icon('lightbulb', 17), 'shield' => icon('shield', 16),
+    'sun' => icon('sun', 17), 'moon' => icon('moon', 17), 'play' => icon('play', 13),
 ];
 ?><!DOCTYPE html>
 <html lang="en">
@@ -44,6 +45,10 @@ $JS_ICONS = [
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0c0709">
 <meta name="robots" content="noindex">
+<script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
+(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
+document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Devil AI — Chat</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <style>
@@ -236,6 +241,34 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
   .hint{padding:0 6px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* ═══════════ LIGHT THEME (Claude-style warm) ═══════════ */
+[data-theme=light]{
+  --bg:#faf9f7; --bg2:#f4f2ee; --sb:#f2f0ea; --panel:#ffffff; --panel2:#f0ede9; --panel3:#e7e3dd;
+  --border:rgba(120,80,90,.18); --border-hi:rgba(190,30,60,.45);
+  --red:#e11d48; --red2:#f43f5e; --pink:#c2415f; --soft:#a63d57;
+  --text:#262023; --dim:#6e5f65; --dim2:#9c8b91;
+}
+[data-theme=light] body{background:radial-gradient(1000px 500px at 70% -10%,rgba(225,29,72,.05),transparent 55%),var(--bg)}
+[data-theme=light] .m-top{background:rgba(250,249,247,.92)}
+[data-theme=light] .sb-search{background:rgba(120,80,90,.08)}
+[data-theme=light] .compbox{box-shadow:0 12px 40px rgba(120,80,90,.16)}
+[data-theme=light] .modal{background:rgba(60,40,48,.35)}
+[data-theme=light] .iconbtn:hover{background:rgba(190,30,60,.1)}
+[data-theme=light] .content strong{color:#141013}
+[data-theme=light] .content h3,[data-theme=light] .content h4{color:#141013}
+[data-theme=light] .content pre code{color:#43323a}
+
+/* ═══════════ CODE PREVIEW (mini artifacts) ═══════════ */
+.pvwrap{margin:.6em 0}
+.pvwrap pre{margin:0!important;border-radius:0 0 12px 12px;border-top:none!important}
+.pvbar{display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-bottom:none;border-radius:12px 12px 0 0;padding:5px 6px 5px 12px}
+.pvlang{font-size:.66rem;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim2);font-weight:700}
+.pvbtn{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:600;color:var(--soft);padding:5px 10px;border-radius:8px;transition:.12s}
+.pvbtn:hover{background:rgba(244,63,94,.12);color:var(--pink)}
+.pvFrame{border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-top:14px;background:#fff;height:58vh}
+.pvFrame iframe{width:100%;height:100%;border:none;display:block;background:#fff}
+#previewModal .sheet{max-width:880px;width:94vw}
 </style>
 </head>
 <body>
@@ -247,6 +280,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
     <div class="sb-top">
       <button class="iconbtn" id="sbToggle" title="Close sidebar"><?= icon('panel-left') ?></button>
       <a class="brand" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
+      <button class="iconbtn" id="themeBtn" title="Switch theme"><?= icon('sun', 17) ?></button>
     </div>
     <button class="newchat" id="newChatBtn"><?= icon('square-pen', 17) ?> New chat</button>
     <div class="sb-search"><?= icon('search', 15) ?><input id="searchInp" type="text" placeholder="Search chats…" autocomplete="off"></div>
@@ -273,7 +307,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
     <header class="m-top">
       <button class="iconbtn" id="sbOpen" title="Open sidebar"><?= icon('menu', 19) ?></button>
       <span class="brand"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</span>
-      <span style="width:34px"></span>
+      <button class="iconbtn" id="themeBtnM" title="Switch theme"><?= icon('sun', 17) ?></button>
     </header>
 
     <div id="scroller"><div id="thread">
@@ -361,6 +395,18 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
   </div>
 </div></div>
 
+<!-- ═══ code preview modal (mini artifacts) ═══ -->
+<div class="modal hidden" id="previewModal"><div class="sheet">
+  <div class="shead">
+    <h3 id="pvTitle"><?= icon('play', 16) ?> Preview</h3>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn ghost" id="pvNewTab" title="Open in a new tab"><?= icon('external', 14) ?> New tab</button>
+      <button class="iconbtn" data-close="previewModal"><?= icon('x', 16) ?></button>
+    </div>
+  </div>
+  <div class="pvFrame"><iframe id="pvFrame" sandbox="allow-scripts" title="Code preview"></iframe></div>
+</div></div>
+
 <div id="toast"><?= icon('check', 16) ?><span id="toastTxt"></span></div>
 
 <?php require __DIR__ . '/inc/cookiebar.php'; ?>
@@ -392,12 +438,14 @@ function inline(s) {
   return s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
 }
 function md(src) {
-  var lines = esc(src).split('\n'), out = [], inCode = false, buf = [], inList = false;
+  var lines = esc(src).split('\n'), out = [], inCode = false, buf = [], inList = false, curLang = '';
   function closeList() { if (inList) { out.push('</ul>'); inList = false; } }
   lines.forEach(function (line) {
     if (line.trim().indexOf('```') === 0) {
-      if (inCode) { out.push('<pre><code>' + buf.join('\n') + '</code></pre>'); buf = []; inCode = false; }
-      else { closeList(); inCode = true; }
+      if (inCode) {
+        out.push('<pre data-lang="' + curLang + '"><code>' + buf.join('\n') + '</code></pre>');
+        buf = []; inCode = false; curLang = '';
+      } else { closeList(); inCode = true; curLang = line.trim().slice(3).trim().toLowerCase(); }
       return;
     }
     if (inCode) { buf.push(line); return; }
@@ -540,6 +588,7 @@ function addAiMsg(opts) {
 
 function aiContent(el, text) {
   el.querySelector('.content').innerHTML = md(text);
+  enhancePre(el);
   var acts = el.querySelector('.acts');
   acts.innerHTML = '';
   var cp = document.createElement('button');
@@ -556,6 +605,87 @@ function aiContent(el, text) {
   }
   scrollDown();
 }
+
+/* ── code preview (mini artifacts): add a toolbar + Preview button to html/css/js blocks ── */
+function enhancePre(scope) {
+  (scope || document).querySelectorAll('pre[data-lang]').forEach(function (pre) {
+    if (pre.dataset.pv) { return; }
+    var lang = (pre.dataset.lang || '').toLowerCase();
+    if (['html', 'css', 'js', 'javascript'].indexOf(lang) === -1) { return; }
+    var code = pre.querySelector('code');
+    if (!code || !code.textContent.trim()) { return; }
+    pre.dataset.pv = '1';
+    var wrap = document.createElement('div');
+    wrap.className = 'pvwrap';
+    pre.parentNode.insertBefore(wrap, pre);
+    var bar = document.createElement('div');
+    bar.className = 'pvbar';
+    var lbl = document.createElement('span');
+    lbl.className = 'pvlang';
+    lbl.textContent = (lang === 'javascript') ? 'JS' : lang.toUpperCase();
+    var btn = document.createElement('button');
+    btn.className = 'pvbtn';
+    btn.type = 'button';
+    btn.innerHTML = I.play + ' Preview';
+    btn.addEventListener('click', function () { openPreview(lang, code.textContent); });
+    bar.appendChild(lbl); bar.appendChild(btn);
+    wrap.appendChild(bar);
+    wrap.appendChild(pre);
+  });
+}
+
+function openPreview(lang, code) {
+  var src;
+  if (lang === 'css') {
+    src = '<!DOCTYPE html><html><head><style>' + code + '</style></head>'
+        + '<body style="font-family:system-ui,sans-serif;padding:20px;max-width:640px;margin:0 auto">'
+        + '<h1>Heading</h1><p>A paragraph with <a href="#">a link</a> and <strong>bold text</strong>.</p>'
+        + '<button>Button</button><ul><li>List item one</li><li>List item two</li></ul>'
+        + '<div class="card" style="margin-top:12px">.card element</div></body></html>';
+  } else if (lang === 'js' || lang === 'javascript') {
+    src = '<!DOCTYPE html><html><head><style>body{font-family:ui-monospace,Consolas,monospace;font-size:13px;white-space:pre-wrap;padding:14px;margin:0}</style></head>'
+        + '<body><div id="__out"></div><script>'
+        + 'var __out=document.getElementById("__out"),__log=[];'
+        + 'console.log=function(){__log.push(Array.prototype.map.call(arguments,String).join(" "));__out.textContent=__log.join("\\n");};'
+        + 'try{' + code + '}catch(e){__out.textContent="Error: "+e.message;}'
+        + '<\/script></body></html>';
+  } else {
+    src = code;
+  }
+  var prettyLang = (lang === 'js' || lang === 'javascript') ? 'JavaScript' : lang.toUpperCase();
+  $('#pvTitle').innerHTML = I.play + ' ' + prettyLang + ' preview';
+  $('#pvFrame').srcdoc = src;
+  $('#previewModal').classList.remove('hidden');
+  /* keep the raw source for "open in new tab" */
+  $('#pvNewTab').dataset.src = src;
+}
+(function () {
+  var nt = $('#pvNewTab');
+  nt.addEventListener('click', function () {
+    var src = nt.dataset.src || '';
+    var blob = new Blob([src], { type: 'text/html' });
+    var url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  });
+})();
+
+/* ── theme toggle ── */
+function curTheme() { return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+function setThemeIco() {
+  var ico = curTheme() === 'dark' ? I.sun : I.moon;
+  $('#themeBtn').innerHTML = ico;
+  var m = $('#themeBtnM'); if (m) { m.innerHTML = ico; }
+}
+function toggleTheme() {
+  var t = curTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  store('devil_theme', t);
+  setThemeIco();
+}
+$('#themeBtn').addEventListener('click', toggleTheme);
+if ($('#themeBtnM')) { $('#themeBtnM').addEventListener('click', toggleTheme); }
+setThemeIco();
 function optsCanRetry(el) { return el === msgs.lastElementChild || el.nextElementSibling === null; }
 
 function addThinking() {

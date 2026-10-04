@@ -15,6 +15,10 @@ require_once __DIR__ . '/inc/icons.php';
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0c0709">
+<script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
+(function(){var t=null;try{t=localStorage.getItem('devil_theme');}catch(e){}
+if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
+document.documentElement.setAttribute('data-theme',t);})();</script>
 <title>Cookie Policy — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <style>
@@ -56,6 +60,17 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
 .note svg{color:var(--pink);flex-shrink:0;margin-top:2px}
 .note p{margin:0;font-size:.86rem}
 @media (max-width:600px){h1{font-size:1.7rem}main{padding:34px 18px 60px}}
+
+/* ═══════════ LIGHT THEME (Claude-style warm) ═══════════ */
+[data-theme=light]{
+  --bg:#faf9f7; --panel:#ffffff; --panel2:#f0ede9;
+  --border:rgba(120,80,90,.18); --border-hi:rgba(190,30,60,.45);
+  --red:#e11d48; --red2:#f43f5e; --pink:#c2415f; --soft:#a63d57;
+  --text:#262023; --dim:#6e5f65; --dim2:#9c8b91;
+}
+[data-theme=light] body{background:radial-gradient(1100px 500px at 80% -10%,rgba(225,29,72,.06),transparent 60%),var(--bg)}
+[data-theme=light] .top{background:rgba(250,249,247,.9)}
+[data-theme=light] th{background:rgba(190,30,60,.06)}
 </style>
 </head>
 <body>
@@ -63,6 +78,7 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
 <div class="top"><div class="topin">
   <a class="brand" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
   <div style="display:flex;gap:10px">
+    <button class="btn ghost" id="themeBtn" title="Switch theme" style="padding:9px 11px" type="button"><?= icon('sun', 15) ?></button>
     <a class="btn ghost" href="#" onclick="devilOpenCookies&&devilOpenCookies();return false"><?= icon('settings', 15) ?> Cookie settings</a>
     <a class="btn ghost" href="index.php"><?= icon('chevron-right', 14) ?> Home</a>
   </div>
@@ -112,6 +128,27 @@ code{background:var(--panel2);border:1px solid var(--border);color:var(--soft);p
 
   <p style="margin-top:44px">Questions? The owner of this server is the data controller — reach out directly.</p>
 </main>
+
+<script>
+/* ── theme toggle (respects the personalization cookie choice) ── */
+(function () {
+  var SUN = <?= json_encode(icon('sun', 15)) ?>;
+  var MOON = <?= json_encode(icon('moon', 15)) ?>;
+  var b = document.getElementById('themeBtn');
+  function cur() { return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+  function setIco() { b.innerHTML = cur() === 'dark' ? SUN : MOON; }
+  b.addEventListener('click', function () {
+    var t = cur() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    try {
+      var prefs = JSON.parse(localStorage.getItem('devil_cookie_prefs') || 'null');
+      if (!prefs || prefs.personalization !== false) { localStorage.setItem('devil_theme', t); }
+    } catch (e) {}
+    setIco();
+  });
+  setIco();
+})();
+</script>
 
 <?php require __DIR__ . '/inc/cookiebar.php'; ?>
 </body>

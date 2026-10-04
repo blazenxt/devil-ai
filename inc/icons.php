@@ -66,6 +66,11 @@ function icon(string $name, int $size = 20, string $cls = ''): string
             'shield-check'=> '<path d="M12 2 4 5v6c0 5 3.4 8.8 8 11 4.6-2.2 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/>',
             'cookie'      => '<path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5Z"/><path d="M8.5 10.5v.01M13.5 15.5v.01M8 15v.01M15.5 10v.01M11 19v.01M18 15v.01"/>',
 
+            /* ── theme ── */
+            'sun'         => '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+            'moon'        => '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
+            'play'        => '<path d="m6 4 14 8-14 8V4Z"/>',
+
             /* ── models / branding ── */
             'zap'         => '<path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/>',
             'sparkles'    => '<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3Z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z"/>',
