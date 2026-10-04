@@ -439,6 +439,7 @@ body.voice-open{overflow:hidden}
     <nav id="chatList" aria-label="Chat history"></nav>
     <div class="sb-bottom">
       <div id="userMenu">
+        <a class="mi" href="developers.php"><?= icon('code', 16) ?> Developer API</a>
         <a class="mi" href="settings.php"><?= icon('settings', 16) ?> Account settings</a>
         <button class="mi" id="mCookies"><?= icon('cookie', 16) ?> Cookie settings</button>
         <hr>

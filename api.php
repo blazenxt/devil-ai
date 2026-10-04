@@ -1923,7 +1923,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke'], true)) {
+    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -1978,6 +1978,67 @@ try {
         $all[$id]['revoked_at'] = time();
         if (!save_dev_keys($all)) { json_out(['ok' => false, 'error' => 'Could not revoke API key.'], 500); }
         json_out(['ok' => true]);
+    }
+
+    if ($action === 'dev_usage' && $method === 'GET') {
+        $all = load_dev_keys();
+        $rlMap = load_json(data_dir() . '/devrl.json');
+        $now = time();
+        $keys = [];
+        $active = 0; $revoked = 0; $totalRequests = 0; $hourRequests = 0; $lastUsed = 0;
+        foreach ($all as $rec) {
+            if (!is_array($rec) || (string)($rec['uid'] ?? '') !== $uid) { continue; }
+            $pub = dev_public_key($rec);
+            $kid = (string)($rec['id'] ?? '');
+            $hits = [];
+            foreach (($rlMap['k:' . $kid] ?? []) as $t) { if (is_int($t) && $t > $now - 3600) { $hits[] = $t; } }
+            $pub['used_this_hour'] = count($hits);
+            $hourRequests += count($hits);
+            $totalRequests += (int)($rec['requests'] ?? 0);
+            $lastUsed = max($lastUsed, (int)($rec['last_used'] ?? 0));
+            if (!empty($rec['revoked'])) { $revoked++; } else { $active++; }
+            $keys[] = $pub;
+        }
+        usort($keys, function ($a, $b) { return (int)($b['created'] ?? 0) <=> (int)($a['created'] ?? 0); });
+        $cfgAll = load_config();
+        json_out([
+            'ok' => true,
+            'summary' => [
+                'active_keys' => $active,
+                'revoked_keys' => $revoked,
+                'total_requests' => $totalRequests,
+                'used_this_hour' => $hourRequests,
+                'rate_per_hour' => (int)($cfgAll['rate_per_hour'] ?? 40),
+                'last_used' => $lastUsed,
+            ],
+            'keys' => $keys,
+            'models' => dev_api_models(),
+            'base_url' => app_base_url() . '/v1',
+        ]);
+    }
+
+    if ($action === 'dev_playground' && $method === 'POST') {
+        $in = input_json();
+        $rawModel = strtolower(trim((string)($in['model'] ?? 'devil-flash')));
+        if (strpos($rawModel, 'devil-') === 0) { $rawModel = substr($rawModel, 6); }
+        if (!in_array($rawModel, ['flash', 'pro', 'ultra'], true)) { json_out(['ok' => false, 'error' => 'Choose a valid Devil model.'], 400); }
+        $message = trim((string)($in['message'] ?? ''));
+        $system = trim((string)($in['system'] ?? ''));
+        if ($message === '') { json_out(['ok' => false, 'error' => 'Enter a prompt to test.'], 400); }
+        if (mb_strlen($message) > MAX_INPUT) { json_out(['ok' => false, 'error' => 'Prompt is too long (max ' . MAX_INPUT . ' characters).'], 400); }
+        if (mb_strlen($system) > 1200) { $system = mb_substr($system, 0, 1200); }
+        $cfgAll = load_config();
+        $rl = max(1, min(1000, (int)($cfgAll['rate_per_hour'] ?? 40)));
+        if (!rate_ok('devrl.json', 'play:u:' . $uid, $rl, 3600)) {
+            json_out(['ok' => false, 'error' => 'Playground rate limit reached. Try again later.'], 429);
+        }
+        $messages = [];
+        if ($system !== '') { $messages[] = ['role' => 'user', 'content' => 'Developer instruction: ' . $system]; }
+        $messages[] = ['role' => 'user', 'content' => $message];
+        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $messages);
+        list($ok, $reply, $used) = ai_respond($cfgAll, $rawModel, $providerMsgs, '');
+        if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }
+        json_out(['ok' => true, 'reply' => $reply, 'model' => ['id' => dev_public_model_id($rawModel), 'label' => model_label($rawModel)], 'usage' => dev_usage($messages, $reply)]);
     }
 
     if ($action === 'account_delete' && $method === 'POST') {
