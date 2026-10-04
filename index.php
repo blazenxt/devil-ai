@@ -202,7 +202,7 @@ footer{padding:10px 4vw 14px;background:rgba(10,5,7,.85);backdrop-filter:blur(10
       </div>
 
       <label for="sModel">Model <span class="dim">(empty = default)</span></label>
-      <input id="sModel" type="text" placeholder="gemini-2.5-flash">
+      <input id="sModel" type="text" placeholder="model-name (optional)">
 
       <div id="pwRow" class="hidden">
         <label for="sPw">Admin Password 🔒</label>
@@ -374,7 +374,7 @@ function updateProviderUI() {
   const p = PROVIDERS[pid] || {};
   const h = $('#sHelper');
   const keyRow = $('#keyRow');
-  if (pid === 'prexzy') {
+  if (!p.key_required && pid !== 'demo') {
     h.innerHTML = '✅ <b>No API key needed!</b> Free AI — just hit Save.';
     h.classList.remove('hidden');
     keyRow.style.display = 'none';
@@ -400,7 +400,7 @@ function fillSettings(j) {
     o.value = p.id; o.textContent = p.label;
     sel.appendChild(o);
   });
-  sel.value = j.provider || 'prexzy';
+  sel.value = j.provider || (j.providers && j.providers[0] ? j.providers[0].id : 'demo');
   $('#sKey').value = '';
   $('#keyState').textContent = j.has_key ? ('✅ Saved: ' + (j.key_mask || '****')) : '';
   $('#sKey').placeholder = j.has_key ? 'New key — or leave empty' : 'Paste your key here…';
