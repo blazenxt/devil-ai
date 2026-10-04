@@ -149,7 +149,7 @@ function prexzy_ai_catalog(): array {
         ['id' => 'askgpt5',        'label' => 'AskGPT5 AI',             'company' => 'OpenAI GPT',                'scope' => 'Chat + web/media',    'icon' => 'openai',  'path' => '/ai/askgpt5',        'param' => 'prompt', 'image_param' => 'media', 'vision' => true],
         ['id' => 'ch',             'label' => 'Chat AI',                'company' => 'Prexzy',                    'scope' => 'Fast chat',           'icon' => 'prexzy',  'path' => '/ai/ch',             'param' => 'q'],
         ['id' => 'charart',        'label' => 'ChatArt AI',             'company' => 'ChatArt',                   'scope' => 'Chat + vision',       'icon' => 'aiapp',   'path' => '/ai/charart',        'param' => 'prompt', 'image_param' => 'image', 'vision' => true],
-        ['id' => 'chatbot',        'label' => 'ChatBot App',            'company' => 'ChatBot',                   'scope' => 'Chat + search',       'icon' => 'prexzy',  'path' => '/ai/chatbot',        'param' => 'text',   'defaults' => ['search' => 'false']],
+        ['id' => 'chatbot',        'label' => 'ChatBot App',            'company' => 'ChatBot',                   'scope' => 'Chat + search',       'icon' => 'prexzy',  'path' => '/ai/chatbot',        'param' => 'text',   'defaults' => ['search' => 'true']],
         ['id' => 'convertcode',    'label' => 'Convert Code',           'company' => 'Prexzy Code',               'scope' => 'Code conversion',     'icon' => 'code',    'path' => '/ai/convertcode',    'param' => 'code',   'defaults' => ['target' => 'javascript'], 'memory' => false],
         ['id' => 'detectbugs',     'label' => 'Detect Bugs',            'company' => 'Prexzy Code',               'scope' => 'Debug code',          'icon' => 'code',    'path' => '/ai/detectbugs',     'param' => 'code',   'memory' => false],
         ['id' => 'explaincode',    'label' => 'Explain Code',           'company' => 'Prexzy Code',               'scope' => 'Explain code',        'icon' => 'code',    'path' => '/ai/explaincode',    'param' => 'code',   'defaults' => ['lang' => 'auto'], 'memory' => false],
@@ -782,8 +782,8 @@ function extract_ai_text($j): string {
         $txt = extract_ai_text($j[0]);
         if ($txt !== '') { return $txt; }
     }
-    $encoded = json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    return $encoded ? trim($encoded) : '';
+    /* Do not show raw provider JSON to users. Empty/unknown payloads should fail and trigger fallback. */
+    return '';
 }
 
 function prexzy_error_message($j, int $status): string {

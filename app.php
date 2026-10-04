@@ -167,14 +167,18 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
 .content pre{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;overflow:auto;margin:.6em 0;max-width:100%}
 .content pre code{background:none;padding:0;color:#f3d0d7}
 .content .sp{height:.5em}
-.acts{display:flex;gap:5px;margin-top:8px;opacity:.76;transition:.15s;flex-wrap:wrap}
+.acts{display:flex;gap:6px;margin-top:9px;opacity:.72;transition:.18s;flex-wrap:wrap}
 .msg-ai:hover .acts,.msg-user:hover .acts{opacity:1}
-.msg-user .acts{justify-content:flex-end;max-width:78%;margin-top:6px}
-.acts button{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--dim2);padding:5px 9px;border-radius:8px;border:1px solid transparent;transition:.12s}
-.acts button:hover{background:rgba(244,63,94,.12);color:var(--soft);border-color:var(--border)}
-.acts button.on{background:rgba(244,63,94,.14);color:var(--soft);border-color:var(--border-hi)}
-.acts button:disabled{opacity:.55;cursor:default}
+.msg-user .acts{justify-content:flex-end;max-width:78%;margin-top:7px}
+.acts button{width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:var(--dim2);padding:0;border-radius:10px;border:1px solid transparent;transition:transform .16s ease,background .16s ease,color .16s ease,border-color .16s ease,box-shadow .16s ease;position:relative}
+.acts button svg{width:15px;height:15px;transition:transform .16s ease}
+.acts button:hover{background:rgba(244,63,94,.12);color:var(--soft);border-color:var(--border);transform:translateY(-1px) scale(1.06);box-shadow:0 8px 22px rgba(0,0,0,.16)}
+.acts button:hover svg{transform:scale(1.08)}
+.acts button:active{transform:translateY(0) scale(.94)}
+.acts button.on{background:rgba(244,63,94,.14);color:var(--soft);border-color:var(--border-hi);animation:act-pop .22s ease}
+.acts button:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none}
 .acts button[hidden]{display:none!important}
+@keyframes act-pop{0%{transform:scale(.86)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
 .thinking .content{display:flex;align-items:center;gap:10px;color:var(--dim)}
 .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--pink);animation:blink 1.2s infinite}
 .dots span:nth-child(2){animation-delay:.2s}
@@ -381,7 +385,6 @@ body.temp-chat #thread:before{content:'Temporary chat — not saved in history';
     <div class="chattools" id="chatTools" aria-label="Chat actions">
       <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
       <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
-      <button class="ctbtn" id="shareChatBtn" type="button" title="Share chat"><?= icon('share', 17) ?><span class="txt">Share</span></button>
     </div>
 
     <div id="scroller"><div id="thread">
@@ -593,7 +596,8 @@ function actionBtn(iconHtml, label, title, fn) {
   var b = document.createElement('button');
   b.type = 'button';
   b.title = title || label;
-  b.innerHTML = iconHtml + ' ' + label;
+  b.setAttribute('aria-label', title || label);
+  b.innerHTML = iconHtml;
   b.addEventListener('click', fn);
   return b;
 }
@@ -655,15 +659,15 @@ function submitEdit() {
     else { toast(j.error || 'Edit failed', 'warning'); }
   }).finally(function () { busy = false; resize(); });
 }
-function shareCurrentChat() {
+function shareCurrentChat(btn) {
   if (!currentChat || !currentChat.id || isTempChat) { toast('Only saved chats can be shared', 'warning'); return; }
-  $('#shareChatBtn').disabled = true;
+  if (btn) { btn.disabled = true; }
   api('chat_share', { id: currentChat.id }).then(function (j) {
     if (j.ok && j.url) {
       if (navigator.clipboard) { navigator.clipboard.writeText(j.url).catch(function () {}); }
       toast('Share link copied');
     } else { toast(j.error || 'Could not create share link', 'warning'); }
-  }).finally(function () { $('#shareChatBtn').disabled = false; });
+  }).finally(function () { if (btn) { btn.disabled = false; } });
 }
 
 /* ── sidebar ── */
@@ -802,6 +806,9 @@ function aiContent(el, text, meta) {
   var acts = el.querySelector('.acts');
   acts.innerHTML = '';
   acts.appendChild(actionBtn(I.copy, 'Copy', 'Copy response', function () { copyText(text); }));
+  var sh = actionBtn(I.share, 'Share', 'Share chat', function () { shareCurrentChat(sh); });
+  if (!currentChat || !currentChat.id || isTempChat) { sh.hidden = true; }
+  acts.appendChild(sh);
   var up = actionBtn(I.thumbUp, 'Good', 'Good response', function () { sendFeedback('good', text, meta, up, down); });
   var down = actionBtn(I.thumbDown, 'Bad', 'Bad response', function () { sendFeedback('bad', text, meta, up, down); });
   var saved = read(feedbackKey(meta, text));
@@ -927,7 +934,6 @@ function updateChatActions() {
   var tt = tb.querySelector('.txt');
   if (tt) { tt.textContent = isTempChat ? 'Temp on' : 'Temp'; }
   $('#topNewChatBtn').style.display = (currentChat && !isTempChat) ? 'inline-flex' : 'none';
-  $('#shareChatBtn').style.display = (currentChat && currentChat.id && !isTempChat) ? 'inline-flex' : 'none';
 }
 function updateSendButton() {
   if (busy) {
@@ -1063,7 +1069,6 @@ inp.addEventListener('keydown', function (e) {
 sendBtn.addEventListener('click', function () { if (busy) { pauseSend(); } else { send(); } });
 $('#tempChatBtn').addEventListener('click', startTempChat);
 $('#topNewChatBtn').addEventListener('click', function () { if (busy) { pauseSend(); } window.location.href = 'app.php'; });
-$('#shareChatBtn').addEventListener('click', shareCurrentChat);
 $('#editCancel').addEventListener('click', function () { clearEdit(); inp.value = ''; resize(); inp.focus(); });
 
 function newChatView() {
