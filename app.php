@@ -240,6 +240,26 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
 #voiceChip button{font-size:.72rem;font-weight:700;color:var(--dim);padding:5px 8px;border-radius:8px;flex-shrink:0}
 #voiceChip button:hover{background:rgba(244,63,94,.12);color:var(--soft)}
 @keyframes voice-pulse{0%{transform:scale(.92);opacity:.9}100%{transform:scale(1.35);opacity:0}}
+body.voice-open{overflow:hidden}
+#voiceLive{position:fixed;inset:0;z-index:520;display:none;align-items:center;justify-content:center;padding:22px;background:radial-gradient(700px 420px at 50% 28%,rgba(244,63,94,.22),transparent 62%),rgba(5,2,4,.88);backdrop-filter:blur(16px);color:var(--text)}
+#voiceLive.show{display:flex}
+.voiceShell{width:min(520px,100%);min-height:min(720px,calc(100vh - 44px));display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:22px;background:linear-gradient(180deg,rgba(39,24,31,.84),rgba(16,10,13,.82));border:1px solid rgba(244,63,94,.22);border-radius:32px;padding:22px;box-shadow:0 35px 110px rgba(0,0,0,.62);position:relative;overflow:hidden}
+.voiceShell:before{content:'';position:absolute;inset:-40% -20% auto;height:58%;background:radial-gradient(circle,rgba(244,63,94,.18),transparent 62%);pointer-events:none}
+.voiceHead{position:relative;z-index:1;width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.voiceHead .vt{min-width:0}.voiceHead b{display:block;font-size:.95rem;letter-spacing:.2px}.voiceHead span{display:block;color:var(--dim2);font-size:.72rem;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.voiceCloseTop{width:38px;height:38px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.15s;flex-shrink:0}.voiceCloseTop:hover{background:rgba(244,63,94,.14);color:var(--soft);border-color:var(--border-hi)}
+.voiceStage{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;flex:1;width:100%;min-height:280px}
+.voiceOrb{width:190px;height:190px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;background:radial-gradient(circle at 35% 30%,#fb7185,#e11d48 45%,#7f1d1d 78%);box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 20px 70px rgba(244,63,94,.32);position:relative;transition:.25s ease;isolation:isolate}
+.voiceOrb svg{width:42px;height:42px;filter:drop-shadow(0 6px 18px rgba(0,0,0,.35))}.voiceOrb:before,.voiceOrb:after{content:'';position:absolute;inset:-18px;border-radius:50%;border:1px solid rgba(251,113,133,.38);opacity:.45;z-index:-1}.voiceOrb:after{inset:-34px;opacity:.2}
+#voiceLive.listening .voiceOrb{animation:orb-breathe 1.4s ease-in-out infinite;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 0 70px rgba(244,63,94,.52)}
+#voiceLive.listening .voiceOrb:before{animation:voice-pulse 1.25s infinite}#voiceLive.listening .voiceOrb:after{animation:voice-pulse 1.25s .22s infinite}
+#voiceLive.speaking .voiceOrb{background:radial-gradient(circle at 35% 30%,#fda4af,#f43f5e 48%,#9f1239 80%);animation:orb-speak .72s ease-in-out infinite alternate}
+#voiceLive.thinking .voiceOrb{animation:orb-think 1s linear infinite}#voiceLive.muted .voiceOrb{filter:grayscale(.55);opacity:.72;animation:none}
+@keyframes orb-breathe{0%,100%{transform:scale(.98)}50%{transform:scale(1.04)}}@keyframes orb-speak{from{transform:scale(.98) rotate(-1deg)}to{transform:scale(1.07) rotate(1deg)}}@keyframes orb-think{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+.voiceState{text-align:center;font-weight:800;font-size:1.1rem;margin:0}.voiceHint{text-align:center;color:var(--dim2);font-size:.78rem;line-height:1.55;max-width:360px;margin:-8px 0 0}
+.voiceTranscript{position:relative;z-index:1;width:100%;display:grid;gap:10px}.voiceLine{border:1px solid var(--border);background:rgba(255,255,255,.04);border-radius:16px;padding:11px 13px;min-height:70px}.voiceLine span{display:block;color:var(--soft);font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}.voiceLine p{margin:0;color:var(--text);font-size:.86rem;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.voiceLine p.ghost{color:var(--dim2)}
+.voiceControls{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:12px;width:100%;flex-wrap:wrap}.voiceCtl{min-width:88px;border:1px solid var(--border);border-radius:18px;padding:10px 13px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--soft);background:rgba(255,255,255,.04);font-weight:800;font-size:.78rem;transition:.15s}.voiceCtl:hover:not(:disabled){transform:translateY(-1px);background:rgba(244,63,94,.12);border-color:var(--border-hi)}.voiceCtl:disabled{opacity:.45;cursor:default}.voiceCtl.on{background:rgba(244,63,94,.16);border-color:rgba(244,63,94,.35);color:#fecdd3}.voiceCtl.end{min-width:60px;width:58px;height:58px;border-radius:50%;padding:0;background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;border:none;box-shadow:0 12px 32px rgba(244,63,94,.35)}
+@media(max-width:680px){#voiceLive{padding:0}.voiceShell{min-height:100vh;border-radius:0;border-left:none;border-right:none}.voiceOrb{width:158px;height:158px}.voiceStage{min-height:240px}.voiceHead span{max-width:240px}.voiceCtl{min-width:82px}.voiceLine{min-height:64px}}
 #imgChip{display:none;align-items:stretch;gap:8px;margin:12px 16px 0;max-width:calc(100% - 32px);flex-wrap:wrap}
 #imgChip.show{display:flex}
 .filechip{display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:12px;max-width:270px;min-width:0}
@@ -348,6 +368,9 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
 [data-theme=light] .ctbtn.on{background:rgba(190,30,60,.16);color:#7f1d1d;border-color:rgba(190,30,60,.38);box-shadow:0 0 0 3px rgba(190,30,60,.08)}
 [data-theme=light] .ctbtn.stop,[data-theme=light] #sendBtn.stopmode{background:rgba(190,18,60,.10);border-color:rgba(190,18,60,.32);color:#9f1239;box-shadow:none}
 [data-theme=light] #editChip,[data-theme=light] #voiceChip{background:rgba(190,30,60,.07);border-color:rgba(190,30,60,.20);color:#9f1239}
+[data-theme=light] #voiceLive{background:radial-gradient(700px 420px at 50% 28%,rgba(190,30,60,.14),transparent 62%),rgba(250,249,247,.78)}
+[data-theme=light] .voiceShell{background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(244,242,238,.88));box-shadow:0 30px 90px rgba(120,80,90,.22)}
+[data-theme=light] .voiceLine{background:rgba(190,30,60,.045)}
 [data-theme=light] .inlineEditBox{background:#fff;border-color:rgba(190,30,60,.28);box-shadow:0 14px 34px rgba(120,80,90,.14)}
 [data-theme=light] .inlineEditBox textarea{background:#f7f3ef;border-color:rgba(120,80,90,.18)}
 [data-theme=light] .editBadge{background:rgba(190,30,60,.08);border-color:rgba(190,30,60,.20);color:#9f1239}
@@ -452,7 +475,7 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
         <div class="comprow">
           <div class="modelwrap">
             <button id="attachBtn" title="Attach files" type="button"><?= icon('paperclip', 16) ?></button>
-            <button id="voiceBtn" title="Voice mode" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
+            <button id="voiceBtn" title="Live voice chat" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
             <button id="modelBtn" title="Choose model"><span id="modelIco"><?= icon('zap', 14) ?></span><span class="lb" id="modelLbl">Devil Flash</span><?= icon('chevron-down', 13) ?></button>
             <div id="modelMenu"></div>
             <div id="customWrap" class="customwrap">
@@ -463,13 +486,36 @@ body.loading-chat #thread:after{content:'Loading chat…';display:block;margin:1
           <button id="sendBtn" title="Send (Enter)" disabled><?= icon('send', 17) ?></button>
         </div>
       </div>
-      <p class="hint">Enter = new line • Ctrl/⌘ + Enter = send • Mic = voice mode • Devil AI can make mistakes.</p>
+      <p class="hint">Enter = new line • Ctrl/⌘ + Enter = send • Mic = live voice chat • Devil AI can make mistakes.</p>
     </div>
   </main>
 </div>
 
 <input type="file" id="fileInput" multiple hidden>
 <div id="imgView"><?= icon('x', 22) ?></div>
+
+<div id="voiceLive" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Live voice chat">
+  <div class="voiceShell">
+    <div class="voiceHead">
+      <div class="vt"><b>Devil AI Live</b><span>Hands-free voice conversation</span></div>
+      <button class="voiceCloseTop" id="voiceLiveClose" type="button" title="End voice chat"><?= icon('x', 17) ?></button>
+    </div>
+    <div class="voiceStage">
+      <div class="voiceOrb" id="voiceOrb"><?= icon('mic', 38) ?></div>
+      <p class="voiceState" id="voiceLiveState">Ready for live voice</p>
+      <p class="voiceHint">Speak naturally. Devil AI will listen, reply, and continue the conversation automatically.</p>
+    </div>
+    <div class="voiceTranscript">
+      <div class="voiceLine"><span>You</span><p id="voiceUserText" class="ghost">Tap the mic and start speaking…</p></div>
+      <div class="voiceLine"><span>Devil AI</span><p id="voiceAiText" class="ghost">I’ll reply out loud here.</p></div>
+    </div>
+    <div class="voiceControls">
+      <button class="voiceCtl on" id="voiceMute" type="button"><?= icon('mic', 15) ?><span>Mute</span></button>
+      <button class="voiceCtl" id="voiceInterrupt" type="button" disabled><?= icon('stop', 15) ?><span>Stop</span></button>
+      <button class="voiceCtl end" id="voiceEnd" type="button" title="End voice chat"><?= icon('x', 20) ?></button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══ rename modal ═══ -->
 <div class="modal hidden" id="renameModal"><div class="sheet">
@@ -1195,10 +1241,13 @@ function addErr(text) {
 /* ── composer ── */
 var inp = $('#inp'), sendBtn = $('#sendBtn');
 
-/* ── voice mode (browser speech recognition + speech synthesis) ── */
+/* ── live voice chat (browser speech recognition + speech synthesis) ── */
 var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 var voiceRec = null, voiceMode = false, voiceListening = false, voiceSpeaking = false, voiceFinal = '', voiceRestartTimer = null;
+var voicePanelOpen = false, voiceMuted = false;
 var voiceBtn = $('#voiceBtn'), voiceChip = $('#voiceChip'), voiceStatus = $('#voiceStatus');
+var voiceLive = $('#voiceLive'), voiceLiveState = $('#voiceLiveState'), voiceUserText = $('#voiceUserText'), voiceAiText = $('#voiceAiText');
+var voiceMute = $('#voiceMute'), voiceInterrupt = $('#voiceInterrupt'), voiceEnd = $('#voiceEnd'), voiceLiveClose = $('#voiceLiveClose');
 function voiceCleanText(text) {
   return String(text || '')
     .replace(/```[\s\S]*?```/g, ' code block ')
@@ -1208,18 +1257,50 @@ function voiceCleanText(text) {
     .replace(/\s+/g, ' ')
     .trim();
 }
+function voiceShort(text, max) {
+  text = voiceCleanText(text);
+  max = max || 260;
+  return text.length > max ? text.slice(0, max - 1).trim() + '…' : text;
+}
 function setVoiceStatus(msg) {
-  if (voiceStatus) { voiceStatus.textContent = msg || 'Voice mode ready'; }
+  msg = msg || 'Live voice ready';
+  if (voiceStatus) { voiceStatus.textContent = msg; }
+  if (voiceLiveState) { voiceLiveState.textContent = msg; }
+}
+function setVoiceUser(text, ghost) {
+  if (!voiceUserText) { return; }
+  voiceUserText.textContent = text || 'Tap the mic and start speaking…';
+  voiceUserText.classList.toggle('ghost', !!ghost || !text);
+}
+function setVoiceAi(text, ghost) {
+  if (!voiceAiText) { return; }
+  voiceAiText.textContent = text || 'I’ll reply out loud here.';
+  voiceAiText.classList.toggle('ghost', !!ghost || !text);
 }
 function updateVoiceUi() {
-  if (!voiceBtn) { return; }
-  voiceBtn.classList.toggle('on', voiceMode);
-  voiceBtn.classList.toggle('listening', voiceListening);
-  voiceBtn.classList.toggle('speaking', voiceSpeaking);
-  voiceBtn.setAttribute('aria-pressed', voiceMode ? 'true' : 'false');
-  voiceBtn.title = voiceSpeaking ? 'Stop speaking' : (voiceMode ? 'Turn off voice mode' : 'Voice mode');
-  voiceBtn.innerHTML = voiceSpeaking ? I.volumeX : (voiceMode ? I.micOff : I.mic);
-  if (voiceChip) { voiceChip.classList.toggle('show', voiceMode); }
+  if (voiceBtn) {
+    voiceBtn.classList.toggle('on', voiceMode || voicePanelOpen);
+    voiceBtn.classList.toggle('listening', voiceListening && !voiceMuted);
+    voiceBtn.classList.toggle('speaking', voiceSpeaking);
+    voiceBtn.setAttribute('aria-pressed', (voiceMode || voicePanelOpen) ? 'true' : 'false');
+    voiceBtn.title = voiceSpeaking && !voicePanelOpen ? 'Stop speaking' : 'Live voice chat';
+    voiceBtn.innerHTML = voiceSpeaking ? I.volumeX : (voiceMode ? I.micOff : I.mic);
+  }
+  if (voiceChip) { voiceChip.classList.toggle('show', voiceMode && !voicePanelOpen); }
+  if (voiceLive) {
+    voiceLive.classList.toggle('show', voicePanelOpen);
+    voiceLive.classList.toggle('listening', voiceListening && !voiceMuted);
+    voiceLive.classList.toggle('speaking', voiceSpeaking);
+    voiceLive.classList.toggle('thinking', voiceMode && busy && !voiceSpeaking);
+    voiceLive.classList.toggle('muted', voiceMuted);
+    voiceLive.setAttribute('aria-hidden', voicePanelOpen ? 'false' : 'true');
+  }
+  document.body.classList.toggle('voice-open', voicePanelOpen);
+  if (voiceMute) {
+    voiceMute.classList.toggle('on', !voiceMuted);
+    voiceMute.innerHTML = (voiceMuted ? I.micOff : I.mic) + '<span>' + (voiceMuted ? 'Unmute' : 'Mute') + '</span>';
+  }
+  if (voiceInterrupt) { voiceInterrupt.disabled = !(voiceSpeaking || busy); }
 }
 function initVoiceRec() {
   if (!SpeechRec) { return false; }
@@ -1229,7 +1310,12 @@ function initVoiceRec() {
   voiceRec.interimResults = true;
   voiceRec.continuous = false;
   voiceRec.maxAlternatives = 1;
-  voiceRec.onstart = function () { voiceListening = true; setVoiceStatus('Listening… speak now'); updateVoiceUi(); };
+  voiceRec.onstart = function () {
+    voiceListening = true;
+    setVoiceStatus('Listening… speak now');
+    setVoiceUser('Listening…', true);
+    updateVoiceUi();
+  };
   voiceRec.onresult = function (e) {
     var interim = '', final = '';
     for (var i = e.resultIndex; i < e.results.length; i++) {
@@ -1237,8 +1323,14 @@ function initVoiceRec() {
       if (e.results[i].isFinal) { final += tx + ' '; }
       else { interim += tx + ' '; }
     }
-    if (interim) { setVoiceStatus('Listening: ' + interim.trim()); }
-    if (final.trim()) { voiceFinal += ' ' + final.trim(); }
+    if (interim.trim()) {
+      setVoiceStatus('Listening…');
+      setVoiceUser(interim.trim(), false);
+    }
+    if (final.trim()) {
+      voiceFinal += ' ' + final.trim();
+      setVoiceUser(voiceFinal.trim(), false);
+    }
   };
   voiceRec.onerror = function (e) {
     voiceListening = false;
@@ -1246,9 +1338,14 @@ function initVoiceRec() {
     var err = e && e.error ? e.error : 'voice error';
     if (err === 'not-allowed' || err === 'service-not-allowed') {
       voiceMode = false;
+      voicePanelOpen = false;
       setVoiceStatus('Microphone permission denied');
       updateVoiceUi();
       toast('Microphone permission denied', 'warning');
+      return;
+    }
+    if (err === 'no-speech') {
+      setVoiceStatus('Still listening…');
       return;
     }
     setVoiceStatus('Voice paused — tap mic if needed');
@@ -1258,14 +1355,16 @@ function initVoiceRec() {
     updateVoiceUi();
     var final = voiceFinal.trim();
     voiceFinal = '';
-    if (voiceMode && final && !busy) {
+    if (voiceMode && final && !busy && !voiceMuted) {
+      setVoiceUser(final, false);
       inp.value = final;
       resize();
       setVoiceStatus('Sending voice message…');
+      setVoiceAi('Thinking…', true);
       setTimeout(function () { send(); }, 80);
       return;
     }
-    if (voiceMode && !busy && !voiceSpeaking) {
+    if (voiceMode && !busy && !voiceSpeaking && !voiceMuted) {
       clearTimeout(voiceRestartTimer);
       voiceRestartTimer = setTimeout(startVoiceListening, 350);
     }
@@ -1273,8 +1372,15 @@ function initVoiceRec() {
   return true;
 }
 function startVoiceListening() {
-  if (!voiceMode || busy || voiceSpeaking) { return; }
-  if (!initVoiceRec()) { voiceMode = false; updateVoiceUi(); toast('Voice mode is not supported in this browser', 'warning'); return; }
+  if (!voiceMode || busy || voiceSpeaking || voiceMuted) { updateVoiceUi(); return; }
+  if (voiceListening) { return; }
+  if (!initVoiceRec()) {
+    voiceMode = false;
+    voicePanelOpen = false;
+    updateVoiceUi();
+    toast('Live voice chat is not supported in this browser', 'warning');
+    return;
+  }
   try { voiceRec.start(); }
   catch (e) { clearTimeout(voiceRestartTimer); voiceRestartTimer = setTimeout(startVoiceListening, 700); }
 }
@@ -1285,52 +1391,93 @@ function stopVoiceListening() {
   updateVoiceUi();
 }
 function setVoiceMode(on) {
-  voiceMode = !!on;
-  if (voiceMode) {
-    if (!initVoiceRec()) { voiceMode = false; updateVoiceUi(); toast('Voice mode is not supported in this browser', 'warning'); return; }
-    setVoiceStatus('Voice mode on — listening…');
-    updateVoiceUi();
-    startVoiceListening();
-  } else {
-    stopVoiceListening();
+  if (on) {
+    if (!initVoiceRec()) { voiceMode = false; voicePanelOpen = false; updateVoiceUi(); toast('Live voice chat is not supported in this browser', 'warning'); return false; }
+    voiceMode = true;
+    voiceMuted = false;
+    setVoiceStatus('Listening… speak now');
     if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
     voiceSpeaking = false;
-    setVoiceStatus('Voice mode off');
     updateVoiceUi();
+    startVoiceListening();
+    return true;
   }
+  voiceMode = false;
+  stopVoiceListening();
+  if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
+  voiceSpeaking = false;
+  voiceMuted = false;
+  setVoiceStatus('Live voice ended');
+  updateVoiceUi();
+  return true;
+}
+function openVoiceLive() {
+  if (!initVoiceRec()) { toast('Live voice chat is not supported in this browser', 'warning'); return; }
+  voicePanelOpen = true;
+  setVoiceUser('Listening…', true);
+  setVoiceAi('I’ll reply out loud here.', true);
+  updateVoiceUi();
+  setVoiceMode(true);
+}
+function endVoiceLive() {
+  voicePanelOpen = false;
+  setVoiceMode(false);
+  updateVoiceUi();
+}
+function toggleVoiceMute() {
+  if (!voiceMode) { return; }
+  voiceMuted = !voiceMuted;
+  if (voiceMuted) {
+    stopVoiceListening();
+    setVoiceStatus('Mic muted');
+  } else {
+    setVoiceStatus('Listening… speak now');
+    startVoiceListening();
+  }
+  updateVoiceUi();
+}
+function interruptVoice() {
+  if (voiceSpeaking) {
+    if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
+    voiceSpeaking = false;
+    setVoiceStatus('Stopped — listening…');
+  }
+  if (busy) { pauseSend(); setVoiceStatus('Response paused — listening…'); }
+  updateVoiceUi();
+  if (voiceMode && !voiceMuted) { setTimeout(startVoiceListening, 250); }
 }
 function speakText(text) {
   var clean = voiceCleanText(text);
   if (!clean) { return; }
   if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) { toast('Read aloud is not supported in this browser', 'warning'); return; }
+  voiceSpeaking = true;
   stopVoiceListening();
   try { window.speechSynthesis.cancel(); } catch (e) {}
   var u = new SpeechSynthesisUtterance(clean.slice(0, 3800));
   u.lang = navigator.language || 'en-US';
   u.rate = 1;
   u.pitch = 1;
-  voiceSpeaking = true;
   setVoiceStatus('Devil AI is speaking…');
+  if (voicePanelOpen) { setVoiceAi(voiceShort(clean, 360), false); }
   updateVoiceUi();
   u.onend = u.onerror = function () {
     voiceSpeaking = false;
-    setVoiceStatus(voiceMode ? 'Listening…' : 'Voice mode ready');
+    setVoiceStatus(voiceMode ? (voiceMuted ? 'Mic muted' : 'Listening… speak now') : 'Live voice ready');
     updateVoiceUi();
-    if (voiceMode && !busy) { setTimeout(startVoiceListening, 450); }
+    if (voiceMode && !voiceMuted && !busy) { setTimeout(startVoiceListening, 450); }
   };
   window.speechSynthesis.speak(u);
 }
 if (voiceBtn) { voiceBtn.addEventListener('click', function () {
-  if (voiceSpeaking && !voiceMode) {
-    if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
-    voiceSpeaking = false;
-    setVoiceStatus('Voice mode ready');
-    updateVoiceUi();
-    return;
-  }
-  setVoiceMode(!voiceMode);
+  if (voiceSpeaking && !voiceMode) { interruptVoice(); return; }
+  openVoiceLive();
 }); }
-if ($('#voiceClose')) { $('#voiceClose').addEventListener('click', function () { setVoiceMode(false); }); }
+if ($('#voiceClose')) { $('#voiceClose').addEventListener('click', endVoiceLive); }
+if (voiceEnd) { voiceEnd.addEventListener('click', endVoiceLive); }
+if (voiceLiveClose) { voiceLiveClose.addEventListener('click', endVoiceLive); }
+if (voiceMute) { voiceMute.addEventListener('click', toggleVoiceMute); }
+if (voiceInterrupt) { voiceInterrupt.addEventListener('click', interruptVoice); }
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && voicePanelOpen) { endVoiceLive(); } });
 
 function updateChatActions() {
   document.body.classList.toggle('temp-chat', isTempChat);
