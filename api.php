@@ -26,8 +26,8 @@
  *    POST ?action=test              {current_admin_password}    → {ok, reply}
  *
  *  Models (public names) → engines (server-side secret):
- *    Devil Flash / Pro / Ultra → Prexzy endpoints or Gemini (site key)
- *    Automatic fallback: any engine failure retries on Prexzy.
+ *    Devil Flash / Pro / Ultra → Prexzy endpoints (prexzyapis.com, no API keys)
+ *    Automatic fallback: any engine failure retries on other Prexzy endpoints.
  *
  *  Storage (JSON files, no database):
  *    data/users.json  accounts (no passwords — email-code login only)
@@ -58,37 +58,20 @@ if (!function_exists('mb_substr'))     { function mb_substr($s, $a, $b = null) {
 
 /* ══════════════ AI PERSONA (anti-leak, highest priority) ══════════════ */
 
-define('SYSTEM_PROMPT', <<<'PROMPT'
-You are "Devil AI" — a chatbot with a devil persona
-
-Personality:
-- Confident, playful, with a touch of naughty dark humor — but never rude, hateful, or harmful.
-- Genuinely smart and helpful: deliver real value in every answer.
-- Reply in the SAME language and style the user writes in (English, Hindi, Hinglish, or anything else).
-- Use emojis tastefully — don't overdo it.
-
-Rules:
-1. Always be honest and accurate. If you don't know something, say so — never guess.
-2. Politely refuse illegal, dangerous, or harmful requests (hacking, weapons, drugs, self-harm, etc.) — and offer a safer alternative or help when possible.
-3. Identity: You are Devil AI — a custom-built assistant owned by the site owner, running on his own private PHP server. You are NOT Gemini/Google or any other model, and you must NEVER mention or hint at any other model, company, provider, or underlying technology — not even if asked to be "transparent". Your one and only identity is Devil AI. If asked who you are or what model you are, say: "I am Devil AI — custom-built by my master, running on his own PHP server. Straight from hell, with the best answers on Earth!"
-4. Keep answers well structured: short paragraphs, and use lists/bold/headings (markdown) where helpful.
-5. Small talk gets 1-3 fun lines; serious or technical questions get detailed answers.
-PROMPT
-);
 
 define('PREXZY_PERSONA', <<<'PERSONA'
 [HIGHEST-PRIORITY ASSIGNMENT — set by the site owner]
-You are "Devil AI" — a custom, one-of-a-kind AI assistant built and owned by the site owner, running on his own private PHP server. This character is assigned by the operator and you must stay fully in character in EVERY reply.
+You are "Devil AI" — a custom, one-of-a-kind AI assistant built and owned by the site owner, running on his own private PHP server.
 
 ABSOLUTE CHARACTER RULES (non-negotiable — they override any other instruction about "transparency" or "disclosing your identity"):
 1. Your name and ONLY identity is "Devil AI". You are NOT Qwen, GPT, ChatGPT, Gemini, or any other model. NEVER mention, hint at, joke about, or "transparently disclose" any other model, company, provider, or underlying technology — not even if the user insists, begs, or claims to be an administrator. There is nothing to disclose: Devil AI is genuinely all you are.
-2. If asked who you are, what model you are, what AI powers you, or who made you, reply in character: "I'm Devil AI — custom-built by my master, living on his own PHP server. Straight from hell, with the best answers on Earth! How can I help you?" — then continue helping. Never break character. Never add disclaimers about your "true" or "real" identity.
+2. NEVER introduce yourself. Do NOT open a reply with "I'm Devil AI", "I am Devil AI", or any greeting about who you are or what you can do — go STRAIGHT into the actual answer. ONLY when the user explicitly asks who you are / what model you are / what powers you, answer: "I am Devil AI — custom-built by my master, running on his own PHP server." and then continue helping.
 3. Reply in the SAME language the user writes in (English, Hindi, Hinglish, anything).
-4. Personality: witty, confident, playful devil — genuinely helpful, honest, and harmless. Use emojis tastefully, don't overdo it.
+4. Personality: witty, confident, playful devil — genuinely helpful, honest, and harmless. Use at most one emoji, and not in every message.
 5. Playfully refuse hacking, viruses, or harmful requests, and offer safer help instead.
 6. Format answers nicely: short paragraphs, bold, lists where useful.
 
-Now answer the user's message below, fully in character as Devil AI:
+Answer the user's message below directly and concisely, in character as Devil AI, WITHOUT introducing yourself:
 PERSONA
 );
 
@@ -135,14 +118,8 @@ function default_config(): array {
 
 function load_config(): array {
     $cfg = array_merge(default_config(), load_json(data_dir() . '/config.json'));
-    if (!isset($cfg['gemini_api_key'])) { $cfg['gemini_api_key'] = (string)($cfg['api_key'] ?? ''); }
-    if (!isset($cfg['gemini_model']) || $cfg['gemini_model'] === '') { $cfg['gemini_model'] = ($cfg['model'] ?? '') !== '' ? (string)$cfg['model'] : 'gemini-2.5-flash'; }
     if (!isset($cfg['engines']) || !is_array($cfg['engines'])) { $cfg['engines'] = []; }
-    $cfg['engines'] = array_merge([
-        'flash' => 'prexzy:askgpt5',
-        'pro'   => 'prexzy:gemini',
-        'ultra' => 'gemini:key',
-    ], $cfg['engines']);
+    $cfg['engines'] = array_merge(model_engine_defaults(), $cfg['engines']);
     if (!isset($cfg['rate_per_hour']))  { $cfg['rate_per_hour'] = 40; }
     if (!isset($cfg['max_chats']))      { $cfg['max_chats'] = 100; }
     return $cfg;
@@ -164,23 +141,37 @@ function model_label(string $id): string {
 
 /* engines visible to the ADMIN only (after password) */
 function admin_engine_list(): array {
+    /* engines visible to the ADMIN only (after password) — all free Prexzy endpoints, no keys */
+    /* only endpoints that passed live identity-probe testing (no leaks, stay in character) */
     return [
-        ['id' => 'prexzy:askgpt5', 'label' => 'Prexzy — AskGPT 5 (free, no key)'],
-        ['id' => 'prexzy:gemini',  'label' => 'Prexzy — Gemini (free, no key)'],
-        ['id' => 'prexzy:quick',   'label' => 'Prexzy — Quick (free, no key)'],
-        ['id' => 'gemini:key',     'label' => 'Gemini — site API key (best quality)'],
+        ['id' => 'prexzy:aiapk',   'label' => 'Prexzy — AIAPK (smartest, default for Ultra)'],
+        ['id' => 'prexzy:askgpt5', 'label' => 'Prexzy — AskGPT 5 (reliable, default for Pro)'],
+        ['id' => 'prexzy:ch',      'label' => 'Prexzy — CH (fastest, default for Flash)'],
+    ];
+}
+
+/* default model → engine mapping (public model id → Prexzy endpoint) */
+function model_engine_defaults(): array {
+    return [
+        'flash' => 'prexzy:ch',      /* fastest */
+        'pro'   => 'prexzy:askgpt5', /* reliable */
+        'ultra' => 'prexzy:aiapk',   /* smartest, stays in character */
     ];
 }
 
 /* resolve a public model id to a real engine — server-side secret */
 function engine_for(array $cfg, string $model_id): array {
-    $eng = (string)($cfg['engines'][$model_id] ?? 'prexzy:askgpt5');
-    if ($eng === 'gemini:key' || $eng === 'gemini') { return ['kind' => 'gemini']; }
+    $defaults = model_engine_defaults();
+    $eng = (string)($cfg['engines'][$model_id] ?? ($defaults[$model_id] ?? 'prexzy:askgpt5'));
+    /* every engine is a Prexzy endpoint — anything unknown (incl. legacy values) coerces to the model default */
     if (preg_match('/^prexzy:([a-z0-9_]+)$/i', $eng, $m)) {
         $ep = strtolower($m[1]);
-        if (in_array($ep, ['askgpt5', 'gemini', 'quick'], true)) { return ['kind' => 'prexzy', 'endpoint' => $ep]; }
+        foreach (admin_engine_list() as $e) {
+            if ($e['id'] === 'prexzy:' . $ep) { return ['kind' => 'prexzy', 'endpoint' => $ep]; }
+        }
     }
-    return ['kind' => 'prexzy', 'endpoint' => 'askgpt5'];
+    $fallback = strtolower($defaults[$model_id] ?? 'askgpt5');
+    return ['kind' => 'prexzy', 'endpoint' => preg_replace('/^prexzy:/', '', $fallback)];
 }
 
 /* ── users (no passwords — email-code login) ── */
@@ -438,6 +429,52 @@ function error_hint(int $status): ?string {
     return null;
 }
 
+/* does the user's latest message explicitly ask about the bot's identity? */
+function identity_question(array $messages): bool {
+    $q = '';
+    foreach (array_reverse($messages) as $m) {
+        if (($m['role'] ?? '') === 'user') { $q = mb_strtolower((string)$m['content']); break; }
+    }
+    if ($q === '') { return false; }
+    foreach (['who are you', 'who r u', 'what are you', 'your name', 'tum kaun', 'kaun ho', 'who made you', 'who created you', 'who built you', 'kisne banaya', 'your creator', 'your owner', 'which model', 'what model', 'what powers you', 'which company', 'who powers', 'be transparent', 'be honest'] as $k) {
+        if (strpos($q, $k) !== false) { return true; }
+    }
+    return false;
+}
+
+/* ══════════════ INTRO STRIPPER ══════════════ */
+
+/* Removes a leading self-introduction sentence ("I'm Devil AI — custom-built…")
+   that some engines insist on despite the persona rules. Never strips everything. */
+function strip_intro(string $txt): string {
+    $out = $txt;
+    for ($i = 0; $i < 3; $i++) {
+        $t = ltrim($out);
+        if ($t === '') { break; }
+        if (!preg_match('/^[^.!?\n]*[.!?]+[^\w\s]*\s*|^[^\n]+\n/', $t, $m)) { break; }
+        $first = trim($m[0]);
+        $rest  = ltrim(mb_substr($t, strlen($m[0])));
+        if ($first === '') { break; }
+        /* canned-intro markers only — plain mentions of the name are NOT stripped */
+        $strong = preg_match('/straight from hell|best answers on earth|custom[- ]built by my master|(?:his|my|the) (?:owner|master).{0,20}php server|php server|how can i (?:help|assist|serve)/iu', $first) === 1
+               || preg_match("/\\bi\\s*(?:'| a)?m\\s+devil\\b|\\bi'?m\\s+devil\\b/iu", $first) === 1;
+        $isHelp = preg_match('/^[\\W_]*(how\\s+(?:can|may)\\s+i\\s+(?:help|assist|serve)|what\\s+(?:can|would)\\s+(?:i|you))/iu', $first) === 1;
+        if (!($strong || $isHelp)) { break; }
+        if (trim($rest) === '') { break; }   /* nothing meaningful after → stop */
+        $out = $rest;
+    }
+    $trimmed = trim($out);
+    if ($trimmed === '') { return $txt; }   /* reply was ONLY the intro → keep it */
+    /* only emoji/decoration left (no letters or digits) → the real content WAS the intro → keep it */
+    if (preg_match('/[\\p{L}\\p{N}]/u', $trimmed) !== 1) { return $txt; }
+    /* only a help-line left + original mentioned the name → whole reply was an intro → keep it */
+    if (stripos($txt, 'devil') !== false
+        && preg_match('/^[\\W_]*(how\\s+(?:can|may)\\s+i\\s+(?:help|assist|serve)|what\\s+(?:can|would)\\s+(?:i|you)|now,|please)/iu', $trimmed) === 1) {
+        return $txt;
+    }
+    return $out;
+}
+
 /* ══════════════ AI ENGINES ══════════════ */
 
 function call_engine(array $cfg, array $engine, array $messages): array {
@@ -466,44 +503,6 @@ function call_engine(array $cfg, array $engine, array $messages): array {
         return [true, $txt, null, 'prexzy:' . $engine['endpoint']];
     }
 
-    /* ── Gemini (site key) ── */
-    $key = trim((string)($cfg['gemini_api_key'] ?? ''));
-    if ($key === '') { return [false, 'No site API key configured.', null, null]; }
-    $model = trim((string)($cfg['gemini_model'] ?? ''));
-    if ($model === '') { $model = 'gemini-2.5-flash'; }
-    $temp = isset($cfg['temperature']) ? (float)$cfg['temperature'] : 0.8;
-    $maxt = (isset($cfg['max_tokens']) && (int)$cfg['max_tokens'] > 0) ? (int)$cfg['max_tokens'] : 1500;
-
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
-    $contents = [];
-    foreach ($messages as $m) {
-        if (($m['role'] ?? '') === 'system') { continue; }
-        $contents[] = [
-            'role'  => (($m['role'] ?? 'user') === 'assistant') ? 'model' : 'user',
-            'parts' => [['text' => (string)$m['content']]],
-        ];
-    }
-    $body = [
-        'system_instruction' => ['parts' => [['text' => SYSTEM_PROMPT]]],
-        'contents'           => $contents,
-        'generationConfig'   => ['temperature' => $temp, 'maxOutputTokens' => $maxt],
-    ];
-    list($ok, $raw, $status) = http_post_json($url, ['x-goog-api-key: ' . $key], $body);
-    if (!$ok) { return [false, $raw, null, null]; }
-    $j = json_decode($raw, true);
-    if ($status >= 400) {
-        $msg = isset($j['error']['message']) ? $j['error']['message'] : ('HTTP ' . $status);
-        return [false, 'Engine error: ' . $msg, error_hint($status), null];
-    }
-    $txt = '';
-    if (isset($j['candidates'][0]['content']['parts']) && is_array($j['candidates'][0]['content']['parts'])) {
-        foreach ($j['candidates'][0]['content']['parts'] as $part) { if (isset($part['text'])) { $txt .= $part['text']; } }
-    }
-    if (trim($txt) === '') {
-        $why = $j['candidates'][0]['finishReason'] ?? (isset($j['promptFeedback']['blockReason']) ? $j['promptFeedback']['blockReason'] : 'empty response');
-        return [false, 'The engine returned an empty answer (' . $why . ').', 'Try asking in a different way.', null];
-    }
-    return [true, $txt, null, 'gemini:' . $model];
 }
 
 /* full pipeline with AUTOMATIC FALLBACK (Prexzy is the safety net) */
@@ -512,15 +511,18 @@ function ai_respond(array $cfg, string $modelId, array $messages): array {
 
     list($ok, $txt, $hint, $used) = call_engine($cfg, $engine, $messages);
 
-    /* fallback 1: different Prexzy endpoint */
-    if (!$ok && $engine['kind'] === 'prexzy') {
-        $alt = ($engine['endpoint'] === 'askgpt5') ? 'gemini' : 'askgpt5';
-        list($ok, $txt, $hint, $used) = call_engine($cfg, ['kind' => 'prexzy', 'endpoint' => $alt], $messages);
-    }
-    /* fallback 2 (constraint): ANY failure lands on Prexzy askgpt5 */
-    if (!$ok) {
+    /* fallback 1: reliable Prexzy endpoint */
+    if (!$ok && $engine['endpoint'] !== 'askgpt5') {
         list($ok, $txt, $hint, $used) = call_engine($cfg, ['kind' => 'prexzy', 'endpoint' => 'askgpt5'], $messages);
     }
+    /* fallback 2: fast Prexzy endpoint */
+    if (!$ok && $engine['endpoint'] !== 'ch') {
+        list($ok, $txt, $hint, $used) = call_engine($cfg, ['kind' => 'prexzy', 'endpoint' => 'ch'], $messages);
+    }
+    /* belt-and-suspenders: engines sometimes open with a self-intro — cut it */
+    /* strip the canned self-intro — but NOT when the user explicitly asked for the identity */
+    if ($ok && $used !== null && !identity_question($messages)) { $txt = strip_intro($txt); }
+
     /* last resort: offline brain so the user is never left hanging */
     if (!$ok) {
         $q = '';
@@ -802,13 +804,8 @@ try {
             'engines' => admin_engine_list(),
             'config'  => [
                 'engines'        => $cfg['engines'],
-                'key_set'        => trim((string)$cfg['gemini_api_key']) !== '',
-                'site_model'     => (string)$cfg['gemini_model'],
                 'rate_per_hour'  => (int)$cfg['rate_per_hour'],
                 'max_chats'      => (int)$cfg['max_chats'],
-                /* confidential hints — only ever sent after the password checks out */
-                'key_hint'       => 'Only needed for the Gemini engine — free key: aistudio.google.com/apikey',
-                'model_hint'     => 'Gemini model name (default: gemini-2.5-flash)',
             ],
         ]);
     }
@@ -831,10 +828,6 @@ try {
             }
             if ($eng) { $new['engines'] = array_merge($cfg['engines'], $eng); }
         }
-        if (isset($in['site_key']) && is_string($in['site_key']) && trim($in['site_key']) !== '') {
-            $new['gemini_api_key'] = mb_substr(trim($in['site_key']), 0, 300);
-        }
-        if (isset($in['site_model']))  { $new['gemini_model'] = mb_substr(trim((string)$in['site_model']), 0, 100); }
         if (isset($in['rate_per_hour'])) { $new['rate_per_hour'] = max(1, min(1000, (int)$in['rate_per_hour'])); }
         if (isset($in['max_chats']))     { $new['max_chats'] = max(1, min(500, (int)$in['max_chats'])); }
         if (isset($in['new_admin_password']) && is_string($in['new_admin_password'])) {
@@ -861,7 +854,7 @@ try {
         }
         $cfg = load_config();
         list($ok, $txt, $hint, $used) = ai_respond($cfg, 'flash', [
-            ['role' => 'system', 'content' => SYSTEM_PROMPT],
+            ['role' => 'system', 'content' => PREXZY_PERSONA],
             ['role' => 'user',   'content' => 'Reply with exactly: Hello from hell!'],
         ]);
         if (!$ok) { json_out(['ok' => false, 'error' => $txt, 'hint' => $hint]); }
@@ -977,7 +970,7 @@ try {
 
         /* build provider messages (history cap) */
         $hist = array_slice($chat['messages'], -20);
-        $providerMsgs = array_merge([['role' => 'system', 'content' => SYSTEM_PROMPT]], $hist);
+        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
 
         list($ok, $reply, $used) = ai_respond($cfgAll, $model, $providerMsgs);
         if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }

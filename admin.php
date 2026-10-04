@@ -109,16 +109,6 @@ select option{background:var(--panel2)}
 
       <hr class="divider">
 
-      <label for="aKey">Site API key <span id="aKeyState" style="font-weight:400;color:var(--dim2)"></span></label>
-      <input id="aKey" type="password" placeholder="Paste key — or leave empty" autocomplete="off">
-      <p class="hint" id="keyHint"></p>
-
-      <label for="aGModel">Model</label>
-      <input id="aGModel" type="text" placeholder="model name" autocomplete="off">
-      <p class="hint" id="modelHint"></p>
-
-      <hr class="divider">
-
       <label for="aRate">Messages per user per hour</label>
       <input id="aRate" type="number" min="1" max="1000" inputmode="numeric">
       <label for="aChats">Max saved chats per user</label>
@@ -165,12 +155,6 @@ function fill(cfg) {
   sel($('#aFlash'), cfg.engines.flash);
   sel($('#aPro'), cfg.engines.pro);
   sel($('#aUltra'), cfg.engines.ultra);
-  $('#aKey').value = '';
-  $('#aKeyState').textContent = cfg.key_set ? '— key is set' : '';
-  $('#aKey').placeholder = cfg.key_set ? 'New key — or leave empty to keep' : 'Paste key — or leave empty';
-  $('#keyHint').textContent = cfg.key_hint || '';
-  $('#aGModel').value = cfg.site_model || '';
-  $('#modelHint').textContent = cfg.model_hint || '';
   $('#aRate').value = cfg.rate_per_hour;
   $('#aChats').value = cfg.max_chats;
   $('#aPw').value = '';
@@ -201,8 +185,6 @@ $('#saveBtn').addEventListener('click', function () {
     current_admin_password: PW,
     new_admin_password: $('#aPw').value,
     engines: { flash: $('#aFlash').value, pro: $('#aPro').value, ultra: $('#aUltra').value },
-    site_key: $('#aKey').value,
-    site_model: $('#aGModel').value.trim(),
     rate_per_hour: parseInt($('#aRate').value, 10) || 40,
     max_chats: parseInt($('#aChats').value, 10) || 100
   }).then(function (j) {
