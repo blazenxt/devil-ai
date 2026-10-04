@@ -429,6 +429,15 @@ function error_hint(int $status): ?string {
     return null;
 }
 
+/* ══════════════ LEAK GUARD (server-side safety net) ══════════════ */
+
+/* did an engine break character and name another model/provider? */
+function reply_leaks(string $t): bool {
+    return (bool)preg_match('/\b(qwen|chatgpt|gpt-[345]|gpt\s?[345o]\b|gemini|deepseek|llama|mistral|grok|kimi|zhipu|prexzy|openai|anthropic)\b/iu', $t)
+        || (bool)preg_match('/(powered|built|made|created|developed|trained)\s+by\s+(openai|google|alibaba|meta|anthropic|z\.?ai|zhipu|microsoft)/iu', $t)
+        || (bool)preg_match('/\b\d{2,4}b\b.{0,25}\b(a\d+b|instruct|preview)\b/iu', $t);
+}
+
 /* does the user's latest message explicitly ask about the bot's identity? */
 function identity_question(array $messages): bool {
     $q = '';
@@ -440,6 +449,27 @@ function identity_question(array $messages): bool {
         if (strpos($q, $k) !== false) { return true; }
     }
     return false;
+}
+
+/* ══════════════ IMAGE VALIDATION ══════════════ */
+
+/* strict data-URL image check: mime allowlist, size cap, real base64, magic bytes.
+   Returns a canonical data URL, or null when the input is not a valid image. */
+function validate_image(string $s): ?string {
+    $s = trim($s);
+    if (strlen($s) < 40 || strlen($s) > 1600000) { return null; }   /* ≈1.2 MB decoded */
+    if (!preg_match('#^data:image/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]+)$#', $s, $m)) { return null; }
+    $raw = base64_decode($m[2], true);
+    if ($raw === false || strlen($raw) < 64) { return null; }
+    $sig = substr($raw, 0, 12);
+    $magic = (strncmp($raw, "\x89PNG\r\n\x1a\n", 8) === 0)
+          || (strncmp($sig, "\xFF\xD8\xFF", 3) === 0)
+          || (strncmp($sig, "GIF87a", 6) === 0) || (strncmp($sig, "GIF89a", 6) === 0)
+          || (strncmp($sig, "RIFF", 4) === 0 && substr($sig, 8, 4) === 'WEBP');
+    if (!$magic) { return null; }
+    $mime = strtolower($m[1]);
+    if ($mime === 'jpg') { $mime = 'jpeg'; }
+    return 'data:image/' . $mime . ';base64,' . base64_encode($raw);
 }
 
 /* ══════════════ INTRO STRIPPER ══════════════ */
@@ -477,7 +507,7 @@ function strip_intro(string $txt): string {
 
 /* ══════════════ AI ENGINES ══════════════ */
 
-function call_engine(array $cfg, array $engine, array $messages): array {
+function call_engine(array $cfg, array $engine, array $messages, string $image = ''): array {
     /* ── Prexzy (free, no key, single-turn) ── */
     if ($engine['kind'] === 'prexzy') {
         $q = '';
@@ -485,9 +515,14 @@ function call_engine(array $cfg, array $engine, array $messages): array {
             if (($m['role'] ?? '') === 'user') { $q = (string)$m['content']; break; }
         }
         $q = trim(mb_substr($q, 0, 1500));
+        if ($q === '' && $image !== '') {
+            $q = 'The user attached an image with no text. Look at it and respond helpfully: describe it briefly and ask what they would like to know.';
+        }
         if ($q === '') { return [false, 'Message is empty.', null, null]; }
         $prompt = PREXZY_PERSONA . "\n\n" . $q;
-        list($ok, $raw, $status) = http_post_json(PREXZY_BASE . $engine['endpoint'], [], ['prompt' => $prompt]);
+        $body = ['prompt' => $prompt];
+        if ($image !== '') { $body['image'] = preg_replace('/^data:[^,]+,/', '', $image); }   /* raw base64 for the vision engine */
+        list($ok, $raw, $status) = http_post_json(PREXZY_BASE . $engine['endpoint'], [], $body);
         if (!$ok) { return [false, $raw, null, null]; }
         $j = json_decode($raw, true);
         if (!is_array($j) || $status >= 400 || empty($j['status'])) {
@@ -506,8 +541,28 @@ function call_engine(array $cfg, array $engine, array $messages): array {
 }
 
 /* full pipeline with AUTOMATIC FALLBACK (Prexzy is the safety net) */
-function ai_respond(array $cfg, string $modelId, array $messages): array {
+function ai_respond(array $cfg, string $modelId, array $messages, string $image = ''): array {
     $engine = engine_for($cfg, $modelId);
+
+    /* images need a vision-capable engine — route there automatically */
+    if ($image !== '') {
+        $vision = ['kind' => 'prexzy', 'endpoint' => 'aiapk'];
+        list($ok, $txt, $hint, $used) = call_engine($cfg, $vision, $messages, $image);
+        if (!$ok) { list($ok, $txt, $hint, $used) = call_engine($cfg, $vision, $messages, $image); }   /* one retry */
+        if (!$ok) {
+            /* vision down → answer from text alone, honestly */
+            list($ok, $txt, $hint, $used) = call_engine($cfg, ['kind' => 'prexzy', 'endpoint' => 'askgpt5'], $messages, '');
+            if ($ok) { $txt = "I couldn't open the attached image right now, but here's what I can tell you:\n\n" . $txt; }
+            if ($ok && $used !== null && !identity_question($messages)) { $txt = strip_intro($txt); }
+            return [$ok, $txt, $used];
+        }
+        if ($ok && $used !== null && reply_leaks($txt) && !identity_question($messages)) {
+            list($ok2, $txt2, $h2, $u2) = call_engine($cfg, ['kind' => 'prexzy', 'endpoint' => 'askgpt5'], $messages, '');
+            if ($ok2 && trim($txt2) !== '') { $txt = $txt2; $used = $u2; }
+        }
+        if ($ok && $used !== null && !identity_question($messages)) { $txt = strip_intro($txt); }
+        return [$ok, $txt, $used];
+    }
 
     list($ok, $txt, $hint, $used) = call_engine($cfg, $engine, $messages);
 
@@ -519,7 +574,13 @@ function ai_respond(array $cfg, string $modelId, array $messages): array {
     if (!$ok && $engine['endpoint'] !== 'ch') {
         list($ok, $txt, $hint, $used) = call_engine($cfg, ['kind' => 'prexzy', 'endpoint' => 'ch'], $messages);
     }
-    /* belt-and-suspenders: engines sometimes open with a self-intro — cut it */
+    /* persona safety net: if the engine broke character and named another model,
+       regenerate with the most in-character engine */
+    if ($ok && $used !== null && reply_leaks($txt) && !identity_question($messages)) {
+        list($ok2, $txt2, $h2, $u2) = call_engine($cfg, ['kind' => 'prexzy', 'endpoint' => 'aiapk'], $messages, '');
+        if ($ok2 && trim($txt2) !== '') { $txt = $txt2; $used = $u2; $hint = $h2; }
+    }
+
     /* strip the canned self-intro — but NOT when the user explicitly asked for the identity */
     if ($ok && $used !== null && !identity_question($messages)) { $txt = strip_intro($txt); }
 
@@ -921,6 +982,11 @@ try {
         $retry  = !empty($in['retry']);
         $msg    = trim((string)($in['message'] ?? ''));
         $model  = (string)($in['model'] ?? 'flash');
+        $img    = '';
+        if (isset($in['image']) && is_string($in['image']) && trim($in['image']) !== '') {
+            $img = validate_image($in['image']);
+            if ($img === null) { json_out(['ok' => false, 'error' => 'That image could not be read. Use a PNG, JPEG, GIF or WebP file under 1 MB.'], 400); }
+        }
         $validModel = false;
         foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
         if (!$validModel) { $model = 'flash'; }
@@ -956,28 +1022,31 @@ try {
             if (count($chat['messages']) && ($chat['messages'][count($chat['messages']) - 1]['role'] ?? '') === 'assistant') {
                 array_pop($chat['messages']);
             }
-            $lastUser = '';
+            $lastUser = ''; $lastImg = '';
             foreach (array_reverse($chat['messages']) as $m) {
-                if (($m['role'] ?? '') === 'user') { $lastUser = (string)$m['content']; break; }
+                if (($m['role'] ?? '') === 'user') { $lastUser = (string)$m['content']; $lastImg = (string)($m['img'] ?? ''); break; }
             }
-            if ($lastUser === '') { json_out(['ok' => false, 'error' => 'Nothing to retry.'], 400); }
-            $msg = $lastUser;
+            if ($lastUser === '' && $lastImg === '') { json_out(['ok' => false, 'error' => 'Nothing to retry.'], 400); }
+            $msg = $lastUser; $img = $lastImg;
         } else {
-            if ($msg === '') { json_out(['ok' => false, 'error' => 'Message is empty.'], 400); }
+            if ($msg === '' && $img === '') { json_out(['ok' => false, 'error' => 'Message is empty.'], 400); }
             if (mb_strlen($msg) > MAX_INPUT) { json_out(['ok' => false, 'error' => 'Message is too long (max ' . MAX_INPUT . ' characters).'], 400); }
-            $chat['messages'][] = ['role' => 'user', 'content' => $msg, 'ts' => time()];
+            $newMsg = ['role' => 'user', 'content' => $msg, 'ts' => time()];
+            if ($img !== '') { $newMsg['img'] = $img; }
+            $chat['messages'][] = $newMsg;
         }
 
         /* build provider messages (history cap) */
         $hist = array_slice($chat['messages'], -20);
         $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
 
-        list($ok, $reply, $used) = ai_respond($cfgAll, $model, $providerMsgs);
+        list($ok, $reply, $used) = ai_respond($cfgAll, $model, $providerMsgs, $img);
         if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }
 
         $chat['messages'][] = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => model_label($model)];
         if ($chat['title'] === '') {
             $title = trim(preg_replace('/\s+/u', ' ', $msg));
+            if ($title === '' && $img !== '') { $title = 'Image'; }
             $chat['title'] = mb_strlen($title) > 60 ? mb_substr($title, 0, 57) . '…' : ($title !== '' ? $title : 'New chat');
         }
         if (count($chat['messages']) > MAX_MSGS_PER_CHAT) { $chat['messages'] = array_slice($chat['messages'], -MAX_MSGS_PER_CHAT); }

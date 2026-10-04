@@ -20,6 +20,7 @@ A complete Claude-style AI chat product in **100% pure PHP**. No frameworks, no 
 
 - **Passwordless accounts** — no passwords anywhere. Enter an email → receive a 6-digit code + a one-click magic link → you're in. Accounts are auto-created on first login. Codes expire in 10 minutes, allow max 5 wrong tries, 60-second resend cooldown, per-email + per-IP rate limits.
 - **Isolated accounts** — per-user chat storage (`data/chats/{user_id}/`), account deletion (confirmed by an email code), brute-force protection.
+- **Image understanding (vision)** — attach an image (paperclip, paste, or drop a file), or send it alone with no text: Devil AI looks at it and answers. Client-side downscaling keeps chats light; strict server-side validation (magic bytes, MIME allowlist, size cap); thumbnails in history + full-screen viewer.
 - **Claude-style chat UI** — sidebar with chat history (grouped Today / Yesterday / Previous 7 days), search, rename, delete, collapsible on mobile, user menu, markdown rendering, copy & retry per message.
 - **Light & dark themes** — Claude-style warm light palette + devil dark, system-preference aware, one-click toggle on every page (respects the personalization cookie choice).
 - **Code preview (mini artifacts)** — HTML/CSS/JS code blocks get a "Preview" button that renders them live in a sandboxed iframe (with console capture for JS), plus "Open in new tab".
@@ -71,7 +72,7 @@ Everything under `data/` is blocked from direct browser access via `.htaccess`.
 ## API overview
 
 Public: `bootstrap`, `otp_request`, `otp_verify`, `me`, `logout`, `settings` (GET — public-safe, exposes nothing).
-User: `chats`, `chat_load`, `chat_send`, `chat_delete`, `chat_rename`, `otp_request` (`purpose: "delete"`), `account_delete`.
+User: `chats`, `chat_load`, `chat_send` (text + optional `image`), `chat_delete`, `chat_rename`, `otp_request` (`purpose: "delete"`), `account_delete`.
 Admin: `auth`, `settings` (POST), `test`.
 
 All responses are JSON. All error messages are in English.

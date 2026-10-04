@@ -10,7 +10,15 @@ if (session_status() === PHP_SESSION_NONE) {
     session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
     session_start();
 }
-if (isset($_SESSION['devil_uid'])) { header('Location: app.php'); exit; }
+/* already signed in? — validate against users.json, else a deleted account
+   with a stale session would bounce app.php ⇄ login.php forever */
+if (isset($_SESSION['devil_uid'])) {
+    $users = json_decode((string)@file_get_contents(__DIR__ . '/data/users.json'), true);
+    if (is_array($users) && isset($users[$_SESSION['devil_uid']])) {
+        header('Location: app.php'); exit;
+    }
+    unset($_SESSION['devil_uid'], $_SESSION['devil_name']); /* stale — clean it up */
+}
 require_once __DIR__ . '/inc/icons.php';
 
 /* ── magic link (?token=…) — server-side verify + sign-in ── */

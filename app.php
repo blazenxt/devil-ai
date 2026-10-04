@@ -176,15 +176,29 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 #inp::placeholder{color:var(--dim2)}
 .comprow{display:flex;align-items:center;gap:10px;padding:8px 10px 10px 14px}
 #modelBtn{display:flex;align-items:center;gap:7px;font-size:.8rem;font-weight:600;color:var(--soft);border:1px solid var(--border);border-radius:999px;padding:7px 13px;transition:.15s;max-width:220px}
+.modelwrap{display:flex;align-items:center;gap:8px;position:relative;min-width:0}
 #modelBtn:hover{background:rgba(244,63,94,.1);border-color:var(--border-hi)}
 #modelBtn .lb{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #sendBtn{margin-left:auto;width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 16px rgba(244,63,94,.4);transition:.15s;flex-shrink:0}
 #sendBtn:hover{transform:scale(1.06)}
 #sendBtn:disabled{opacity:.45;transform:none;cursor:default}
 .hint{text-align:center;font-size:.68rem;color:var(--dim2);margin-top:9px}
+#attachBtn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.15s;flex-shrink:0}
+#attachBtn:hover{background:rgba(244,63,94,.12);color:var(--soft)}
+#imgChip{display:none;align-items:center;gap:10px;margin:12px 16px 0;padding:7px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:12px;width:fit-content;max-width:calc(100% - 32px)}
+#imgChip.show{display:flex}
+#imgChip img{width:42px;height:42px;object-fit:cover;border-radius:8px;flex-shrink:0}
+#imgChip .meta{font-size:.68rem;color:var(--dim2);min-width:0;line-height:1.5}
+#imgChip .meta b{display:block;font-size:.76rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+#imgChip .rm{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--dim2);flex-shrink:0}
+#imgChip .rm:hover{background:rgba(190,18,60,.15);color:var(--pink)}
+.msg-img{display:block;max-width:min(260px,100%);max-height:280px;border-radius:14px;border:1px solid var(--border);margin-bottom:8px;cursor:zoom-in;object-fit:cover}
+#imgView{position:fixed;inset:0;background:rgba(5,2,4,.85);backdrop-filter:blur(8px);z-index:400;display:none;align-items:center;justify-content:center;padding:24px;cursor:zoom-out}
+#imgView.show{display:flex}
+#imgView img{max-width:100%;max-height:100%;border-radius:14px;box-shadow:0 30px 90px rgba(0,0,0,.6)}
 
 /* model menu */
-#modelMenu{position:absolute;bottom:calc(100% + 8px);left:0;width:300px;background:var(--panel2);border:1px solid var(--border-hi);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:6px;display:none;z-index:70}
+#modelMenu{position:absolute;bottom:calc(100% + 8px);left:0;width:300px;max-width:calc(100vw - 44px);background:var(--panel2);border:1px solid var(--border-hi);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:6px;display:none;z-index:70}
 #modelMenu.open{display:block}
 .mopt{display:flex;gap:11px;align-items:center;width:100%;padding:11px 12px;border-radius:11px;text-align:left;transition:.12s}
 .mopt:hover{background:rgba(244,63,94,.1)}
@@ -192,7 +206,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 .mopt .ic{width:32px;height:32px;border-radius:9px;background:rgba(244,63,94,.1);display:flex;align-items:center;justify-content:center;color:var(--pink);flex-shrink:0}
 .mopt .tx{flex:1;min-width:0}
 .mopt .tx b{display:block;font-size:.85rem}
-.mopt .tx span{display:block;font-size:.7rem;color:var(--dim2);margin-top:1px;line-height:1.45}
+.mopt .tx span{display:block;font-size:.7rem;color:var(--dim2);margin-top:1px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mopt .tick{color:var(--pink);opacity:0;flex-shrink:0}
 .mopt.on .tick{opacity:1}
 
@@ -333,17 +347,24 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 
     <div id="composer">
       <div class="compbox">
+        <div id="imgChip"></div>
         <textarea id="inp" rows="1" maxlength="4000" placeholder="Message Devil AI…"></textarea>
         <div class="comprow">
-          <button id="modelBtn" title="Choose model"><span id="modelIco"><?= icon('zap', 14) ?></span><span class="lb" id="modelLbl">Devil Flash</span><?= icon('chevron-down', 13) ?></button>
+          <div class="modelwrap">
+            <button id="attachBtn" title="Attach image" type="button"><?= icon('paperclip', 16) ?></button>
+            <button id="modelBtn" title="Choose model"><span id="modelIco"><?= icon('zap', 14) ?></span><span class="lb" id="modelLbl">Devil Flash</span><?= icon('chevron-down', 13) ?></button>
+            <div id="modelMenu"></div>
+          </div>
           <button id="sendBtn" title="Send (Enter)" disabled><?= icon('send', 17) ?></button>
         </div>
-        <div id="modelMenu"></div>
       </div>
       <p class="hint">Devil AI v1.0.0.0 — can make mistakes. Double-check important info.</p>
     </div>
   </main>
 </div>
+
+<input type="file" id="fileInput" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+<div id="imgView"><?= icon('x', 22) ?></div>
 
 <!-- ═══ rename modal ═══ -->
 <div class="modal hidden" id="renameModal"><div class="sheet">
@@ -532,17 +553,36 @@ $('#chatList').addEventListener('click', function (e) {
 var msgs = $('#msgs'), welcome = $('#welcome'), scroller = $('#scroller');
 function scrollDown() { scroller.scrollTop = scroller.scrollHeight; }
 
-function addUserMsg(text) {
+function addUserMsg(text, img) {
   var d = document.createElement('div');
   d.className = 'msg-user';
   var b = document.createElement('div');
   b.className = 'bub';
-  b.textContent = text;
+  if (img) {
+    var im = document.createElement('img');
+    im.className = 'msg-img';
+    im.src = img;
+    im.alt = 'Attached image';
+    im.addEventListener('click', function () { openImgView(img); });
+    b.appendChild(im);
+  }
+  if (text) { b.appendChild(document.createTextNode(text)); }
   d.appendChild(b);
   msgs.appendChild(d);
   welcome.style.display = 'none';
   scrollDown();
 }
+
+/* full-size image viewer */
+var imgView = $('#imgView');
+function openImgView(src) {
+  var im = document.createElement('img');
+  im.src = src; im.alt = 'Attached image';
+  imgView.innerHTML = '';
+  imgView.appendChild(im);
+  imgView.classList.add('show');
+}
+imgView.addEventListener('click', function () { imgView.classList.remove('show'); });
 
 function addAiMsg(opts) {
   opts = opts || {};
@@ -677,7 +717,78 @@ function addErr(text) {
 
 /* ── composer ── */
 var inp = $('#inp'), sendBtn = $('#sendBtn');
-function resize() { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 190) + 'px'; sendBtn.disabled = busy || !inp.value.trim(); }
+function resize() { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 190) + 'px'; sendBtn.disabled = busy || (!inp.value.trim() && !pendingImg); }
+
+/* ── image attach ── */
+var pendingImg = null;   /* data URL */
+var fileInput = $('#fileInput'), imgChip = $('#imgChip');
+var IMG_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+
+function handleFile(file) {
+  if (!file || busy) { return; }
+  if (IMG_TYPES.indexOf(file.type) === -1) { toast('Only PNG, JPEG, GIF or WebP images', 'warning'); return; }
+  if (file.size > 8 * 1024 * 1024) { toast('Image too large (max 8 MB)', 'warning'); return; }
+  var fr = new FileReader();
+  fr.onload = function () {
+    downscale(fr.result, file.type, function (dataUrl) {
+      pendingImg = dataUrl;
+      showChip(file.name, dataUrl.length);
+      resize();
+    });
+  };
+  fr.readAsDataURL(file);
+}
+
+/* shrink to ≤1024px / JPEG so chats stay light; small originals pass through */
+function downscale(dataUrl, type, cb) {
+  var im = new Image();
+  im.onload = function () {
+    var small = im.width <= 1400 && im.height <= 1400 && dataUrl.length < 300000;
+    if (small) { cb(dataUrl); return; }
+    var s = Math.min(1024 / Math.max(im.width, im.height), 1);
+    var cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(im.width * s));
+    cv.height = Math.max(1, Math.round(im.height * s));
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    cb(cv.toDataURL('image/jpeg', 0.85));
+  };
+  im.onerror = function () { toast('Could not read that image', 'warning'); };
+  im.src = dataUrl;
+}
+
+function showChip(name, chars) {
+  var kb = Math.round(chars * 0.75 / 1024);
+  imgChip.innerHTML = '';
+  var th = document.createElement('img');
+  th.src = pendingImg; th.alt = '';
+  var meta = document.createElement('div');
+  meta.className = 'meta';
+  var b = document.createElement('b');
+  b.textContent = name || 'image';
+  var sz = document.createElement('span');
+  sz.textContent = kb + ' KB — attached';
+  meta.appendChild(b); meta.appendChild(sz);
+  var rm = document.createElement('button');
+  rm.className = 'rm'; rm.type = 'button'; rm.title = 'Remove image';
+  rm.innerHTML = I.x;
+  rm.addEventListener('click', function () { pendingImg = null; imgChip.classList.remove('show'); imgChip.innerHTML = ''; resize(); });
+  imgChip.appendChild(th); imgChip.appendChild(meta); imgChip.appendChild(rm);
+  imgChip.classList.add('show');
+}
+
+$('#attachBtn').addEventListener('click', function () { if (!busy) { fileInput.click(); } });
+fileInput.addEventListener('change', function () { handleFile(fileInput.files[0]); fileInput.value = ''; });
+document.addEventListener('paste', function (e) {
+  if (busy) { return; }
+  var items = (e.clipboardData || {}).items || [];
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type && items[i].type.indexOf('image/') === 0) {
+      var f = items[i].getAsFile();
+      if (f) { e.preventDefault(); handleFile(f); }
+      return;
+    }
+  }
+});
 inp.addEventListener('input', resize);
 inp.addEventListener('keydown', function (e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -700,10 +811,14 @@ $$('#welcome .card').forEach(function (c) {
 /* ── send / retry ── */
 function send() {
   var text = inp.value.trim();
-  if (!text || busy) { return; }
-  inp.value = ''; resize();
-  addUserMsg(text);
-  runSend({ message: text, model: currentModel, id: currentChat ? currentChat.id : null });
+  var img = pendingImg;
+  if ((!text && !img) || busy) { return; }
+  inp.value = ''; pendingImg = null; imgChip.classList.remove('show'); imgChip.innerHTML = '';
+  resize();
+  addUserMsg(text, img);
+  var payload = { message: text, model: currentModel, id: currentChat ? currentChat.id : null };
+  if (img) { payload.image = img; }
+  runSend(payload);
 }
 
 function retryLast() {
@@ -727,7 +842,9 @@ function runSend(payload) {
       if (payload.retry) {
         /* keep existing user msg, replace assistant */
       } else {
-        currentChat.messages.push({ role: 'user', content: payload.message });
+        var um = { role: 'user', content: payload.message };
+        if (payload.image) { um.img = payload.image; }
+        currentChat.messages.push(um);
       }
       currentChat.messages.push({ role: 'assistant', content: j.reply });
       var el = addAiMsg({ modelTag: (j.model && j.model.label) || modelById[currentModel].label });
@@ -751,7 +868,7 @@ function openChat(id) {
     msgs.innerHTML = '';
     welcome.style.display = currentChat.messages.length ? 'none' : '';
     currentChat.messages.forEach(function (m) {
-      if (m.role === 'user') { addUserMsg(m.content); }
+      if (m.role === 'user') { addUserMsg(m.content, m.img); }
       else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content); }
     });
     renderList($('#searchInp').value);
