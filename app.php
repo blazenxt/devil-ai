@@ -806,6 +806,8 @@ var inp = $('#inp'), sendBtn = $('#sendBtn');
 function updateChatActions() {
   document.body.classList.toggle('temp-chat', isTempChat);
   var tb = $('#tempChatBtn');
+  var showTemp = !busy && (!currentChat || isTempChat);
+  tb.style.display = showTemp ? 'inline-flex' : 'none';
   tb.classList.toggle('on', isTempChat);
   tb.setAttribute('aria-pressed', isTempChat ? 'true' : 'false');
   tb.title = isTempChat ? 'Turn off temporary chat' : 'Turn on temporary chat';
