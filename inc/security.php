@@ -40,18 +40,25 @@ function devil_sec_save(string $file, array $data): void {
 function devil_sec_is_json_request(): bool {
     $uri = (string)($_SERVER['REQUEST_URI'] ?? '');
     $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
-    return str_contains($uri, '/v1/') || str_ends_with((string)($_SERVER['SCRIPT_NAME'] ?? ''), '/api.php') || str_contains($accept, 'application/json');
+    $script = (string)($_SERVER['SCRIPT_NAME'] ?? '');
+    if (str_contains($uri, '/v1/') || str_ends_with($script, '/api.php')) { return true; }
+    if (str_contains($accept, 'text/html')) { return false; }
+    return str_contains($accept, 'application/json');
+}
+function devil_sec_vpn_proxy_message(): string {
+    return 'Please disconnect VPN or proxy, then refresh Devil AI.';
 }
 function devil_sec_block(string $message = 'Request blocked for security reasons.', int $status = 403): void {
     http_response_code($status);
     header('X-Robots-Tag: noindex');
+    header('Cache-Control: no-store');
     if (devil_sec_is_json_request()) {
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     } else {
         header('Content-Type: text/html; charset=utf-8');
         $safe = htmlspecialchars($message, ENT_QUOTES);
-        echo '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Blocked — Devil AI</title><body style="font-family:system-ui;background:#0c0709;color:#efe6ea;display:grid;place-items:center;min-height:100vh;margin:0"><main style="max-width:520px;padding:28px;border:1px solid rgba(244,63,94,.25);border-radius:18px;background:#171014"><h1 style="margin:0 0 8px">Request blocked</h1><p style="color:#a8929b;line-height:1.6">' . $safe . '</p></main></body>';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Security check — Devil AI</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(900px 420px at 70% -10%,rgba(244,63,94,.20),transparent 62%),#0c0709;color:#efe6ea;font-family:Segoe UI,system-ui,-apple-system,Roboto,sans-serif}.card{width:min(92vw,560px);padding:30px;border:1px solid rgba(244,63,94,.28);border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015)),#171014;box-shadow:0 28px 80px rgba(0,0,0,.42)}.brand{display:flex;align-items:center;gap:12px;font-weight:900;font-size:1.15rem;margin-bottom:18px}.logo{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#f43f5e,#be123c);box-shadow:0 0 26px rgba(244,63,94,.32)}h1{font-size:1.65rem;line-height:1.1;margin:0 0 10px}p{color:#b99aa5;line-height:1.65;margin:0 0 18px}.steps{border:1px solid rgba(244,63,94,.18);background:#100a0d;border-radius:16px;padding:14px 16px;color:#f5c8d0}.btn{display:inline-flex;margin-top:18px;padding:12px 16px;border-radius:12px;background:linear-gradient(135deg,#f43f5e,#be123c);color:white;text-decoration:none;font-weight:800}</style></head><body><main class="card"><div class="brand"><div class="logo">🛡️</div><span>Devil AI</span></div><h1>Security check</h1><p>' . $safe . '</p><div class="steps">Turn off VPN / Proxy / Tor / WARP, then reload this page. Access will work automatically from a normal network.</div><a class="btn" href="' . htmlspecialchars((string)($_SERVER['REQUEST_URI'] ?? '/'), ENT_QUOTES) . '">Refresh Devil AI</a></main></body></html>';
     }
     exit;
 }
@@ -157,7 +164,13 @@ function devil_security_boot(): void {
 
     $bans = devil_sec_json('security_bans.json');
     if (isset($bans[$ip]) && is_array($bans[$ip]) && (int)($bans[$ip]['until'] ?? 0) > time()) {
-        devil_sec_block('Too many suspicious requests. Please try again later.', 403);
+        $banReason = strtolower((string)($bans[$ip]['reason'] ?? ''));
+        if (preg_match('/(proxy|vpn|tor|datacenter|cloud|vps)/i', $banReason)) {
+            unset($bans[$ip]);
+            devil_sec_save('security_bans.json', $bans);
+        } else {
+            devil_sec_block(devil_sec_vpn_proxy_message(), 403);
+        }
     }
 
     if (preg_match('/(\.env|wp-login|xmlrpc\.php|phpmyadmin|adminer|\.git|composer\.(json|lock)|vendor\/|config\.php|backup|\.sql|passwd|\.DS_Store)/i', $uri)) {
@@ -175,7 +188,7 @@ function devil_security_boot(): void {
         || !empty($_SERVER['HTTP_X_DEVIL_API_KEY']) || !empty($_GET['key']) || !empty($_GET['api_key']) || !empty($_GET['apikey']);
     $trustedDeveloperApi = (str_contains($uri, '/v1/') || preg_match('#/v1$#', $uri) === 1) && $hasApiKey;
     if (($proxyVpnReason = devil_sec_proxy_vpn_reason($ip, $trustedDeveloperApi)) !== '') {
-        devil_sec_block('VPN, proxy, Tor and datacenter networks are blocked for security.', 403);
+        devil_sec_block(devil_sec_vpn_proxy_message(), 403);
     }
     $badUa = $ua === '' || preg_match('/(python-requests|scrapy|curl|wget|httpclient|libwww|go-http-client|java\/|okhttp|node-fetch|axios|phantomjs|headless|selenium|playwright|puppeteer|nikto|sqlmap|nmap|masscan|zgrab|crawler|spider|\bbot\b)/i', $ua) === 1;
     $noBrowserHints = empty($_SERVER['HTTP_ACCEPT_LANGUAGE']) && empty($_SERVER['HTTP_SEC_CH_UA']) && !$hasApiKey;
@@ -185,8 +198,7 @@ function devil_security_boot(): void {
         devil_sec_block('Automated scraping is blocked.', 403);
     }
     if (!$isApi && $noBrowserHints && devil_sec_datacenter_like($ip, true)) {
-        devil_sec_ban_ip($ip, 3600, 'datacenter');
-        devil_sec_block('Datacenter and automated traffic is blocked.', 403);
+        devil_sec_block(devil_sec_vpn_proxy_message(), 403);
     }
     if ($isApi && !$hasApiKey && $badUa && preg_match('/(python-requests|scrapy|wget|nikto|sqlmap|nmap|masscan|zgrab)/i', $ua) === 1) {
         devil_sec_block('Automated API probing is blocked.', 403);
