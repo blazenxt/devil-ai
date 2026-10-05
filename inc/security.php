@@ -48,6 +48,12 @@ function devil_sec_is_json_request(): bool {
 function devil_sec_vpn_proxy_message(): string {
     return 'Please disconnect VPN or proxy, then refresh Devil AI.';
 }
+function devil_sec_logo_data_uri(): string {
+    $path = devil_sec_root() . '/assets/logo.svg';
+    if (!is_readable($path)) { return ''; }
+    $svg = (string)@file_get_contents($path);
+    return $svg !== '' ? 'data:image/svg+xml;base64,' . base64_encode($svg) : '';
+}
 function devil_sec_block(string $message = 'Request blocked for security reasons.', int $status = 403): void {
     http_response_code($status);
     header('X-Robots-Tag: noindex');
@@ -58,7 +64,9 @@ function devil_sec_block(string $message = 'Request blocked for security reasons
     } else {
         header('Content-Type: text/html; charset=utf-8');
         $safe = htmlspecialchars($message, ENT_QUOTES);
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Security check — Devil AI</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(900px 420px at 70% -10%,rgba(244,63,94,.20),transparent 62%),#0c0709;color:#efe6ea;font-family:Segoe UI,system-ui,-apple-system,Roboto,sans-serif}.card{width:min(92vw,560px);padding:30px;border:1px solid rgba(244,63,94,.28);border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015)),#171014;box-shadow:0 28px 80px rgba(0,0,0,.42)}.brand{display:flex;align-items:center;gap:12px;font-weight:900;font-size:1.15rem;margin-bottom:18px}.logo{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#f43f5e,#be123c);box-shadow:0 0 26px rgba(244,63,94,.32)}h1{font-size:1.65rem;line-height:1.1;margin:0 0 10px}p{color:#b99aa5;line-height:1.65;margin:0 0 18px}.steps{border:1px solid rgba(244,63,94,.18);background:#100a0d;border-radius:16px;padding:14px 16px;color:#f5c8d0}.btn{display:inline-flex;margin-top:18px;padding:12px 16px;border-radius:12px;background:linear-gradient(135deg,#f43f5e,#be123c);color:white;text-decoration:none;font-weight:800}</style></head><body><main class="card"><div class="brand"><div class="logo">🛡️</div><span>Devil AI</span></div><h1>Security check</h1><p>' . $safe . '</p><div class="steps">Turn off VPN / Proxy / Tor / WARP, then reload this page. Access will work automatically from a normal network.</div><a class="btn" href="' . htmlspecialchars((string)($_SERVER['REQUEST_URI'] ?? '/'), ENT_QUOTES) . '">Refresh Devil AI</a></main></body></html>';
+        $logo = devil_sec_logo_data_uri();
+        $logoHtml = $logo !== '' ? '<img src="' . htmlspecialchars($logo, ENT_QUOTES) . '" alt="Devil AI logo">' : '<span>Devil AI</span>';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Security check — Devil AI</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(900px 420px at 70% -10%,rgba(244,63,94,.20),transparent 62%),#0c0709;color:#efe6ea;font-family:Segoe UI,system-ui,-apple-system,Roboto,sans-serif}.card{width:min(92vw,560px);padding:30px;border:1px solid rgba(244,63,94,.28);border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015)),#171014;box-shadow:0 28px 80px rgba(0,0,0,.42)}.brand{display:flex;align-items:center;gap:12px;font-weight:900;font-size:1.15rem;margin-bottom:18px}.logo{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:rgba(244,63,94,.10);box-shadow:0 0 26px rgba(244,63,94,.32);overflow:hidden}.logo img{width:42px;height:42px;display:block}h1{font-size:1.65rem;line-height:1.1;margin:0 0 10px}p{color:#b99aa5;line-height:1.65;margin:0 0 18px}.steps{border:1px solid rgba(244,63,94,.18);background:#100a0d;border-radius:16px;padding:14px 16px;color:#f5c8d0}.btn{display:inline-flex;margin-top:18px;padding:12px 16px;border-radius:12px;background:linear-gradient(135deg,#f43f5e,#be123c);color:white;text-decoration:none;font-weight:800}</style></head><body><main class="card"><div class="brand"><div class="logo">' . $logoHtml . '</div><span>Devil AI</span></div><h1>Security check</h1><p>' . $safe . '</p><div class="steps">Turn off VPN / Proxy / Tor / WARP, then reload this page. Access will work automatically from a normal network.</div><a class="btn" href="' . htmlspecialchars((string)($_SERVER['REQUEST_URI'] ?? '/'), ENT_QUOTES) . '">Refresh Devil AI</a></main></body></html>';
     }
     exit;
 }
@@ -112,12 +120,18 @@ function devil_sec_proxy_vpn_org(string $org): bool {
     if ($org === '') { return false; }
     return preg_match('/(\bvpn\b|proxy|tor\b|anonymous|anonymizer|privacy|tunnel|mullvad|nordvpn|expressvpn|surfshark|proton\s*(vpn)?|windscribe|private\s*internet\s*access|cyberghost|torguard|hidemyass|hide\s*my|purevpn|ivpn|airvpn|vyprvpn|hotspot\s*shield|ipvanish|warp|cloudflare\s*warp|datacenter|data\s*center|colo(cation)?|hosting|hoster|\bvps\b|dedicated\s*server|amazon|aws|google\s*cloud|microsoft\s*azure|digitalocean|akamai\s*linode|linode|vultr|ovh|hetzner|contabo|leaseweb|scaleway|oracle\s*cloud|alibaba|tencent|choopa|m247|datacamp|cdn77|hivelocity|psychz|shinjiru|quadra|frantech|racknerd|hostwinds|upcloud|clouvider|packet\s*exchange|servermania|ionos|strato|kamatera|netcup|timeweb)/i', $org) === 1;
 }
+function devil_sec_residential_org(string $org): bool {
+    $org = trim($org);
+    if ($org === '' || devil_sec_proxy_vpn_org($org)) { return false; }
+    return preg_match('/(jio|reliance\s*jio|airtel|bharti|vodafone|idea|vi\s*india|bsnl|mtnl|hathway|excitel|act\s*fibernet|a\s*tria|alliance\s*broadband|railwire|railtel|asianet|siti\s*cable|den\s*networks|gtpl|you\s*broadband|tikona|spectra|tata\s*(play|teleservices)|broadband|telecom|telco|internet\s*service|cable|fiber|fibre|ftth|wireless|mobile|cellular|communications)/i', $org) === 1;
+}
 function devil_sec_proxy_vpn_asn(int $asn): bool {
     static $blocked = [13335,14618,16509,8075,15169,396982,14061,63949,20473,53667,16276,24940,9009,60068,62240,51167,31898,398101,12876,60781,28753,45102,132203,6939,202053,47583,20454,29802,29838,55286,29854,8100,35916,40676,46606,36352,55293,32244,399629];
     return $asn > 0 && in_array($asn, $blocked, true);
 }
 function devil_sec_proxy_header_present(): string {
-    $headers = ['HTTP_VIA','HTTP_FORWARDED','HTTP_X_FORWARDED_FOR','HTTP_X_REAL_IP','HTTP_X_PROXY_ID','HTTP_X_PROXY_AUTHORIZATION','HTTP_PROXY_AUTHORIZATION','HTTP_PROXY_CONNECTION','HTTP_CLIENT_IP','HTTP_X_CLIENT_IP','HTTP_FORWARDED_FOR','HTTP_X_FORWARDED','HTTP_X_CLUSTER_CLIENT_IP'];
+    if (strtolower((string)($_SERVER['HTTP_X_DEVIL_AI_PROXY'] ?? '')) === 'cloudflare') { return ''; }
+    $headers = ['HTTP_X_PROXY_ID','HTTP_X_PROXY_AUTHORIZATION','HTTP_PROXY_AUTHORIZATION','HTTP_PROXY_CONNECTION'];
     foreach ($headers as $h) {
         if (!empty($_SERVER[$h])) { return $h; }
     }
@@ -131,14 +145,16 @@ function devil_sec_proxy_vpn_reason(string $ip, bool $trustedDeveloperApi): stri
     $country = strtoupper(trim((string)($_SERVER['HTTP_X_DEVIL_CLIENT_COUNTRY'] ?? ($_SERVER['HTTP_CF_IPCOUNTRY'] ?? ''))));
     if ($country === 'T1') { return 'tor/proxy network'; }
 
+    $org = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_ASO'] ?? ($_SERVER['HTTP_CF_ASORGANIZATION'] ?? ''));
+    if (devil_sec_residential_org($org)) { return ''; }
+
     $threatRaw = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_THREAT'] ?? ($_SERVER['HTTP_CF_THREAT_SCORE'] ?? ''));
-    if ($threatRaw !== '' && is_numeric($threatRaw) && (float)$threatRaw >= 30) { return 'high risk IP reputation'; }
+    if ($threatRaw !== '' && is_numeric($threatRaw) && (float)$threatRaw >= 80) { return 'high risk IP reputation'; }
 
     $asnRaw = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_ASN'] ?? ($_SERVER['HTTP_CF_ASN'] ?? ''));
     $asn = ctype_digit($asnRaw) ? (int)$asnRaw : 0;
     if (devil_sec_proxy_vpn_asn($asn)) { return 'blocked ASN'; }
 
-    $org = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_ASO'] ?? ($_SERVER['HTTP_CF_ASORGANIZATION'] ?? ''));
     if (devil_sec_proxy_vpn_org($org)) { return 'blocked network'; }
 
     if (devil_sec_datacenter_like($ip, false)) { return 'blocked datacenter range'; }
@@ -165,7 +181,7 @@ function devil_security_boot(): void {
     $bans = devil_sec_json('security_bans.json');
     if (isset($bans[$ip]) && is_array($bans[$ip]) && (int)($bans[$ip]['until'] ?? 0) > time()) {
         $banReason = strtolower((string)($bans[$ip]['reason'] ?? ''));
-        if (preg_match('/(proxy|vpn|tor|datacenter|cloud|vps)/i', $banReason)) {
+        if (preg_match('/(rate|scraper|proxy|vpn|tor|datacenter|cloud|vps)/i', $banReason)) {
             unset($bans[$ip]);
             devil_sec_save('security_bans.json', $bans);
         } else {
