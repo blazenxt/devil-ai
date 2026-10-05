@@ -461,6 +461,8 @@ function dev_api_key_format_ok(string $token): bool {
     return preg_match('/^dv_live_[A-Fa-f0-9]{48}$/', $token) === 1;
 }
 
+function dev_api_public_base_url(): string { return 'https://api.devil.blazenxt.in/v1'; }
+
 function dev_api_headers(): void {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Headers: Authorization, X-Devil-API-Key, Content-Type');
@@ -2512,7 +2514,7 @@ try {
             ],
             'keys' => $keys,
             'models' => dev_api_models(),
-            'base_url' => app_base_url() . '/v1',
+            'base_url' => dev_api_public_base_url(),
         ]);
     }
 

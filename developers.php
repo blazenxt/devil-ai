@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/inc/developer_console.php';
-$baseUrl = dev_console_base_url();
+$baseUrl = dev_console_api_base_url();
 dev_console_start('Developer Dashboard', 'dashboard');
 ?>
 <section class="hero">

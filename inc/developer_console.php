@@ -33,8 +33,12 @@ function dev_console_base_path(): string {
 
 function dev_console_base_url(): string {
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $host = (string)($_SERVER['HTTP_X_FORWARDED_HOST'] ?? ($_SERVER['HTTP_HOST'] ?? 'localhost'));
     return ($https ? 'https://' : 'http://') . $host . dev_console_base_path();
+}
+
+function dev_console_api_base_url(): string {
+    return 'https://api.devil.blazenxt.in';
 }
 
 function dev_console_nav(string $active): void {
@@ -52,9 +56,9 @@ function dev_console_nav(string $active): void {
     }
 }
 
-function dev_console_start(string $title, string $active): void {
-    $me = dev_console_require_user();
-    $baseUrl = dev_console_base_url();
+function dev_console_start(string $title, string $active, bool $requireUser = true): void {
+    $me = $requireUser ? dev_console_require_user() : (dev_console_user() ?: ['name' => 'Developer', 'email' => '']);
+    $baseUrl = dev_console_api_base_url();
     $name = (string)($me['name'] ?? 'Developer');
 ?><!DOCTYPE html>
 <html lang="en">
@@ -86,8 +90,13 @@ html{scroll-behavior:smooth;overflow-x:hidden}body{min-height:100dvh;overflow-x:
   <a class="brand" href="developers.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil API</a>
   <div class="topnav">
     <button class="topbtn" id="themeBtn" type="button" title="Switch theme"><?= icon('sun', 16) ?></button>
+    <?php if (dev_console_user()): ?>
     <a class="topbtn" href="settings.php"><?= icon('settings', 15) ?> <span>Settings</span></a>
     <a class="topbtn" href="app.php"><?= icon('chevron-right', 14) ?> <span>Chat</span></a>
+    <?php else: ?>
+    <a class="topbtn" href="login.php"><?= icon('key', 15) ?> <span>Get API key</span></a>
+    <a class="topbtn" href="app.php"><?= icon('chevron-right', 14) ?> <span>Chat</span></a>
+    <?php endif; ?>
   </div>
 </header>
 <div class="layout">
@@ -97,7 +106,7 @@ html{scroll-behavior:smooth;overflow-x:hidden}body{min-height:100dvh;overflow-x:
 }
 
 function dev_console_end(string $pageScript = ''): void {
-    $baseUrl = dev_console_base_url();
+    $baseUrl = dev_console_api_base_url();
 ?>
     <div class="foot">Devil AI Developer Console • Developed by BlazeNXT</div>
   </main>

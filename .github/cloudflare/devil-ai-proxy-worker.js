@@ -5,6 +5,8 @@ const HOST_REDIRECTS = {
   'ai.blazenxt.in': 'ai.devil.blazenxt.in',
   'ai.blazenxt.com': 'ai.devil.blazenxt.com'
 };
+const API_HOST = 'api.devil.blazenxt.in';
+const API_DOC_PATHS = new Set(['/', '/docs', '/docs/', '/developers_docs.php']);
 const LOGO_DATA_URI = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJEZXZpbCBBSSBsb2dvIj4KICA8ZGVmcz4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZmFjZUdyYWQiIGN4PSIzOCUiIGN5PSIzMCUiIHI9IjgwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNmZjdhNGQiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI0NSUiIHN0b3AtY29sb3I9IiNlNTM4M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjNWMwYTBlIi8+CiAgICA8L3JhZGlhbEdyYWRpZW50PgogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJiZ0dsb3ciIGN4PSI1MCUiIGN5PSI0MiUiIHI9IjY1JSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNlMTFkNDgiIHN0b3Atb3BhY2l0eT0iMC4zNSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiNlMTFkNDgiIHN0b3Atb3BhY2l0eT0iMCIvPgogICAgPC9yYWRpYWxHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iaG9ybkdyYWQiIHgxPSIwIiB5MT0iMSIgeDI9IjAiIHkyPSIwIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzlmMTIzOSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiNmZjVhNWYiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8ZmlsdGVyIGlkPSJzb2Z0R2xvdyIgeD0iLTUwJSIgeT0iLTUwJSIgd2lkdGg9IjIwMCUiIGhlaWdodD0iMjAwJSI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBpbj0iU291cmNlR3JhcGhpYyIgc3RkRGV2aWF0aW9uPSIxLjQiIHJlc3VsdD0iYmx1ciIvPgogICAgICA8ZmVNZXJnZT4KICAgICAgICA8ZmVNZXJnZU5vZGUgaW49ImJsdXIiLz4KICAgICAgICA8ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz4KICAgICAgPC9mZU1lcmdlPgogICAgPC9maWx0ZXI+CiAgPC9kZWZzPgoKICA8IS0tIGFtYmllbnQgZ2xvdyAtLT4KICA8Y2lyY2xlIGN4PSI2NCIgY3k9IjU4IiByPSI1OCIgZmlsbD0idXJsKCNiZ0dsb3cpIi8+CgogIDwhLS0gaG9ybnMgLS0+CiAgPHBhdGggZD0iTTMwIDQ0IEMyMiAyNiAyNSAxMiAzNCA0IEMzOCAyMCA0NiAzMCA1NCAzNiBaIiBmaWxsPSJ1cmwoI2hvcm5HcmFkKSIvPgogIDxwYXRoIGQ9Ik05OCA0NCBDMTA2IDI2IDEwMyAxMiA5NCA0IEM5MCAyMCA4MiAzMCA3NCAzNiBaIiBmaWxsPSJ1cmwoI2hvcm5HcmFkKSIvPgoKICA8IS0tIGZhY2UgLS0+CiAgPGNpcmNsZSBjeD0iNjQiIGN5PSI3MCIgcj0iNDIiIGZpbGw9InVybCgjZmFjZUdyYWQpIi8+CiAgPHBhdGggZD0iTTY0IDI4IGE0MiA0MiAwIDAgMSAwIDg0IGE1OCA1OCAwIDAgMCAwIC04NCIgZmlsbD0iIzAwMDAwMCIgb3BhY2l0eT0iMC4xMiIvPgoKICA8IS0tIGdsb3dpbmcgZXllcyAtLT4KICA8ZyBmaWxsPSIjZmZlMDY2IiBmaWx0ZXI9InVybCgjc29mdEdsb3cpIj4KICAgIDxwYXRoIGQ9Ik0zOCA2MiBMNTYgNjguNSBMMzggNzUgWiIvPgogICAgPHBhdGggZD0iTTkwIDYyIEw3MiA2OC41IEw5MCA3NSBaIi8+CiAgPC9nPgoKICA8IS0tIHdpY2tlZCBzbWlsZSAtLT4KICA8cGF0aCBkPSJNNDQgODggUTY0IDEwMiA4NCA4OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMzMwNjBhIiBzdHJva2Utd2lkdGg9IjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIGZhbmdzIC0tPgogIDxwYXRoIGQ9Ik01MyA5MSBMNTggOTEuNiBMNTUuNSA5OSBaIiBmaWxsPSIjZmZmNWY1Ii8+CiAgPHBhdGggZD0iTTc1IDkxIEw3MCA5MS42IEw3Mi41IDk5IFoiIGZpbGw9IiNmZmY1ZjUiLz4KCiAgPCEtLSBmbG9hdGluZyBlbWJlcnMgLS0+CiAgPGNpcmNsZSBjeD0iMjQiIGN5PSIxOCIgcj0iMi40IiBmaWxsPSIjZmI3MTg1IiBvcGFjaXR5PSIwLjkiLz4KICA8Y2lyY2xlIGN4PSIxMDQiIGN5PSIyNCIgcj0iMS44IiBmaWxsPSIjZmRhNGFmIiBvcGFjaXR5PSIwLjgiLz4KICA8Y2lyY2xlIGN4PSIxMTIiIGN5PSI2MCIgcj0iMS41IiBmaWxsPSIjZmI3MTg1IiBvcGFjaXR5PSIwLjYiLz4KICA8Y2lyY2xlIGN4PSIxNCIgY3k9IjY2IiByPSIxLjYiIGZpbGw9IiNmZGE0YWYiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9Ijk4IiBjeT0iMTAiIHI9IjEuMiIgZmlsbD0iI2ZlY2RkMyIgb3BhY2l0eT0iMC43Ii8+Cjwvc3ZnPgo=';
 
 const PROXYCHECK_CACHE_SECONDS = 21600; // 6 hours per IP at Cloudflare edge
@@ -163,7 +165,13 @@ function securityBlockResponse(request, reason) {
   return new Response(html, { status: 403, headers });
 }
 
-function mapToOriginPath(pathname) {
+function mapToOriginPath(pathname, host) {
+  if (host === API_HOST) {
+    if (API_DOC_PATHS.has(pathname)) return APP_BASE + '/developers_docs.php';
+    if (pathname === '/widget.js' || pathname === '/support-widget.js') return APP_BASE + '/support-widget.js';
+    if (pathname === '/openapi.json') return APP_BASE + '/openapi.json';
+    return APP_BASE + pathname;
+  }
   if (pathname === APP_BASE || pathname.startsWith(APP_BASE + '/')) return pathname;
   if (pathname === '/') return APP_BASE + '/';
   return APP_BASE + pathname;
@@ -231,7 +239,7 @@ async function handleRequest(request) {
     const reason = await blockReason(request, incomingUrl);
     if (reason) return securityBlockResponse(request, reason);
     const originUrl = new URL(ORIGIN);
-    originUrl.pathname = mapToOriginPath(incomingUrl.pathname);
+    originUrl.pathname = mapToOriginPath(incomingUrl.pathname, host);
     originUrl.search = incomingUrl.search;
 
     const headers = new Headers(request.headers);
