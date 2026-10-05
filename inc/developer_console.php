@@ -94,8 +94,8 @@ html{scroll-behavior:smooth;overflow-x:hidden}body{min-height:100dvh;overflow-x:
     <a class="topbtn" href="settings.php"><?= icon('settings', 15) ?> <span>Settings</span></a>
     <a class="topbtn" href="app.php"><?= icon('chevron-right', 14) ?> <span>Chat</span></a>
     <?php else: ?>
-    <a class="topbtn" href="login.php"><?= icon('key', 15) ?> <span>Get API key</span></a>
-    <a class="topbtn" href="app.php"><?= icon('chevron-right', 14) ?> <span>Chat</span></a>
+    <a class="topbtn" href="https://ai.devil.blazenxt.com/login.php"><?= icon('key', 15) ?> <span>Get API key</span></a>
+    <a class="topbtn" href="https://ai.devil.blazenxt.com/app.php"><?= icon('chevron-right', 14) ?> <span>Chat</span></a>
     <?php endif; ?>
   </div>
 </header>
