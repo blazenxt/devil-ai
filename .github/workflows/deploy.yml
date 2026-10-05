@@ -76,10 +76,12 @@ jobs:
           DEVIL_MAIL_FROM_EMAIL: ${{ secrets.DEVIL_MAIL_FROM_EMAIL }}
           DEVIL_MAIL_FROM_NAME: ${{ secrets.DEVIL_MAIL_FROM_NAME }}
           DEVIL_MAIL_REPLY_TO: ${{ secrets.DEVIL_MAIL_REPLY_TO }}
+          DEVIL_MAIL_TRANSPORT: ${{ secrets.DEVIL_MAIL_TRANSPORT }}
+          DEVIL_RESEND_API_KEY: ${{ secrets.DEVIL_RESEND_API_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${DEVIL_SMTP_PASSWORD:-}" ]; then
-            echo "DEVIL_SMTP_PASSWORD secret not set; skipping runtime mail config patch."
+          if [ -z "${DEVIL_SMTP_PASSWORD:-}" ] && [ -z "${DEVIL_RESEND_API_KEY:-}" ]; then
+            echo "No mail provider secrets set; skipping runtime mail config patch."
             exit 0
           fi
           mkdir -p .deploy_runtime
@@ -100,17 +102,26 @@ jobs:
               cfg = {}
           if not isinstance(cfg, dict):
               cfg = {}
-          cfg.update({
-              'mail_transport': 'smtp',
-              'mail_from_email': os.environ.get('DEVIL_MAIL_FROM_EMAIL') or 'noreply@blazepanel.mywp.info',
+          transport = (os.environ.get('DEVIL_MAIL_TRANSPORT') or '').strip().lower()
+          if transport not in {'mail', 'smtp', 'resend'}:
+              transport = 'resend' if os.environ.get('DEVIL_RESEND_API_KEY') else 'smtp'
+          patch = {
+              'mail_transport': transport,
+              'mail_from_email': os.environ.get('DEVIL_MAIL_FROM_EMAIL') or ('noreply@mail.blazepanel.mywp.info' if transport == 'resend' else 'noreply@blazepanel.mywp.info'),
               'mail_from_name': os.environ.get('DEVIL_MAIL_FROM_NAME') or 'Devil AI',
               'mail_reply_to': os.environ.get('DEVIL_MAIL_REPLY_TO') or 'bk.w.p.bk@gmail.com',
-              'smtp_host': os.environ.get('DEVIL_SMTP_HOST') or 'relay.dnsexit.com',
-              'smtp_port': int(os.environ.get('DEVIL_SMTP_PORT') or '587'),
-              'smtp_secure': os.environ.get('DEVIL_SMTP_SECURE') or 'tls',
-              'smtp_username': os.environ.get('DEVIL_SMTP_USERNAME') or '',
-              'smtp_password': os.environ.get('DEVIL_SMTP_PASSWORD') or '',
-          })
+          }
+          if os.environ.get('DEVIL_RESEND_API_KEY'):
+              patch['resend_api_key'] = os.environ.get('DEVIL_RESEND_API_KEY')
+          if os.environ.get('DEVIL_SMTP_PASSWORD') or os.environ.get('DEVIL_SMTP_HOST'):
+              patch.update({
+                  'smtp_host': os.environ.get('DEVIL_SMTP_HOST') or 'relay.dnsexit.com',
+                  'smtp_port': int(os.environ.get('DEVIL_SMTP_PORT') or '587'),
+                  'smtp_secure': os.environ.get('DEVIL_SMTP_SECURE') or 'tls',
+                  'smtp_username': os.environ.get('DEVIL_SMTP_USERNAME') or '',
+                  'smtp_password': os.environ.get('DEVIL_SMTP_PASSWORD') or '',
+              })
+          cfg.update(patch)
           emails = cfg.get('admin_emails')
           if not isinstance(emails, list):
               emails = []

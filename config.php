@@ -74,6 +74,7 @@ return [
     'smtp_secure' => 'tls',
     'smtp_username' => '',
     'smtp_password' => '',
+    'resend_api_key' => '',
 
     /* ═══════ FINE TUNING ═══════ */
 

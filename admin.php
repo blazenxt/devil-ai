@@ -104,10 +104,13 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
       </div>
 
       <div class="section" id="tab-mail">
-        <div class="switchrow"><span><b>Gmail deliverability</b><small>Native PHP mail works on temp-mail, but Gmail often blocks it. Use authenticated SMTP for reliable Gmail inbox delivery.</small></span><span class="pill" id="mailModePill"><?= icon('mail', 13) ?> mail()</span></div>
-        <div class="row"><div><label>Mail transport</label><select id="mailTransport"><option value="mail">PHP mail() fallback</option><option value="smtp">SMTP authenticated</option></select></div><div><label>Test recipient</label><input id="mailTestTo" placeholder="bk.w.p.bk@gmail.com"></div></div>
+        <div class="switchrow"><span><b>Gmail deliverability</b><small>Native PHP mail works on temp-mail, but Gmail often blocks it. Use a verified API/SMTP provider for reliable Gmail inbox delivery.</small></span><span class="pill" id="mailModePill"><?= icon('mail', 13) ?> mail()</span></div>
+        <div class="row"><div><label>Mail transport</label><select id="mailTransport"><option value="mail">PHP mail() fallback</option><option value="smtp">SMTP authenticated</option><option value="resend">Resend API</option></select></div><div><label>Test recipient</label><input id="mailTestTo" placeholder="bk.w.p.bk@gmail.com"></div></div>
         <div class="row"><div><label>From email</label><input id="mailFromEmail" placeholder="noreply@your-domain.com"></div><div><label>From name</label><input id="mailFromName" placeholder="Devil AI"></div></div>
         <label>Reply-To email</label><input id="mailReplyTo" placeholder="bk.w.p.bk@gmail.com">
+        <hr class="divider">
+        <label>Resend API key <span style="color:var(--dim2);font-weight:500">(leave empty to keep saved)</span></label><input id="resendKey" type="password" autocomplete="new-password" placeholder="re_xxxxxxxxx">
+        <p class="hint">For Resend, set transport to Resend API and use a verified sender domain. SMTP below remains as fallback.</p>
         <hr class="divider">
         <div class="row"><div><label>SMTP host</label><input id="smtpHost" placeholder="smtp.gmail.com / mail.your-domain.com"></div><div><label>SMTP port</label><input id="smtpPort" type="number" min="1" max="65535" placeholder="587"></div></div>
         <div class="row"><div><label>SMTP security</label><select id="smtpSecure"><option value="tls">STARTTLS / 587</option><option value="ssl">SSL / 465</option><option value="none">None / 25</option></select></div><div><label>SMTP username</label><input id="smtpUser" autocomplete="off"></div></div>
@@ -198,7 +201,10 @@ function fill(cfg, sec, adminUser) {
   $('#smtpUser').value = CFG.smtp_username || '';
   $('#smtpPass').value = '';
   $('#smtpPass').placeholder = CFG.smtp_password_set ? 'SMTP password saved — leave blank to keep' : 'SMTP password not set';
-  $('#mailModePill').innerHTML = PILL_ICONS.mail + ' ' + ((CFG.mail_transport || 'mail') === 'smtp' ? 'SMTP' : 'mail()');
+  $('#resendKey').value = '';
+  $('#resendKey').placeholder = CFG.resend_api_key_set ? 'Resend API key saved — leave blank to keep' : 'Resend API key not set';
+  var mt = CFG.mail_transport || 'mail';
+  $('#mailModePill').innerHTML = PILL_ICONS.mail + ' ' + (mt === 'resend' ? 'Resend API' : (mt === 'smtp' ? 'SMTP' : 'mail()'));
   $('#adminPills').innerHTML = '<span class="pill">' + PILL_ICONS.mail + ' Admin: bk.w.p.bk@gmail.com</span>' + (adminUser ? '<span class="pill">' + PILL_ICONS.shieldCheck + ' Signed in as admin</span>' : '') + (CFG.security_require_recaptcha ? '<span class="pill">' + PILL_ICONS.shield + ' reCAPTCHA on</span>' : '<span class="pill">' + PILL_ICONS.shield + ' reCAPTCHA off</span>');
   renderSecurity();
 }
@@ -227,7 +233,8 @@ function payload() {
     smtp_port: parseInt($('#smtpPort').value, 10) || 587,
     smtp_secure: $('#smtpSecure').value,
     smtp_username: $('#smtpUser').value.trim(),
-    smtp_password: $('#smtpPass').value
+    smtp_password: $('#smtpPass').value,
+    resend_api_key: $('#resendKey').value.trim()
   };
 }
 function unlock() {

@@ -854,6 +854,74 @@ function devil_mail_smtp(string $to, string $subject, string $headers, string $b
     if ($code !== 250) { return [false, 'Message rejected: ' . $resp]; }
     return [true, 'SMTP accepted'];
 }
+function devil_mail_resend(string $to, string $subject, string $html, string $text, array $cfg, string $fromEmail, string $fromName, string $replyTo): array {
+    $key = trim((string)($cfg['resend_api_key'] ?? ''));
+    if ($key === '') { return [false, 'Resend API key missing']; }
+    $payload = [
+        'from' => devil_mail_address($fromEmail, $fromName),
+        'to' => [$to],
+        'subject' => devil_mail_clean_header($subject, 180),
+        'html' => $html,
+        'text' => $text,
+    ];
+    if ($replyTo !== '') { $payload['reply_to'] = $replyTo; }
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($json) || $json === '') { return [false, 'Resend payload encoding failed']; }
+    $url = 'https://api.resend.com/emails';
+    $resp = false;
+    $code = 0;
+    $err = '';
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        if (!$ch) { return [false, 'cURL init failed']; }
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 25,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $key,
+                'Content-Type: application/json',
+                'Accept: application/json',
+            ],
+            CURLOPT_POSTFIELDS => $json,
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        if ($resp === false) { $err = curl_error($ch); }
+        curl_close($ch);
+    } else {
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Authorization: Bearer {$key}\r\nContent-Type: application/json\r\nAccept: application/json\r\n",
+                'content' => $json,
+                'timeout' => 25,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $resp = @file_get_contents($url, false, $ctx);
+        if (isset($http_response_header) && is_array($http_response_header)) {
+            foreach ($http_response_header as $line) {
+                if (preg_match('/^HTTP\/\S+\s+(\d+)/', (string)$line, $m)) { $code = (int)$m[1]; break; }
+            }
+        }
+        if ($resp === false) { $err = 'HTTP request failed'; }
+    }
+    $raw = is_string($resp) ? $resp : '';
+    $data = json_decode($raw, true);
+    if ($code >= 200 && $code < 300) {
+        $id = is_array($data) ? (string)($data['id'] ?? '') : '';
+        return [true, 'Resend accepted' . ($id !== '' ? ' id=' . $id : '')];
+    }
+    $msg = '';
+    if (is_array($data)) {
+        $msg = (string)($data['message'] ?? ($data['error'] ?? ($data['name'] ?? '')));
+        if (isset($data['name']) && $msg !== '' && $msg !== (string)$data['name']) { $msg = (string)$data['name'] . ': ' . $msg; }
+    }
+    if ($msg === '') { $msg = $err !== '' ? $err : mb_substr($raw, 0, 260); }
+    return [false, 'HTTP ' . $code . ' ' . $msg];
+}
 function devil_mail(string $to, string $subject, string $html, string $text): bool {
     $cfg = load_config();
     $domain = devil_mail_domain();
@@ -868,6 +936,15 @@ function devil_mail(string $to, string $subject, string $html, string $text): bo
     $messageId = devil_mail_message_id($fromEmail);
     $body = devil_mail_body($html, $text, $boundary);
     $transport = strtolower((string)($cfg['mail_transport'] ?? 'mail'));
+    $resendReady = trim((string)($cfg['resend_api_key'] ?? '')) !== '';
+    if ($transport === 'resend') {
+        [$ok, $detail] = devil_mail_resend($to, $subject, $html, $text, $cfg, $fromEmail, $fromName, $replyTo);
+        devil_mail_log($ok ? 'RESEND_OK' : 'RESEND_FAIL', $to, $subject, $detail . ' id=' . $messageId);
+        if ($ok) { return true; }
+        devil_mail_log('RESEND_FALLBACK', $to, $subject, 'Trying SMTP/native fallback after Resend failure id=' . $messageId);
+    } elseif ($resendReady) {
+        devil_mail_log('RESEND_SKIPPED', $to, $subject, 'Resend key present but transport=' . $transport . ' id=' . $messageId);
+    }
     $smtpReady = trim((string)($cfg['smtp_host'] ?? '')) !== '';
     if (($transport === 'smtp' || $smtpReady) && $smtpReady) {
         $smtpHeaders = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, true, $messageId);
@@ -2166,6 +2243,7 @@ try {
                 'smtp_secure' => (string)($cfg['smtp_secure'] ?? 'tls'),
                 'smtp_username' => (string)($cfg['smtp_username'] ?? ''),
                 'smtp_password_set' => (string)($cfg['smtp_password'] ?? '') !== '',
+                'resend_api_key_set' => (string)($cfg['resend_api_key'] ?? '') !== '',
             ],
         ]);
     }
@@ -2211,7 +2289,7 @@ try {
         }
         if (isset($in['mail_transport'])) {
             $mt = strtolower(trim((string)$in['mail_transport']));
-            if (in_array($mt, ['mail', 'smtp'], true)) { $new['mail_transport'] = $mt; }
+            if (in_array($mt, ['mail', 'smtp', 'resend'], true)) { $new['mail_transport'] = $mt; }
         }
         if (isset($in['mail_from_email']) && is_string($in['mail_from_email'])) {
             $v = strtolower(trim($in['mail_from_email']));
@@ -2234,6 +2312,11 @@ try {
             if ($sp !== '') { $new['smtp_password'] = mb_substr($sp, 0, 260); }
         }
         if (!empty($in['smtp_password_clear'])) { $new['smtp_password'] = ''; }
+        if (isset($in['resend_api_key']) && is_string($in['resend_api_key'])) {
+            $rk = trim($in['resend_api_key']);
+            if ($rk !== '') { $new['resend_api_key'] = mb_substr($rk, 0, 500); }
+        }
+        if (!empty($in['resend_api_key_clear'])) { $new['resend_api_key'] = ''; }
         if (isset($in['new_admin_password']) && is_string($in['new_admin_password'])) {
             $np = trim($in['new_admin_password']);
             if ($np !== '') {
