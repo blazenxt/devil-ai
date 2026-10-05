@@ -1325,15 +1325,67 @@ function voicePref() {
   try { return JSON.parse(read('devil_voice') || '{}') || {}; } catch (e) { return {}; }
 }
 function voiceKey(v) { return (v.voiceURI || v.name || '') + '|' + (v.lang || ''); }
-function pickSpeechVoice(pref) {
+var INDIAN_VOICE_LANGS = ['hi-IN', 'en-IN', 'bn-IN', 'ta-IN', 'te-IN', 'mr-IN', 'gu-IN', 'kn-IN', 'ml-IN', 'pa-IN', 'ur-IN'];
+function detectSpeechLang(text) {
+  text = String(text || '');
+  if (/[\u0900-\u097F]/.test(text)) { return 'hi-IN'; }
+  if (/[\u0980-\u09FF]/.test(text)) { return 'bn-IN'; }
+  if (/[\u0B80-\u0BFF]/.test(text)) { return 'ta-IN'; }
+  if (/[\u0C00-\u0C7F]/.test(text)) { return 'te-IN'; }
+  if (/[\u0A80-\u0AFF]/.test(text)) { return 'gu-IN'; }
+  if (/[\u0C80-\u0CFF]/.test(text)) { return 'kn-IN'; }
+  if (/[\u0D00-\u0D7F]/.test(text)) { return 'ml-IN'; }
+  if (/[\u0A00-\u0A7F]/.test(text)) { return 'pa-IN'; }
+  if (/[\u0600-\u06FF]/.test(text)) { return 'ur-IN'; }
+  return 'en-IN';
+}
+function isIndianVoice(v) {
+  var lang = String((v && v.lang) || '');
+  var name = String((v && v.name) || '');
+  return /-IN\b/i.test(lang) || /(India|Indian|Hindi|Hindustan|Bengali|Bangla|Tamil|Telugu|Marathi|Gujarati|Kannada|Malayalam|Punjabi|Urdu|Ravi|Heera|Neerja|Kalpana|Hemant|Lekha|Priya)/i.test(name);
+}
+function voiceScore(v, targetLang) {
+  var lang = String((v && v.lang) || '');
+  var base = targetLang.split('-')[0];
+  var score = 0;
+  if (lang.toLowerCase() === targetLang.toLowerCase()) { score += 120; }
+  if (lang.split('-')[0].toLowerCase() === base.toLowerCase()) { score += 70; }
+  if (/-IN\b/i.test(lang)) { score += 45; }
+  if (isIndianVoice(v)) { score += 25; }
+  if (/Google|Microsoft|Natural|Premium|Enhanced/i.test((v && v.name) || '')) { score += 8; }
+  if (v && v.default) { score += 2; }
+  return score;
+}
+function pickIndianVoice(voices, targetLang) {
+  voices = (voices || []).slice();
+  if (!voices.length) { return null; }
+  voices.sort(function (a, b) { return voiceScore(b, targetLang) - voiceScore(a, targetLang) || String(a.name || '').localeCompare(String(b.name || '')); });
+  if (voiceScore(voices[0], targetLang) > 0) { return voices[0]; }
+  return null;
+}
+function pickSpeechVoice(pref, text) {
   if (!('speechSynthesis' in window) || !speechSynthesis.getVoices) { return null; }
   var voices = speechSynthesis.getVoices() || [];
-  if (!voices.length || !pref) { return null; }
-  return voices.filter(function (v) {
-    return (pref.uri && v.voiceURI === pref.uri) ||
-      (pref.name && v.name === pref.name && (!pref.lang || v.lang === pref.lang)) ||
-      (pref.key && voiceKey(v) === pref.key);
-  })[0] || null;
+  if (!voices.length) { return null; }
+  pref = pref || {};
+  if (pref.mode !== 'auto_indian') {
+    var saved = voices.filter(function (v) {
+      return (pref.uri && v.voiceURI === pref.uri) ||
+        (pref.name && v.name === pref.name && (!pref.lang || v.lang === pref.lang)) ||
+        (pref.key && voiceKey(v) === pref.key);
+    })[0];
+    if (saved) { return saved; }
+    if (pref.mode === 'browser_default') { return null; }
+  }
+  var target = detectSpeechLang(text);
+  return pickIndianVoice(voices, target) || pickIndianVoice(voices, 'en-IN') || null;
+}
+function preferredRecognitionLang() {
+  var pref = voicePref();
+  if (pref && pref.recLang) { return pref.recLang; }
+  var nav = navigator.language || 'en-IN';
+  if (/-IN$/i.test(nav)) { return nav; }
+  return 'en-IN';
 }
 if (window.speechSynthesis && typeof speechSynthesis.onvoiceschanged !== 'undefined') {
   speechSynthesis.onvoiceschanged = function () { speechSynthesis.getVoices(); };
@@ -1396,7 +1448,7 @@ function initVoiceRec() {
   if (!SpeechRec) { return false; }
   if (voiceRec) { return true; }
   voiceRec = new SpeechRec();
-  voiceRec.lang = navigator.language || 'en-US';
+  voiceRec.lang = preferredRecognitionLang();
   voiceRec.interimResults = true;
   voiceRec.continuous = false;
   voiceRec.maxAlternatives = 1;
@@ -1471,6 +1523,7 @@ function startVoiceListening() {
     toast('Live voice chat is not supported in this browser', 'warning');
     return;
   }
+  if (voiceRec) { voiceRec.lang = preferredRecognitionLang(); }
   try { voiceRec.start(); }
   catch (e) { clearTimeout(voiceRestartTimer); voiceRestartTimer = setTimeout(startVoiceListening, 700); }
 }
@@ -1556,9 +1609,9 @@ function speakText(text) {
   try { window.speechSynthesis.cancel(); } catch (e) {}
   var u = new SpeechSynthesisUtterance(clean.slice(0, 3800));
   var pref = voicePref();
-  var chosenVoice = pickSpeechVoice(pref);
-  if (chosenVoice) { u.voice = chosenVoice; u.lang = chosenVoice.lang || u.lang; }
-  else { u.lang = (pref && pref.lang) || navigator.language || 'en-US'; }
+  var chosenVoice = pickSpeechVoice(pref, clean);
+  if (chosenVoice) { u.voice = chosenVoice; u.lang = chosenVoice.lang || detectSpeechLang(clean); }
+  else { u.lang = (pref && pref.lang) || detectSpeechLang(clean) || navigator.language || 'en-IN'; }
   u.rate = Math.min(1.35, Math.max(0.75, parseFloat(pref.rate) || 1));
   u.pitch = 1;
   setVoiceStatus('Devil AI is speaking…');

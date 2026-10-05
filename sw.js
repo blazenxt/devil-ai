@@ -1,5 +1,5 @@
 /* Devil AI service worker: lightweight PWA shell support. */
-const DEVIL_CACHE = 'devil-ai-shell-v2';
+const DEVIL_CACHE = 'devil-ai-shell-v3';
 const SHELL = [
   './',
   './index.php',

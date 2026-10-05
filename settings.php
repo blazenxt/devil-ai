@@ -178,10 +178,13 @@ a{text-decoration:none;color:inherit}button,input,select{font:inherit}button{cur
         <p class="sub">Choose the assistant voice used for Read aloud and Live Voice Chat. Available voices depend on your browser/device.</p>
         <div class="voicePrefs">
           <label for="voiceSelect">Assistant voice</label>
-          <select id="voiceSelect"><option value="">Loading voices…</option></select>
+          <select id="voiceSelect"><option value="__auto_indian">Auto Indian multilingual — recommended</option></select>
+          <p class="sub" style="margin:-2px 0 2px">Auto mode prioritizes Indian voices and switches between Hindi, Indian English, Bengali, Tamil, Telugu and more when your browser provides them.</p>
+          <label for="voiceLang">Voice input language</label>
+          <select id="voiceLang"><option value="en-IN">English India / Hinglish</option><option value="hi-IN">Hindi India</option><option value="bn-IN">Bengali India</option><option value="ta-IN">Tamil India</option><option value="te-IN">Telugu India</option><option value="mr-IN">Marathi India</option><option value="gu-IN">Gujarati India</option><option value="kn-IN">Kannada India</option><option value="ml-IN">Malayalam India</option><option value="pa-IN">Punjabi India</option><option value="ur-IN">Urdu India</option></select>
           <label for="voiceRate">Speaking speed</label>
           <div class="voiceRange"><input id="voiceRate" type="range" min="0.75" max="1.35" step="0.05" value="1"><b id="voiceRateLabel">1.00×</b></div>
-          <div class="voiceSample"><span>Preview: “Devil AI live voice is ready.”</span><button class="btn ghost" id="voiceTest" type="button"><?= icon('play', 14) ?> Test</button></div>
+          <div class="voiceSample"><span>Preview: “Namaste, Devil AI ready hai. I can speak in an Indian voice.”</span><button class="btn ghost" id="voiceTest" type="button"><?= icon('play', 14) ?> Test</button></div>
           <div class="btnrow"><button class="btn primary" id="voiceSave" type="button"><?= icon('check', 15) ?> Save voice</button><button class="btn ghost" id="voiceDefault" type="button"><?= icon('volume-x', 15) ?> Reset</button></div>
           <div class="miniStatus" id="voiceStatus"></div>
         </div>
@@ -246,31 +249,37 @@ function prefWrite(key,val){try{localStorage.setItem(key,val)}catch(e){};if(wind
 function prefDel(key){try{localStorage.removeItem(key)}catch(e){};if(window.devilCookieDel){window.devilCookieDel(key)}else{document.cookie=key+'=; Max-Age=0; Path=/devil-ai/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'')}}
 function voiceKey(v){return (v.voiceURI||v.name||'')+'|'+(v.lang||'')}
 function voicePref(){try{return JSON.parse(prefRead('devil_voice')||'{}')||{}}catch(e){return {}}}
-var voiceSelect=$('#voiceSelect'), voiceRate=$('#voiceRate'), voiceRateLabel=$('#voiceRateLabel'), voiceStatus=$('#voiceStatus');
+var voiceSelect=$('#voiceSelect'), voiceLang=$('#voiceLang'), voiceRate=$('#voiceRate'), voiceRateLabel=$('#voiceRateLabel'), voiceStatus=$('#voiceStatus');
 function setVoiceStatus(msg,cls){if(!voiceStatus){return}voiceStatus.className='miniStatus '+(cls||'');voiceStatus.textContent=msg||''}
 function updateRateLabel(){if(voiceRateLabel&&voiceRate){voiceRateLabel.textContent=(parseFloat(voiceRate.value||'1')).toFixed(2)+'×'}}
 function getVoices(){return (window.speechSynthesis&&speechSynthesis.getVoices)?speechSynthesis.getVoices():[]}
+function isIndianVoice(v){var lang=String((v&&v.lang)||''),name=String((v&&v.name)||'');return /-IN\b/i.test(lang)||/(India|Indian|Hindi|Hindustan|Bengali|Bangla|Tamil|Telugu|Marathi|Gujarati|Kannada|Malayalam|Punjabi|Urdu|Ravi|Heera|Neerja|Kalpana|Hemant|Lekha|Priya)/i.test(name)}
+function voiceScore(v,target){var lang=String((v&&v.lang)||''),base=target.split('-')[0],score=0;if(lang.toLowerCase()===target.toLowerCase()){score+=120}if(lang.split('-')[0].toLowerCase()===base.toLowerCase()){score+=70}if(/-IN\b/i.test(lang)){score+=45}if(isIndianVoice(v)){score+=25}if(/Google|Microsoft|Natural|Premium|Enhanced/i.test((v&&v.name)||'')){score+=8}if(v&&v.default){score+=2}return score}
+function pickAutoVoice(target){var voices=getVoices().slice();if(!voices.length){return null}voices.sort(function(a,b){return voiceScore(b,target)-voiceScore(a,target)||String(a.name||'').localeCompare(String(b.name||''))});return voiceScore(voices[0],target)>0?voices[0]:null}
 function populateVoices(){
   if(!voiceSelect){return}
-  if(!('speechSynthesis' in window)){voiceSelect.innerHTML='<option value="">Voice selection is not supported in this browser</option>';voiceSelect.disabled=true;setVoiceStatus('Your browser does not expose voice choices.','bad');return}
+  if(!('speechSynthesis' in window)){voiceSelect.innerHTML='<option value="">Voice selection is not supported in this browser</option>';voiceSelect.disabled=true;if(voiceLang){voiceLang.disabled=true}setVoiceStatus('Your browser does not expose voice choices.','bad');return}
   var pref=voicePref();
-  var voices=getVoices().slice().sort(function(a,b){return (a.lang||'').localeCompare(b.lang||'') || (a.name||'').localeCompare(b.name||'')});
+  var voices=getVoices().slice().sort(function(a,b){var ia=isIndianVoice(a)?0:1,ib=isIndianVoice(b)?0:1;if(ia!==ib){return ia-ib}return (a.lang||'').localeCompare(b.lang||'')||(a.name||'').localeCompare(b.name||'')});
   voiceSelect.innerHTML='';
-  var opt=document.createElement('option');opt.value='';opt.textContent='Default browser voice';voiceSelect.appendChild(opt);
-  voices.forEach(function(v){var o=document.createElement('option');o.value=voiceKey(v);o.textContent=(v.name||'Voice')+' — '+(v.lang||'unknown')+(v.default?' • default':'');o.dataset.uri=v.voiceURI||'';o.dataset.name=v.name||'';o.dataset.lang=v.lang||'';voiceSelect.appendChild(o)});
-  if(pref.key){voiceSelect.value=pref.key}
+  var autoOpt=document.createElement('option');autoOpt.value='__auto_indian';autoOpt.textContent='Auto Indian multilingual — recommended';autoOpt.dataset.mode='auto_indian';voiceSelect.appendChild(autoOpt);
+  var browserOpt=document.createElement('option');browserOpt.value='';browserOpt.textContent='Default browser voice';browserOpt.dataset.mode='browser_default';voiceSelect.appendChild(browserOpt);
+  voices.forEach(function(v){var o=document.createElement('option');o.value=voiceKey(v);o.textContent=(isIndianVoice(v)?'🇮🇳 ':'')+(v.name||'Voice')+' — '+(v.lang||'unknown')+(v.default?' • default':'');o.dataset.uri=v.voiceURI||'';o.dataset.name=v.name||'';o.dataset.lang=v.lang||'';voiceSelect.appendChild(o)});
+  if(pref.mode==='browser_default'){voiceSelect.value=''}else if(pref.key&&pref.key!=='__auto_indian'){voiceSelect.value=pref.key}else{voiceSelect.value='__auto_indian'}
   if(!voiceSelect.value&&pref.uri){var wanted=voices.filter(function(v){return (v.voiceURI===pref.uri)||(v.name===pref.name&&v.lang===pref.lang)})[0];if(wanted){voiceSelect.value=voiceKey(wanted)}}
+  if(voiceLang){voiceLang.value=pref.recLang||'en-IN'}
   if(voiceRate&&pref.rate){voiceRate.value=String(Math.min(1.35,Math.max(0.75,parseFloat(pref.rate)||1)))}
   updateRateLabel();
-  setVoiceStatus(voices.length?('Loaded '+voices.length+' browser voices. Save to use in chat.'):('No extra voices found yet; default voice will be used.'),voices.length?'ok':'');
+  var indian=voices.filter(isIndianVoice).length;
+  setVoiceStatus(voices.length?('Loaded '+voices.length+' browser voices • '+indian+' Indian/multilingual preferred.'):('No extra voices found yet; auto mode will use your browser default.'),voices.length?'ok':'');
 }
-function selectedVoice(){var opt=voiceSelect&&voiceSelect.options[voiceSelect.selectedIndex];if(!opt||!opt.value){return null}return {key:opt.value,uri:opt.dataset.uri||'',name:opt.dataset.name||'',lang:opt.dataset.lang||''}}
-function chooseSelectedVoice(){var pref=selectedVoice();if(!pref){return null}return getVoices().filter(function(v){return (pref.uri&&v.voiceURI===pref.uri)||(v.name===pref.name&&v.lang===pref.lang)||voiceKey(v)===pref.key})[0]||null}
-function speakSample(){if(!('speechSynthesis' in window)||!window.SpeechSynthesisUtterance){setVoiceStatus('Speech preview is not supported in this browser.','bad');return}try{speechSynthesis.cancel()}catch(e){}var u=new SpeechSynthesisUtterance('Devil AI live voice is ready. You can change this voice from account settings.');var v=chooseSelectedVoice();if(v){u.voice=v;u.lang=v.lang||u.lang}else{u.lang=navigator.language||'en-US'}u.rate=parseFloat(voiceRate&&voiceRate.value||'1')||1;u.onend=function(){setVoiceStatus('Preview complete.','ok')};u.onerror=function(){setVoiceStatus('Could not play that voice preview.','bad')};setVoiceStatus('Playing preview…');speechSynthesis.speak(u)}
+function selectedVoice(){var opt=voiceSelect&&voiceSelect.options[voiceSelect.selectedIndex];if(!opt){return {mode:'auto_indian',key:'__auto_indian'}}if(opt.value==='__auto_indian'){return {mode:'auto_indian',key:'__auto_indian',uri:'',name:'Auto Indian multilingual',lang:'en-IN'}}if(!opt.value){return {mode:'browser_default',key:'',uri:'',name:'',lang:''}}return {mode:'custom',key:opt.value,uri:opt.dataset.uri||'',name:opt.dataset.name||'',lang:opt.dataset.lang||''}}
+function chooseSelectedVoice(){var pref=selectedVoice();if(pref.mode==='auto_indian'){return pickAutoVoice('en-IN')||pickAutoVoice('hi-IN')}if(pref.mode==='browser_default'){return null}return getVoices().filter(function(v){return (pref.uri&&v.voiceURI===pref.uri)||(v.name===pref.name&&v.lang===pref.lang)||voiceKey(v)===pref.key})[0]||null}
+function speakSample(){if(!('speechSynthesis' in window)||!window.SpeechSynthesisUtterance){setVoiceStatus('Speech preview is not supported in this browser.','bad');return}try{speechSynthesis.cancel()}catch(e){}var u=new SpeechSynthesisUtterance('Namaste, Devil AI ready hai. I can speak in an Indian voice for Hindi, English and other Indian languages.');var v=chooseSelectedVoice();if(v){u.voice=v;u.lang=v.lang||'en-IN'}else{u.lang='en-IN'}u.rate=parseFloat(voiceRate&&voiceRate.value||'1')||1;u.onend=function(){setVoiceStatus('Preview complete.','ok')};u.onerror=function(){setVoiceStatus('Could not play that voice preview.','bad')};setVoiceStatus('Playing preview…');speechSynthesis.speak(u)}
 if(voiceRate){voiceRate.addEventListener('input',updateRateLabel)}
 if($('#voiceTest')){$('#voiceTest').addEventListener('click',speakSample)}
-if($('#voiceSave')){$('#voiceSave').addEventListener('click',function(){var pref=selectedVoice()||{key:'',uri:'',name:'',lang:''};pref.rate=parseFloat(voiceRate&&voiceRate.value||'1')||1;pref.ts=Date.now();prefWrite('devil_voice',JSON.stringify(pref));setVoiceStatus('Voice saved. It will be used in chat read-aloud and live voice.','ok')})}
-if($('#voiceDefault')){$('#voiceDefault').addEventListener('click',function(){if(voiceSelect){voiceSelect.value=''}if(voiceRate){voiceRate.value='1'}updateRateLabel();prefDel('devil_voice');try{speechSynthesis.cancel()}catch(e){}setVoiceStatus('Voice reset to browser default.','ok')})}
+if($('#voiceSave')){$('#voiceSave').addEventListener('click',function(){var pref=selectedVoice();pref.rate=parseFloat(voiceRate&&voiceRate.value||'1')||1;pref.recLang=voiceLang&&voiceLang.value?voiceLang.value:'en-IN';pref.ts=Date.now();prefWrite('devil_voice',JSON.stringify(pref));setVoiceStatus('Voice saved. Indian/multilingual mode will be used in chat read-aloud and live voice.','ok')})}
+if($('#voiceDefault')){$('#voiceDefault').addEventListener('click',function(){if(voiceSelect){voiceSelect.value='__auto_indian'}if(voiceLang){voiceLang.value='en-IN'}if(voiceRate){voiceRate.value='1'}updateRateLabel();var pref={mode:'auto_indian',key:'__auto_indian',uri:'',name:'Auto Indian multilingual',lang:'en-IN',recLang:'en-IN',rate:1,ts:Date.now()};prefWrite('devil_voice',JSON.stringify(pref));try{speechSynthesis.cancel()}catch(e){}setVoiceStatus('Reset to Auto Indian multilingual voice.','ok')})}
 if(window.speechSynthesis&&typeof speechSynthesis.onvoiceschanged!=='undefined'){speechSynthesis.onvoiceschanged=populateVoices}
 populateVoices();
 setTimeout(populateVoices,350);
