@@ -861,7 +861,7 @@ function devil_mail(string $to, string $subject, string $html, string $text): bo
             devil_mail_log($ok ? 'SMTP_OK' : 'SMTP_FAIL', $to, $subject, $k . ' ' . $detail);
             if ($ok) { return true; }
         }
-        if ($transport === 'smtp') { return false; }
+        devil_mail_log('SMTP_FALLBACK', $to, $subject, 'Trying native PHP mail() after SMTP relay rejection.');
     }
     $headers = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, false);
     $params = '-f' . $fromEmail;
