@@ -202,7 +202,10 @@ function rewriteBody(text, url) {
     .replace(/Path=\/devil-ai\//g, 'Path=/')
     .replace(/Path=\/devil-ai/g, 'Path=/')
     .split('\\/devil-ai\\/').join('\\/')
-    .split('\\/devil-ai').join('\\/');
+    .split('\\/devil-ai').join('\\/')
+    // If JSON-escaped PHP base path becomes just / on the proxied root, keep app URL builders relative.
+    .replace(/const\s+APP_BASE_PATH\s*=\s*["'](?:\\\/|\/)["'];/g, 'const APP_BASE_PATH = "";')
+    .replace(/(<base\s+href=["'])\/\/(["'])/gi, '$1/$2');
 }
 
 addEventListener('fetch', event => {

@@ -666,8 +666,17 @@ function seg(s, fallback) {
   s = String(s || fallback || 'chat').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   return s || fallback || 'chat';
 }
+function cleanAppBasePath() {
+  var base = String(APP_BASE_PATH || '').trim();
+  if (!base || base === '/' || base === './' || base === '.') { return ''; }
+  // Guard against proxy/root-domain rewrites turning /devil-ai into just /.
+  base = base.replace(/\\\//g, '/').replace(/\/+$/g, '');
+  if (!base || base === '/') { return ''; }
+  if (base.charAt(0) !== '/') { base = '/' + base; }
+  return base;
+}
 function chatUrlFor(slug) {
-  var base = APP_BASE_PATH || '';
+  var base = cleanAppBasePath();
   return base + '/chat/' + encodeURIComponent(seg(routeModel(), 'flash')) + '/' + encodeURIComponent(seg(routeType(), 'chat')) + '/' + encodeURIComponent(slug);
 }
 function replaceChatUrl() {
@@ -676,7 +685,7 @@ function replaceChatUrl() {
   history.replaceState(null, '', chatUrlFor(slug));
 }
 function chatUrlForItem(c) {
-  var base = APP_BASE_PATH || '';
+  var base = cleanAppBasePath();
   var slug = (c && (c.slug || c.id)) || '';
   var m = (c && c.url_model) || 'flash';
   var t = (c && c.url_type) || 'chat';
