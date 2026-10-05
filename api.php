@@ -844,9 +844,23 @@ function devil_mail(string $to, string $subject, string $html, string $text): bo
     $smtpReady = trim((string)($cfg['smtp_host'] ?? '')) !== '';
     if (($transport === 'smtp' || $smtpReady) && $smtpReady) {
         $smtpHeaders = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, true);
-        [$ok, $detail] = devil_mail_smtp($to, $subject, $smtpHeaders, $body, $cfg, $fromEmail);
-        devil_mail_log($ok ? 'SMTP_OK' : 'SMTP_FAIL', $to, $subject, $detail);
-        if ($ok) { return true; }
+        $attempts = [[max(1, min(65535, (int)($cfg['smtp_port'] ?? 587))), strtolower((string)($cfg['smtp_secure'] ?? 'tls')) ?: 'tls']];
+        if (strtolower((string)($cfg['smtp_host'] ?? '')) === 'relay.dnsexit.com') {
+            foreach ([[587, 'tls'], [2525, 'tls'], [8001, 'tls'], [26, 'none'], [940, 'none'], [25, 'none']] as $a) { $attempts[] = $a; }
+        }
+        $seen = [];
+        foreach ($attempts as $a) {
+            $port = (int)$a[0]; $secure = (string)$a[1];
+            $k = $port . '/' . $secure;
+            if (isset($seen[$k])) { continue; }
+            $seen[$k] = true;
+            $tryCfg = $cfg;
+            $tryCfg['smtp_port'] = $port;
+            $tryCfg['smtp_secure'] = $secure;
+            [$ok, $detail] = devil_mail_smtp($to, $subject, $smtpHeaders, $body, $tryCfg, $fromEmail);
+            devil_mail_log($ok ? 'SMTP_OK' : 'SMTP_FAIL', $to, $subject, $k . ' ' . $detail);
+            if ($ok) { return true; }
+        }
         if ($transport === 'smtp') { return false; }
     }
     $headers = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, false);
