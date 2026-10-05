@@ -64,7 +64,7 @@ console.log(data.choices[0].message.content);</div>
 
 <section class="card">
   <h2><?= icon('gauge', 18) ?> Unlimited API tokens</h2>
-  <p class="sub">The Developer API has no Devil-side token ceiling for chat completions: it no longer rejects long message arrays with a context-length error, and responses are not capped by Devil AI. Physical upstream/server limits can still apply, so stream large replies when possible.</p>
+  <p class="sub">The Developer API has no Devil-side token ceiling and no hourly request throttle for API keys. It no longer rejects long message arrays with a context-length error, and responses are not capped by Devil AI. Physical upstream/server limits can still apply, so stream large replies when possible.</p>
   <div class="code">{
   "model": "devil-ultra",
   "stream": true,

@@ -2142,10 +2142,8 @@ try {
             $cfgAll = load_config();
             $cfgAll['_dev_api_unlimited_tokens'] = true;
             $cfgAll['max_tokens'] = 0;
-            $rl = max(1, min(1000, (int)($cfgAll['rate_per_hour'] ?? 40)));
-            if (!rate_ok('devrl.json', 'k:' . (string)$auth['key_id'], $rl, 3600)) {
-                dev_api_error('Rate limit exceeded. Try again later.', 429, 'rate_limit_error', 'rate_limit_exceeded');
-            }
+            // Developer API keys are unlimited: do not apply the app's per-hour message throttle here.
+            // Usage is still counted on each authenticated request for the dashboard.
             $tz = (string)($cfgAll['timezone'] ?? '');
             if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) { date_default_timezone_set($tz); }
             $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $messages);
@@ -2534,7 +2532,9 @@ try {
                 'revoked_keys' => $revoked,
                 'total_requests' => $totalRequests,
                 'used_this_hour' => $hourRequests,
-                'rate_per_hour' => (int)($cfgAll['rate_per_hour'] ?? 40),
+                'rate_per_hour' => 0,
+                'rate_limit' => 'unlimited',
+                'rate_limit_unlimited' => true,
                 'last_used' => $lastUsed,
                 'token_limit' => 'unlimited',
             ],
@@ -2555,10 +2555,7 @@ try {
         if (mb_strlen($message) > MAX_INPUT) { json_out(['ok' => false, 'error' => 'Prompt is too long (max ' . MAX_INPUT . ' characters).'], 400); }
         if (mb_strlen($system) > 1200) { $system = mb_substr($system, 0, 1200); }
         $cfgAll = load_config();
-        $rl = max(1, min(1000, (int)($cfgAll['rate_per_hour'] ?? 40)));
-        if (!rate_ok('devrl.json', 'play:u:' . $uid, $rl, 3600)) {
-            json_out(['ok' => false, 'error' => 'Playground rate limit reached. Try again later.'], 429);
-        }
+        // Developer Playground follows API unlimited mode; no hourly throttle here.
         $messages = [];
         if ($system !== '') { $messages[] = ['role' => 'user', 'content' => 'Developer instruction: ' . $system]; }
         $messages[] = ['role' => 'user', 'content' => $message];

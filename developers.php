@@ -13,7 +13,7 @@ dev_console_start('Developer Dashboard', 'dashboard');
   <div class="card"><h2><?= icon('key', 18) ?> Active keys</h2><div class="metric" id="mActive">—</div><p class="sub">Keys currently usable by apps.</p></div>
   <div class="card"><h2><?= icon('gauge', 18) ?> Requests</h2><div class="metric" id="mRequests">—</div><p class="sub">Total API requests across keys.</p></div>
   <div class="card"><h2><?= icon('server', 18) ?> Models</h2><div class="metric" id="mModels">3</div><p class="sub">Available Devil models.</p></div>
-  <div class="card"><h2><?= icon('loader', 18) ?> This hour</h2><div class="metric" id="mHour">—</div><p class="sub" id="mLimit">Rate limit loading…</p></div>
+  <div class="card"><h2><?= icon('loader', 18) ?> This hour</h2><div class="metric" id="mHour">—</div><p class="sub" id="mLimit">Limit: Unlimited</p></div>
 </section>
 
 <section class="card">
@@ -41,7 +41,7 @@ D.apiGet('dev_usage').then(function(j){
   D.$('#mActive').textContent=D.fmt(s.active_keys);
   D.$('#mRequests').textContent=D.fmt(s.total_requests);
   D.$('#mHour').textContent=D.fmt(s.used_this_hour);
-  D.$('#mLimit').textContent='Limit: '+D.fmt(s.rate_per_hour)+'/hour';
+  D.$('#mLimit').textContent='Limit: Unlimited';
   var box=D.$('#dashUsage'); box.innerHTML='';
   var total=document.createElement('div'); total.className='usageItem';
   total.innerHTML='<div><b>Total usage</b><span>'+D.fmt(s.total_requests)+' requests · '+D.fmt(s.used_this_hour)+' this hour · last used '+D.dt(s.last_used)+'</span></div>';
