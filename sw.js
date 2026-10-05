@@ -1,5 +1,5 @@
 /* Devil AI service worker: lightweight PWA shell support. */
-const DEVIL_CACHE = 'devil-ai-shell-v3';
+const DEVIL_CACHE = 'devil-ai-shell-v4';
 const SHELL = [
   './',
   './index.php',
@@ -25,8 +25,11 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET' || url.origin !== location.origin) { return; }
   if (url.pathname.includes('/api.php') || url.pathname.includes('/v1/')) { return; }
   event.respondWith(fetch(req).then(res => {
-    const copy = res.clone();
-    caches.open(DEVIL_CACHE).then(cache => cache.put(req, copy)).catch(() => null);
+    const blocked = res.headers.get('X-Devil-AI-Blocked') || res.status === 403;
+    if (res.ok && !blocked) {
+      const copy = res.clone();
+      caches.open(DEVIL_CACHE).then(cache => cache.put(req, copy)).catch(() => null);
+    }
     return res;
   }).catch(() => caches.match(req).then(cached => cached || caches.match('./index.php'))));
 });
