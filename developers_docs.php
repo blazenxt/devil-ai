@@ -63,6 +63,19 @@ console.log(data.choices[0].message.content);</div>
 </section>
 
 <section class="card">
+  <h2><?= icon('gauge', 18) ?> Unlimited API tokens</h2>
+  <p class="sub">The Developer API has no Devil-side token ceiling for chat completions: it no longer rejects long message arrays with a context-length error, and responses are not capped by Devil AI. Physical upstream/server limits can still apply, so stream large replies when possible.</p>
+  <div class="code">{
+  "model": "devil-ultra",
+  "stream": true,
+  "messages": [
+    {"role": "system", "content": "Use all provided context."},
+    {"role": "user", "content": "Long document or conversation here..."}
+  ]
+}</div>
+</section>
+
+<section class="card">
   <h2><?= icon('globe', 18) ?> Browser usage</h2>
   <p class="sub">For quick browser-side tests you can pass the key in the URL or use the <code>X-Devil-API-Key</code> header. For production, keep keys on your server.</p>
   <div class="code">const res = await fetch('<?= htmlspecialchars($baseUrl) ?>/v1/chat/completions?key=devil_blazenxt_YOUR_512_CHARACTER_KEY', {

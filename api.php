@@ -590,17 +590,16 @@ function dev_messages_from_request(array $in): array {
     $messages = [];
     $image = '';
     $hasUser = false;
-    $total = 0;
-    foreach (array_slice($raw, -30) as $m) {
+    /* Developer API token mode: no Devil-side message/context/token ceiling.
+       We keep all valid messages instead of truncating or throwing context_length_exceeded.
+       Upstream engines and PHP/server resources may still have physical limits. */
+    foreach ($raw as $m) {
         if (!is_array($m)) { continue; }
         $role = strtolower((string)($m['role'] ?? 'user'));
         if (!in_array($role, ['system', 'user', 'assistant'], true)) { continue; }
         list($text, $img) = dev_content_to_text_and_image($m['content'] ?? '');
         if ($img !== '' && $image === '') { $image = $img; }
         if ($text === '') { continue; }
-        if (mb_strlen($text) > 4000) { $text = mb_substr($text, 0, 4000); }
-        $total += mb_strlen($text);
-        if ($total > 14000) { dev_api_error('messages are too long for this endpoint.', 400, 'invalid_request_error', 'context_length_exceeded'); }
         if ($role === 'system') {
             $messages[] = ['role' => 'user', 'content' => 'Developer instruction: ' . $text];
         } else {
@@ -1411,14 +1410,19 @@ function compact_prompt_text(string $s, int $max = 1200): string {
     return $s;
 }
 
-function build_memory_prompt(array $messages, string $image = ''): string {
+function build_memory_prompt(array $messages, string $image = '', array $limits = []): string {
     $items = [];
+    $userMax = (int)($limits['user_text'] ?? 1500);
+    $assistantMax = (int)($limits['assistant_text'] ?? 1100);
+    $attachmentMax = (int)($limits['attachment_text'] ?? 3500);
+    $turns = (int)($limits['turns'] ?? 18);
+    $budget = (int)($limits['budget'] ?? 7200);
     foreach ($messages as $m) {
         if (!is_array($m)) { continue; }
         $role = (string)($m['role'] ?? '');
         if ($role !== 'user' && $role !== 'assistant') { continue; }
-        $content = compact_prompt_text((string)($m['content'] ?? ''), $role === 'user' ? 1500 : 1100);
-        $attText = compact_prompt_text((string)($m['attachment_text'] ?? ''), 3500);
+        $content = compact_prompt_text((string)($m['content'] ?? ''), $role === 'user' ? $userMax : $assistantMax);
+        $attText = compact_prompt_text((string)($m['attachment_text'] ?? ''), $attachmentMax);
         if ($attText !== '') { $content = trim($content . "\n\n" . $attText); }
         if ($content === '' && !empty($m['img'])) { $content = '[attached an image]'; }
         if ($content === '') { continue; }
@@ -1432,10 +1436,10 @@ function build_memory_prompt(array $messages, string $image = ''): string {
     }
 
     /* Keep the latest turns first-priority, then older useful context while under budget. */
-    $items = array_slice($items, -18);
+    $items = array_slice($items, -max(1, $turns));
     $selected = [];
     $used = 0;
-    $budget = 7200;
+    $budget = max(1000, $budget);
     for ($i = count($items) - 1; $i >= 0; $i--) {
         $len = mb_strlen($items[$i]);
         if ($used + $len > $budget && count($selected) > 0) { continue; }
@@ -1473,11 +1477,13 @@ function should_reuse_recent_image(string $msg): bool {
     return (bool)preg_match('/\b(this|that|it|image|img|photo|pic|picture|qr|code|scan|read|decode|attached|above|previous|ye|yeh|isko|isme|iss|usme|batao|bataye|dikhao)\b/u', $low);
 }
 
-function latest_user_prompt(array $messages, string $image = ''): string {
+function latest_user_prompt(array $messages, string $image = '', array $limits = []): string {
+    $textMax = (int)($limits['latest_text'] ?? 5000);
+    $attachmentMax = (int)($limits['latest_attachment'] ?? 5000);
     foreach (array_reverse($messages) as $m) {
         if (is_array($m) && (($m['role'] ?? '') === 'user')) {
-            $q = compact_prompt_text((string)($m['content'] ?? ''), 5000);
-            $attText = compact_prompt_text((string)($m['attachment_text'] ?? ''), 5000);
+            $q = compact_prompt_text((string)($m['content'] ?? ''), $textMax);
+            $attText = compact_prompt_text((string)($m['attachment_text'] ?? ''), $attachmentMax);
             if ($attText !== '') { $q = trim($q . "\n\n" . $attText); }
             if ($q !== '') { return $q; }
             if ($image !== '' || !empty($m['img'])) { return 'The user attached an image. Respond helpfully to the image.'; }
@@ -1528,11 +1534,27 @@ function prexzy_error_message($j, int $status): string {
     return 'HTTP ' . $status;
 }
 
+function ai_prompt_limits(array $cfg): array {
+    if (!empty($cfg['_dev_api_unlimited_tokens'])) {
+        return [
+            'user_text' => 120000,
+            'assistant_text' => 120000,
+            'attachment_text' => 120000,
+            'latest_text' => 120000,
+            'latest_attachment' => 120000,
+            'turns' => 120,
+            'budget' => 1000000,
+        ];
+    }
+    return [];
+}
+
 function call_engine(array $cfg, array $engine, array $messages, string $image = ''): array {
     /* ── Prexzy (free, no key, single-turn) ── */
     if ($engine['kind'] === 'prexzy') {
         $useMemory = array_key_exists('memory', $engine) ? (bool)$engine['memory'] : true;
-        $q = $useMemory ? build_memory_prompt($messages, $image) : latest_user_prompt($messages, $image);
+        $promptLimits = ai_prompt_limits($cfg);
+        $q = $useMemory ? build_memory_prompt($messages, $image, $promptLimits) : latest_user_prompt($messages, $image, $promptLimits);
         if ($q === '') { return [false, 'Message is empty.', null, null]; }
 
         /* Keep the Devil AI persona even when the public UI exposes a custom provider name. */
@@ -2104,7 +2126,7 @@ try {
         if ($action === 'dev_models' && $method === 'GET') {
             $data = [];
             foreach (dev_api_models() as $m) {
-                $data[] = ['id' => $m['id'], 'object' => 'model', 'created' => 1760000000, 'owned_by' => $m['owned_by'], 'label' => $m['label']];
+                $data[] = ['id' => $m['id'], 'object' => 'model', 'created' => 1760000000, 'owned_by' => $m['owned_by'], 'label' => $m['label'], 'token_limit' => 'unlimited'];
             }
             http_response_code(200);
             header('Content-Type: application/json; charset=utf-8');
@@ -2118,6 +2140,8 @@ try {
             $model = dev_normalize_model((string)($in['model'] ?? 'devil-flash'));
             list($messages, $image) = dev_messages_from_request($in);
             $cfgAll = load_config();
+            $cfgAll['_dev_api_unlimited_tokens'] = true;
+            $cfgAll['max_tokens'] = 0;
             $rl = max(1, min(1000, (int)($cfgAll['rate_per_hour'] ?? 40)));
             if (!rate_ok('devrl.json', 'k:' . (string)$auth['key_id'], $rl, 3600)) {
                 dev_api_error('Rate limit exceeded. Try again later.', 429, 'rate_limit_error', 'rate_limit_exceeded');
@@ -2142,6 +2166,7 @@ try {
                     'finish_reason' => 'stop',
                 ]],
                 'usage' => $usage,
+                'token_limit' => 'unlimited',
             ];
             http_response_code(200);
             header('Content-Type: application/json; charset=utf-8');
@@ -2511,6 +2536,7 @@ try {
                 'used_this_hour' => $hourRequests,
                 'rate_per_hour' => (int)($cfgAll['rate_per_hour'] ?? 40),
                 'last_used' => $lastUsed,
+                'token_limit' => 'unlimited',
             ],
             'keys' => $keys,
             'models' => dev_api_models(),
