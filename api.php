@@ -739,13 +739,37 @@ function devil_mail_log(string $status, string $to, string $subject, string $det
     if ($detail !== '') { $line .= ' detail=' . str_replace(["\r", "\n"], ' ', mb_substr($detail, 0, 300)); }
     @file_put_contents(data_dir() . '/mail.log', $line . "\n", FILE_APPEND | LOCK_EX);
 }
+function devil_mail_normalize_eol(string $value): string {
+    return preg_replace("/\r\n|\r|\n/", "\r\n", $value) ?? $value;
+}
+function devil_mail_part(string $content): array {
+    $content = devil_mail_normalize_eol($content);
+    if (function_exists('quoted_printable_encode')) {
+        return ['quoted-printable', devil_mail_normalize_eol(rtrim(quoted_printable_encode($content), "\r\n"))];
+    }
+    return ['base64', rtrim(chunk_split(base64_encode($content), 76, "\r\n"), "\r\n")];
+}
+function devil_mail_header_domain(string $fromEmail): string {
+    $domain = '';
+    $at = strrpos($fromEmail, '@');
+    if ($at !== false) { $domain = strtolower(substr($fromEmail, $at + 1)); }
+    $domain = trim($domain, " .\t\r\n");
+    if (!preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $domain)) { $domain = devil_mail_domain(); }
+    return $domain;
+}
+function devil_mail_message_id(string $fromEmail): string {
+    $domain = devil_mail_header_domain($fromEmail);
+    return '<devil.' . gmdate('YmdHis') . '.' . bin2hex(random_bytes(12)) . '@' . $domain . '>';
+}
 function devil_mail_body(string $html, string $text, string $boundary): string {
-    return "--{$boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n{$text}\r\n"
-         . "--{$boundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n{$html}\r\n"
+    [$textEncoding, $textBody] = devil_mail_part($text);
+    [$htmlEncoding, $htmlBody] = devil_mail_part($html);
+    return "--{$boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: {$textEncoding}\r\n\r\n{$textBody}\r\n"
+         . "--{$boundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: {$htmlEncoding}\r\n\r\n{$htmlBody}\r\n"
          . "--{$boundary}--";
 }
-function devil_mail_headers(string $to, string $subject, string $fromEmail, string $fromName, string $replyTo, string $boundary, bool $smtp = false): string {
-    $domain = devil_mail_domain();
+function devil_mail_headers(string $to, string $subject, string $fromEmail, string $fromName, string $replyTo, string $boundary, bool $smtp = false, string $messageId = ''): string {
+    if (!preg_match('/^<[^<>\s@]+@[^<>\s@]+>$/', $messageId)) { $messageId = devil_mail_message_id($fromEmail); }
     $headers = [];
     if ($smtp) {
         $headers[] = 'To: ' . devil_mail_address($to);
@@ -755,9 +779,11 @@ function devil_mail_headers(string $to, string $subject, string $fromEmail, stri
     if ($replyTo !== '') { $headers[] = 'Reply-To: ' . devil_mail_address($replyTo); }
     $headers[] = 'Return-Path: <' . $fromEmail . '>';
     $headers[] = 'Date: ' . date('r');
-    $headers[] = 'Message-ID: <devil-' . bin2hex(random_bytes(10)) . '@' . $domain . '>';
+    $headers[] = 'Message-ID: ' . $messageId;
     $headers[] = 'MIME-Version: 1.0';
     $headers[] = 'Content-Type: multipart/alternative; boundary="' . $boundary . '"';
+    $headers[] = 'Auto-Submitted: auto-generated';
+    $headers[] = 'X-Auto-Response-Suppress: All';
     $headers[] = 'X-Mailer: DevilAI/' . DEVIL_VERSION;
     return implode("\r\n", $headers);
 }
@@ -839,11 +865,12 @@ function devil_mail(string $to, string $subject, string $html, string $text): bo
     $replyTo = strtolower(trim((string)($cfg['mail_reply_to'] ?? '')));
     if (!filter_var($replyTo, FILTER_VALIDATE_EMAIL)) { $replyTo = ''; }
     $boundary = 'devil-' . bin2hex(random_bytes(12));
+    $messageId = devil_mail_message_id($fromEmail);
     $body = devil_mail_body($html, $text, $boundary);
     $transport = strtolower((string)($cfg['mail_transport'] ?? 'mail'));
     $smtpReady = trim((string)($cfg['smtp_host'] ?? '')) !== '';
     if (($transport === 'smtp' || $smtpReady) && $smtpReady) {
-        $smtpHeaders = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, true);
+        $smtpHeaders = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, true, $messageId);
         $attempts = [[max(1, min(65535, (int)($cfg['smtp_port'] ?? 587))), strtolower((string)($cfg['smtp_secure'] ?? 'tls')) ?: 'tls']];
         if (strtolower((string)($cfg['smtp_host'] ?? '')) === 'relay.dnsexit.com') {
             foreach ([[587, 'tls'], [2525, 'tls'], [8001, 'tls'], [26, 'none'], [940, 'none'], [25, 'none']] as $a) { $attempts[] = $a; }
@@ -858,15 +885,15 @@ function devil_mail(string $to, string $subject, string $html, string $text): bo
             $tryCfg['smtp_port'] = $port;
             $tryCfg['smtp_secure'] = $secure;
             [$ok, $detail] = devil_mail_smtp($to, $subject, $smtpHeaders, $body, $tryCfg, $fromEmail);
-            devil_mail_log($ok ? 'SMTP_OK' : 'SMTP_FAIL', $to, $subject, $k . ' ' . $detail);
+            devil_mail_log($ok ? 'SMTP_OK' : 'SMTP_FAIL', $to, $subject, $k . ' ' . $detail . ' id=' . $messageId);
             if ($ok) { return true; }
         }
-        devil_mail_log('SMTP_FALLBACK', $to, $subject, 'Trying native PHP mail() after SMTP relay rejection.');
+        devil_mail_log('SMTP_FALLBACK', $to, $subject, 'Trying native PHP mail() after SMTP relay rejection id=' . $messageId);
     }
-    $headers = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, false);
+    $headers = devil_mail_headers($to, $subject, $fromEmail, $fromName, $replyTo, $boundary, false, $messageId);
     $params = '-f' . $fromEmail;
     $ok = @mail($to, devil_mail_subject($subject), $body, $headers, $params);
-    devil_mail_log($ok ? 'MAIL_OK' : 'MAIL_FAIL', $to, $subject, $ok ? 'php mail accepted' : 'php mail returned false');
+    devil_mail_log($ok ? 'MAIL_OK' : 'MAIL_FAIL', $to, $subject, ($ok ? 'php mail accepted' : 'php mail returned false') . ' id=' . $messageId);
     return $ok;
 }
 
