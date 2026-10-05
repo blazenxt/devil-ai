@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/inc/developer_console.php';
+$recaptchaSiteKey = function_exists('devil_security_recaptcha_site_key') ? devil_security_recaptcha_site_key() : '';
 dev_console_start('API Keys', 'keys');
 ?>
 <section class="hero">
@@ -20,6 +21,10 @@ dev_console_start('API Keys', 'keys');
   <p class="sub">Revoke keys you no longer use. Apps using revoked keys will stop working.</p>
   <div class="keyList" id="apiList"><div class="sub">Loading API keys…</div></div>
 </section>
+<?php if ($recaptchaSiteKey !== ''): ?>
+<script src="https://www.google.com/recaptcha/api.js?render=<?= htmlspecialchars($recaptchaSiteKey, ENT_QUOTES) ?>" async defer></script>
+<script>window.DEVIL_DEV_RECAPTCHA_SITE_KEY = <?= json_encode($recaptchaSiteKey) ?>;</script>
+<?php endif; ?>
 <?php
 dev_console_end(<<<'JS'
 (function(){
@@ -38,7 +43,20 @@ function renderKeys(keys){
   });
 }
 function loadKeys(){D.apiGet('dev_keys').then(function(j){if(j.ok){renderKeys(j.keys||[])}else{D.$('#apiList').innerHTML='<div class="sub">Could not load API keys.</div>';D.setStatus('#apiStatus',j.error||'Could not load keys.','bad')}})}
-D.$('#apiCreate').addEventListener('click',function(){var name=D.$('#apiKeyName').value;D.setStatus('#apiStatus','Creating API key…');D.api('dev_key_create',{name:name}).then(function(j){if(j.ok){D.$('#apiTokenBox').classList.add('show');D.$('#apiToken').textContent=j.token||'';D.$('#apiKeyName').value='';D.setStatus('#apiStatus','API key created. Copy it now.','ok');loadKeys()}else{D.setStatus('#apiStatus',j.error||'Could not create API key.','bad')}})});
+function recaptchaToken(action){
+  var siteKey=window.DEVIL_DEV_RECAPTCHA_SITE_KEY||'';
+  if(!siteKey){return Promise.resolve('')}
+  return new Promise(function(resolve){
+    var tries=0;
+    function run(){
+      if(window.grecaptcha&&grecaptcha.execute){try{grecaptcha.ready(function(){grecaptcha.execute(siteKey,{action:action||'dev_key_create'}).then(resolve).catch(function(){resolve('')})})}catch(e){resolve('')}}
+      else if(tries++<40){setTimeout(run,100)}
+      else{resolve('')}
+    }
+    run();
+  })
+}
+D.$('#apiCreate').addEventListener('click',function(){var name=D.$('#apiKeyName').value;D.setStatus('#apiStatus','Security check…');recaptchaToken('dev_key_create').then(function(token){D.setStatus('#apiStatus','Creating API key…');D.api('dev_key_create',{name:name,recaptcha_token:token}).then(function(j){if(j.ok){D.$('#apiTokenBox').classList.add('show');D.$('#apiToken').textContent=j.token||'';D.$('#apiKeyName').value='';D.setStatus('#apiStatus','API key created. Copy it now.','ok');loadKeys()}else{D.setStatus('#apiStatus',j.error||'Could not create API key.','bad')}})})});
 D.$('#apiCopy').addEventListener('click',function(){var t=D.$('#apiToken').textContent;if(!t)return;if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){D.setStatus('#apiStatus','Copied API key.','ok')}).catch(function(){D.setStatus('#apiStatus','Copy failed — select manually.','bad')})}else{D.setStatus('#apiStatus','Select and copy the key manually.','bad')}});
 loadKeys();
 })();

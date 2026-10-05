@@ -2419,6 +2419,9 @@ try {
 
     if ($action === 'dev_key_create' && $method === 'POST') {
         $in = input_json();
+        if (devil_security_recaptcha_required() && !devil_security_verify_recaptcha((string)($in['recaptcha_token'] ?? ''), client_ip())) {
+            json_out(['ok' => false, 'error' => 'Security verification failed. Please refresh and try again.'], 403);
+        }
         $all = load_dev_keys();
         $active = 0;
         foreach ($all as $rec) { if (is_array($rec) && (string)($rec['uid'] ?? '') === $uid && empty($rec['revoked'])) { $active++; } }
