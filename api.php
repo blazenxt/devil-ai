@@ -436,9 +436,30 @@ function client_ip(): string {
 }
 
 /* ── Developer API keys + OpenAI-compatible endpoint helpers ── */
+const DEVIL_API_KEY_PREFIX = 'devil_blazenxt_';
+const DEVIL_API_KEY_SUFFIX_LENGTH = 512;
+
 function dev_keys_path(): string { return data_dir() . '/api_keys.json'; }
 function load_dev_keys(): array { return load_json(dev_keys_path()); }
 function save_dev_keys(array $keys): bool { return save_json_atomic(dev_keys_path(), $keys); }
+
+function dev_random_key_suffix(int $length = DEVIL_API_KEY_SUFFIX_LENGTH): string {
+    $alphabet = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $max = strlen($alphabet) - 1;
+    $out = '';
+    for ($i = 0; $i < $length; $i++) { $out .= $alphabet[random_int(0, $max)]; }
+    return $out;
+}
+
+function dev_new_api_token(): string {
+    return DEVIL_API_KEY_PREFIX . dev_random_key_suffix(DEVIL_API_KEY_SUFFIX_LENGTH);
+}
+
+function dev_api_key_format_ok(string $token): bool {
+    if (preg_match('/^devil_blazenxt_[A-Za-z0-9]{512}$/', $token)) { return true; }
+    // Keep older dv_live_* keys working until users rotate them.
+    return preg_match('/^dv_live_[A-Fa-f0-9]{48}$/', $token) === 1;
+}
 
 function dev_api_headers(): void {
     header('Access-Control-Allow-Origin: *');
@@ -491,8 +512,8 @@ function dev_bearer_token(): string {
 function dev_api_auth(): array {
     dev_api_headers();
     $token = dev_bearer_token();
-    if ($token === '' || !preg_match('/^dv_live_[A-Fa-f0-9]{48}$/', $token)) {
-        dev_api_error('Missing or invalid API key. Use Authorization: Bearer dv_live_...', 401, 'authentication_error', 'invalid_api_key');
+    if ($token === '' || !dev_api_key_format_ok($token)) {
+        dev_api_error('Missing or invalid API key. Use Authorization: Bearer devil_blazenxt_...', 401, 'authentication_error', 'invalid_api_key');
     }
     $hash = hash('sha256', $token);
     $keys = load_dev_keys();
@@ -2426,14 +2447,14 @@ try {
         $active = 0;
         foreach ($all as $rec) { if (is_array($rec) && (string)($rec['uid'] ?? '') === $uid && empty($rec['revoked'])) { $active++; } }
         if ($active >= 12) { json_out(['ok' => false, 'error' => 'You can keep up to 12 active API keys. Revoke an old key first.'], 400); }
-        $token = 'dv_live_' . bin2hex(random_bytes(24));
+        $token = dev_new_api_token();
         $id = 'dk_' . bin2hex(random_bytes(8));
         $rec = [
             'id' => $id,
             'uid' => $uid,
             'name' => dev_clean_key_name((string)($in['name'] ?? '')),
             'hash' => hash('sha256', $token),
-            'prefix' => substr($token, 0, 15),
+            'prefix' => substr($token, 0, strlen(DEVIL_API_KEY_PREFIX) + 16),
             'last4' => substr($token, -4),
             'created' => time(),
             'last_used' => 0,

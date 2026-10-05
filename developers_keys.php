@@ -36,7 +36,7 @@ function renderKeys(keys){
     var row=document.createElement('div'); row.className='keyItem'+(k.revoked?' revoked':'');
     var info=document.createElement('div'); info.innerHTML='<b></b><span></span>';
     info.querySelector('b').textContent=k.name||'API key';
-    info.querySelector('span').textContent=(k.prefix||'dv_live_…')+'••••'+(k.last4||'')+' · '+(k.revoked?'revoked':'created '+D.dt(k.created))+' · last used '+D.dt(k.last_used)+' · '+D.fmt(k.requests)+' calls';
+    info.querySelector('span').textContent=(k.prefix||'devil_blazenxt_…')+'••••'+(k.last4||'')+' · '+(k.revoked?'revoked':'created '+D.dt(k.created))+' · last used '+D.dt(k.last_used)+' · '+D.fmt(k.requests)+' calls';
     row.appendChild(info);
     if(!k.revoked){var b=document.createElement('button');b.className='mini';b.type='button';b.textContent='Revoke';b.addEventListener('click',function(){if(!confirm('Revoke this API key? Apps using it will stop working.'))return;D.setStatus('#apiStatus','Revoking…');D.api('dev_key_revoke',{id:k.id}).then(function(j){if(j.ok){D.setStatus('#apiStatus','API key revoked.','ok');loadKeys()}else{D.setStatus('#apiStatus',j.error||'Could not revoke key.','bad')}})});row.appendChild(b);}
     box.appendChild(row);

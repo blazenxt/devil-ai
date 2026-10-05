@@ -6,7 +6,7 @@ dev_console_start('API Docs', 'docs');
 <section class="hero">
   <h1><?= icon('code', 28) ?> API Docs</h1>
   <p>OpenAI-compatible JSON endpoints for Devil AI. Use API keys only on your server, never in public frontend code.</p>
-  <div style="margin-top:14px"><span class="pill"><?= icon('server', 14) ?> Base URL: <?= htmlspecialchars($baseUrl) ?>/v1</span><span class="pill"><?= icon('key', 14) ?> Authorization: Bearer API key</span></div>
+  <div style="margin-top:14px"><span class="pill"><?= icon('server', 14) ?> Base URL: <?= htmlspecialchars($baseUrl) ?>/v1</span><span class="pill"><?= icon('key', 14) ?> Key format: devil_blazenxt_ + 512 characters</span><span class="pill"><?= icon('key', 14) ?> Authorization: Bearer API key</span></div>
 </section>
 
 <section class="grid two">
@@ -14,13 +14,13 @@ dev_console_start('API Docs', 'docs');
     <h2><?= icon('server', 18) ?> List models</h2>
     <p class="sub">Returns available Devil AI model ids.</p>
     <div class="code">curl <?= htmlspecialchars($baseUrl) ?>/v1/models \
-  -H "Authorization: Bearer dv_live_YOUR_KEY"</div>
+  -H "Authorization: Bearer devil_blazenxt_YOUR_512_CHARACTER_KEY"</div>
   </div>
   <div class="card">
     <h2><?= icon('message-circle', 18) ?> Chat completions</h2>
     <p class="sub">OpenAI-style chat completion request.</p>
     <div class="code">curl <?= htmlspecialchars($baseUrl) ?>/v1/chat/completions \
-  -H "Authorization: Bearer dv_live_YOUR_KEY" \
+  -H "Authorization: Bearer devil_blazenxt_YOUR_512_CHARACTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "devil-flash",
@@ -53,7 +53,7 @@ console.log(data.choices[0].message.content);</div>
   <h2><?= icon('zap', 18) ?> Streaming responses</h2>
   <p class="sub">Set <code>stream:true</code> to receive Server-Sent Events using OpenAI-style chat completion chunks.</p>
   <div class="code">curl <?= htmlspecialchars($baseUrl) ?>/v1/chat/completions \
-  -H "Authorization: Bearer dv_live_YOUR_KEY" \
+  -H "Authorization: Bearer devil_blazenxt_YOUR_512_CHARACTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "devil-flash",
@@ -65,7 +65,7 @@ console.log(data.choices[0].message.content);</div>
 <section class="card">
   <h2><?= icon('globe', 18) ?> Browser usage</h2>
   <p class="sub">For quick browser-side tests you can pass the key in the URL or use the <code>X-Devil-API-Key</code> header. For production, keep keys on your server.</p>
-  <div class="code">const res = await fetch('<?= htmlspecialchars($baseUrl) ?>/v1/chat/completions?key=dv_live_YOUR_KEY', {
+  <div class="code">const res = await fetch('<?= htmlspecialchars($baseUrl) ?>/v1/chat/completions?key=devil_blazenxt_YOUR_512_CHARACTER_KEY', {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
   body: JSON.stringify({
