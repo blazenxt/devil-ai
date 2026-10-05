@@ -9,10 +9,18 @@ if (!function_exists('mb_substr')) { function mb_substr($s, $a, $b = null) { ret
 
 function devil_sec_root(): string { return dirname(__DIR__); }
 function devil_sec_data_dir(): string { return devil_sec_root() . '/data'; }
+function devil_sec_first_ip(string $value): string {
+    $first = trim(explode(',', $value)[0]);
+    return filter_var($first, FILTER_VALIDATE_IP) ? $first : '';
+}
 function devil_sec_ip(): string {
+    if (strtolower((string)($_SERVER['HTTP_X_DEVIL_AI_PROXY'] ?? '')) === 'cloudflare') {
+        $proxiedIp = devil_sec_first_ip((string)($_SERVER['HTTP_X_DEVIL_CLIENT_IP'] ?? ''));
+        if ($proxiedIp !== '') { return $proxiedIp; }
+    }
     foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP'] as $k) {
         if (!empty($_SERVER[$k])) {
-            $first = trim(explode(',', (string)$_SERVER[$k])[0]);
+            $first = devil_sec_first_ip((string)$_SERVER[$k]);
             if ($first !== '') { return $first; }
         }
     }
@@ -91,6 +99,46 @@ function devil_sec_datacenter_like(string $ip, bool $suspiciousClient): bool {
     if ($host === '' || $host === $ip) { return false; }
     return preg_match('/(amazonaws|compute|googleusercontent|azure|digitalocean|linode|vultr|ovh|hetzner|contabo|oraclecloud|scaleway|leaseweb|colo|datacenter|cloud|server|host|vps)/i', $host) === 1;
 }
+
+function devil_sec_proxy_vpn_org(string $org): bool {
+    $org = trim($org);
+    if ($org === '') { return false; }
+    return preg_match('/(\bvpn\b|proxy|tor\b|anonymous|anonymizer|privacy|tunnel|mullvad|nordvpn|expressvpn|surfshark|proton\s*(vpn)?|windscribe|private\s*internet\s*access|cyberghost|torguard|hidemyass|hide\s*my|purevpn|ivpn|airvpn|vyprvpn|hotspot\s*shield|ipvanish|warp|cloudflare\s*warp|datacenter|data\s*center|colo(cation)?|hosting|hoster|\bvps\b|dedicated\s*server|amazon|aws|google\s*cloud|microsoft\s*azure|digitalocean|akamai\s*linode|linode|vultr|ovh|hetzner|contabo|leaseweb|scaleway|oracle\s*cloud|alibaba|tencent|choopa|m247|datacamp|cdn77|hivelocity|psychz|shinjiru|quadra|frantech|racknerd|hostwinds|upcloud|clouvider|packet\s*exchange|servermania|ionos|strato|kamatera|netcup|timeweb)/i', $org) === 1;
+}
+function devil_sec_proxy_vpn_asn(int $asn): bool {
+    static $blocked = [13335,14618,16509,8075,15169,396982,14061,63949,20473,53667,16276,24940,9009,60068,62240,51167,31898,398101,12876,60781,28753,45102,132203,6939,202053,47583,20454,29802,29838,55286,29854,8100,35916,40676,46606,36352,55293,32244,399629];
+    return $asn > 0 && in_array($asn, $blocked, true);
+}
+function devil_sec_proxy_header_present(): string {
+    $headers = ['HTTP_VIA','HTTP_FORWARDED','HTTP_X_FORWARDED_FOR','HTTP_X_REAL_IP','HTTP_X_PROXY_ID','HTTP_X_PROXY_AUTHORIZATION','HTTP_PROXY_AUTHORIZATION','HTTP_PROXY_CONNECTION','HTTP_CLIENT_IP','HTTP_X_CLIENT_IP','HTTP_FORWARDED_FOR','HTTP_X_FORWARDED','HTTP_X_CLUSTER_CLIENT_IP'];
+    foreach ($headers as $h) {
+        if (!empty($_SERVER[$h])) { return $h; }
+    }
+    return '';
+}
+function devil_sec_proxy_vpn_reason(string $ip, bool $trustedDeveloperApi): string {
+    if ($trustedDeveloperApi) { return ''; }
+    $proxyHeader = devil_sec_proxy_header_present();
+    if ($proxyHeader !== '') { return 'proxy header'; }
+
+    $country = strtoupper(trim((string)($_SERVER['HTTP_X_DEVIL_CLIENT_COUNTRY'] ?? ($_SERVER['HTTP_CF_IPCOUNTRY'] ?? ''))));
+    if ($country === 'T1') { return 'tor/proxy network'; }
+
+    $threatRaw = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_THREAT'] ?? ($_SERVER['HTTP_CF_THREAT_SCORE'] ?? ''));
+    if ($threatRaw !== '' && is_numeric($threatRaw) && (float)$threatRaw >= 30) { return 'high risk IP reputation'; }
+
+    $asnRaw = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_ASN'] ?? ($_SERVER['HTTP_CF_ASN'] ?? ''));
+    $asn = ctype_digit($asnRaw) ? (int)$asnRaw : 0;
+    if (devil_sec_proxy_vpn_asn($asn)) { return 'blocked ASN'; }
+
+    $org = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_ASO'] ?? ($_SERVER['HTTP_CF_ASORGANIZATION'] ?? ''));
+    if (devil_sec_proxy_vpn_org($org)) { return 'blocked network'; }
+
+    if (devil_sec_datacenter_like($ip, false)) { return 'blocked datacenter range'; }
+    $fromCloudflareWorker = strtolower((string)($_SERVER['HTTP_X_DEVIL_AI_PROXY'] ?? '')) === 'cloudflare';
+    if (!$fromCloudflareWorker && devil_sec_datacenter_like($ip, true)) { return 'datacenter network'; }
+    return '';
+}
 function devil_security_boot(): void {
     if (PHP_SAPI === 'cli' || headers_sent()) { return; }
     header('X-Content-Type-Options: nosniff');
@@ -125,6 +173,10 @@ function devil_security_boot(): void {
 
     $hasApiKey = preg_match('/Bearer\s+(?:devil_blazenxt_|dv_live_)/i', (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ''))
         || !empty($_SERVER['HTTP_X_DEVIL_API_KEY']) || !empty($_GET['key']) || !empty($_GET['api_key']) || !empty($_GET['apikey']);
+    $trustedDeveloperApi = (str_contains($uri, '/v1/') || preg_match('#/v1$#', $uri) === 1) && $hasApiKey;
+    if (($proxyVpnReason = devil_sec_proxy_vpn_reason($ip, $trustedDeveloperApi)) !== '') {
+        devil_sec_block('VPN, proxy, Tor and datacenter networks are blocked for security.', 403);
+    }
     $badUa = $ua === '' || preg_match('/(python-requests|scrapy|curl|wget|httpclient|libwww|go-http-client|java\/|okhttp|node-fetch|axios|phantomjs|headless|selenium|playwright|puppeteer|nikto|sqlmap|nmap|masscan|zgrab|crawler|spider|\bbot\b)/i', $ua) === 1;
     $noBrowserHints = empty($_SERVER['HTTP_ACCEPT_LANGUAGE']) && empty($_SERVER['HTTP_SEC_CH_UA']) && !$hasApiKey;
 
