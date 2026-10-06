@@ -12,7 +12,7 @@ dev_console_start('API Keys', 'keys');
 <section class="card">
   <h2><?= icon('plus', 18) ?> Create key</h2>
   <p class="sub">Use a clear name so you can identify this key later.</p>
-  <?php if ($turnstileSiteKey !== ''): ?><div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($turnstileSiteKey, ENT_QUOTES) ?>" data-callback="devilDevTurnstileReady"></div><?php endif; ?>
+  <?php if ($turnstileSiteKey !== ''): ?><div class="cf-turnstile" data-size="invisible" data-sitekey="<?= htmlspecialchars($turnstileSiteKey, ENT_QUOTES) ?>" data-callback="devilDevTurnstileReady"></div><?php endif; ?>
   <div class="row"><input class="field" id="apiKeyName" type="text" maxlength="48" placeholder="Key name, e.g. Production server"><button class="btn primary" id="apiCreate" type="button"><?= icon('plus', 15) ?> Create key</button></div>
   <div class="tokenBox" id="apiTokenBox"><p class="sub" style="margin-bottom:8px">Copy this key now. You won’t be able to see it again.</p><code id="apiToken"></code><div class="row" style="margin-top:10px"><button class="btn ghost" id="apiCopy" type="button"><?= icon('copy', 14) ?> Copy key</button></div></div>
   <div class="status" id="apiStatus"></div>
@@ -23,6 +23,7 @@ dev_console_start('API Keys', 'keys');
   <p class="sub">Revoke keys you no longer use. Apps using revoked keys will stop working.</p>
   <div class="keyList" id="apiList"><div class="sub">Loading API keys…</div></div>
 </section>
+<style>.cf-turnstile{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important;pointer-events:none!important}.grecaptcha-badge{visibility:hidden!important;opacity:0!important}.captcha-note{font-size:.68rem;color:var(--dim2);text-align:center;margin-top:8px}</style>
 <?php if ($turnstileSiteKey !== ''): ?><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <?php endif; ?>
 <?php if ($recaptchaSiteKey !== ''): ?>

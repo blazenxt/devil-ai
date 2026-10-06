@@ -149,6 +149,10 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:18
 .formnote{font-size:.72rem;color:var(--dim2);margin-top:8px;line-height:1.55}
 .submit{width:100%;margin-top:20px;border:none;border-radius:13px;padding:13px;font-weight:700;font-size:.92rem;background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;box-shadow:0 8px 24px rgba(244,63,94,.35);transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px}
 .submit:hover{filter:brightness(1.1)}
+/* CAPTCHA stays silent during normal use; Turnstile opens a challenge only when risk requires it. */
+.cf-turnstile{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important;pointer-events:none!important}
+.grecaptcha-badge{visibility:hidden!important;opacity:0!important}
+.captcha-note{font-size:.68rem;color:var(--dim2);text-align:center;margin-top:8px}
 .github-btn{background:#24292f;color:#fff;box-shadow:0 8px 24px rgba(36,41,47,.32);margin-top:0}.github-btn:hover{background:#000;filter:none}.github-mark{width:20px;height:20px;fill:currentColor}
 .submit:disabled{opacity:.55;cursor:wait}
 .err{display:none;margin-top:14px;background:rgba(190,18,60,.12);border:1px solid rgba(248,113,113,.4);color:#fecaca;font-size:.8rem;border-radius:11px;padding:11px 13px;line-height:1.5;align-items:flex-start;gap:9px}
@@ -200,7 +204,8 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:18
       <p class="sub">Enter your email — we'll send you a one-time login code. No passwords, ever.</p>
       <form id="emailForm" novalidate>
         <?php if ($ghId !== ''): ?><a class="submit github-btn" href="?github_start=1"><svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.74.08-.74 1.2.09 1.83 1.23 1.83 1.23 1.07 1.83 2.8 1.3 3.48.99.11-.77.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.17 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.3-1.55 3.3-1.23 3.3-1.23.65 1.65.24 2.87.12 3.17.76.84 1.23 1.91 1.23 3.22 0 4.62-2.8 5.64-5.48 5.94.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z"/></svg><span>Continue with GitHub</span></a><div class="sub" style="text-align:center;margin-bottom:10px">or continue with email</div><?php endif; ?>
-<?php if ($turnstileSiteKey !== ''): ?><div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($turnstileSiteKey, ENT_QUOTES) ?>" data-callback="devilTurnstileReady"></div><?php endif; ?>
+<div class="captcha-note">Protected by security verification.</div>
+        <?php if ($turnstileSiteKey !== ''): ?><div class="cf-turnstile" data-size="invisible" data-sitekey="<?= htmlspecialchars($turnstileSiteKey, ENT_QUOTES) ?>" data-callback="devilTurnstileReady"></div><?php endif; ?>
         <label for="email">Email</label>
         <div class="inrow"><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required autofocus></div>
         <p class="formnote">New here? Just enter your email — your account is created automatically.</p>
