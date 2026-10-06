@@ -21,6 +21,30 @@ require_once __DIR__ . '/inc/icons.php';
 $recaptchaSiteKey = devil_security_recaptcha_site_key();
 $turnstileSiteKey = function_exists('devil_security_turnstile_site_key') ? devil_security_turnstile_site_key() : '';
 
+/* GitHub OAuth login */
+$secCfg = function_exists('devil_security_config') ? devil_security_config() : [];
+$ghId = (string)($secCfg['github_client_id'] ?? '');
+$ghSecret = (string)($secCfg['github_client_secret'] ?? '');
+$ghCallback = 'https://' . (($_SERVER['HTTP_HOST'] ?? '') === 'ai.devil.blazenxt.in' ? 'ai.devil.blazenxt.in' : 'ai.devil.blazenxt.com') . '/auth/github/callback';
+if (isset($_GET['github_start']) && $ghId !== '') {
+    $state = bin2hex(random_bytes(24)); $_SESSION['github_oauth_state'] = $state;
+    $return = (($_SERVER['HTTP_HOST'] ?? '') === 'ai.devil.blazenxt.in') ? 'https://ai.devil.blazenxt.in/' : 'https://ai.devil.blazenxt.com/';
+    $_SESSION['github_oauth_return'] = $return;
+    header('Location: https://github.com/login/oauth/authorize?'.http_build_query(['client_id'=>$ghId,'redirect_uri'=>$ghCallback,'scope'=>'read:user user:email','state'=>$state])); exit;
+}
+if (isset($_GET['github_callback'])) {
+    $state=(string)($_GET['state']??''); $code=(string)($_GET['code']??'');
+    if ($state==='' || !hash_equals((string)($_SESSION['github_oauth_state']??''),$state) || $code==='' || $ghSecret==='') { http_response_code(400); exit('GitHub sign-in verification failed.'); }
+    unset($_SESSION['github_oauth_state']);
+    $post=function($url,$data,$headers=[]){$ctx=stream_context_create(['http'=>['method'=>'POST','header'=>implode("\r\n",array_merge(['Accept: application/json','Content-Type: application/x-www-form-urlencoded','User-Agent: Devil-AI'],$headers)),'content'=>http_build_query($data),'timeout'=>10,'ignore_errors'=>true]]);return json_decode((string)@file_get_contents($url,false,$ctx),true);};
+    $tok=$post('https://github.com/login/oauth/access_token',['client_id'=>$ghId,'client_secret'=>$ghSecret,'code'=>$code]); $access=(string)($tok['access_token']??'');
+    $get=function($url,$access){$ctx=stream_context_create(['http'=>['header'=>"Accept: application/vnd.github+json\r\nAuthorization: Bearer {$access}\r\nUser-Agent: Devil-AI\r\n",'timeout'=>10,'ignore_errors'=>true]]);return json_decode((string)@file_get_contents($url,false,$ctx),true);};
+    $profile=$access!==''?$get('https://api.github.com/user',$access):[]; $emails=$access!==''?$get('https://api.github.com/user/emails',$access):[]; $email=''; foreach((array)$emails as $em){if(!empty($em['email'])&&(!empty($em['primary'])||!$email))$email=strtolower((string)$em['email']);}
+    if ($email==='' && !empty($profile['email'])) $email=strtolower((string)$profile['email']);
+    $usersFile=__DIR__.'/data/users.json';$users=json_decode((string)@file_get_contents($usersFile),true);if(!is_array($users))$users=[];$found=null;foreach($users as $u){if(strcasecmp((string)($u['email']??''),$email)===0){$found=$u;break;}}
+    if($email===''||!$found){$uid='u'.bin2hex(random_bytes(8));$name=trim((string)($profile['name']??$profile['login']??'Devil'));$users[$uid]=['id'=>$uid,'name'=>mb_substr($name,0,60),'email'=>$email,'created'=>time(),'github_id'=>(string)($profile['id']??'')];@file_put_contents($usersFile,json_encode($users,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),LOCK_EX);$found=$users[$uid];}
+    session_regenerate_id(true);$_SESSION['devil_uid']=(string)$found['id'];$_SESSION['devil_name']=(string)($found['name']??'Devil');devil_session_refresh();header('Location: '.(string)($_SESSION['github_oauth_return']??'https://ai.devil.blazenxt.com/'));exit;
+}
 /* ── magic link (?token=…) — server-side verify + sign-in ── */
 $tokenNote = null;
 if (isset($_GET['token']) && is_string($_GET['token'])) {
@@ -174,6 +198,7 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:18
       <h1>Welcome</h1>
       <p class="sub">Enter your email — we'll send you a one-time login code. No passwords, ever.</p>
       <form id="emailForm" novalidate>
+        <?php if ($ghId !== ''): ?><a class="submit" style="text-align:center;display:block;margin-bottom:12px" href="?github_start=1">Continue with GitHub</a><div class="sub" style="text-align:center;margin-bottom:10px">or continue with email</div><?php endif; ?>
 <?php if ($turnstileSiteKey !== ''): ?><div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($turnstileSiteKey, ENT_QUOTES) ?>" data-callback="devilTurnstileReady"></div><?php endif; ?>
         <label for="email">Email</label>
         <div class="inrow"><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required autofocus></div>
