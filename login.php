@@ -26,6 +26,12 @@ $secCfg = function_exists('devil_security_config') ? devil_security_config() : [
 $ghId = (string)($secCfg['github_client_id'] ?? '');
 $ghSecret = (string)($secCfg['github_client_secret'] ?? '');
 $ghCallback = 'https://' . (($_SERVER['HTTP_HOST'] ?? '') === 'ai.devil.blazenxt.in' ? 'ai.devil.blazenxt.in' : 'ai.devil.blazenxt.com') . '/auth/github/callback';
+function devil_github_error_page(string $message, int $status = 400): void {
+    http_response_code($status);
+    $safe = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+    $home = (($_SERVER['HTTP_HOST'] ?? '') === 'ai.devil.blazenxt.in') ? 'https://ai.devil.blazenxt.in/login.php' : 'https://ai.devil.blazenxt.com/login.php';
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GitHub sign-in — Devil AI</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#0c0709;color:#efe6ea;font:16px system-ui,-apple-system,Segoe UI,sans-serif}.card{width:min(460px,100%);padding:34px 28px;border:1px solid rgba(244,63,94,.28);border-radius:24px;background:#171014;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.35)}img{width:64px;height:64px;margin-bottom:18px}h1{font-size:1.35rem;margin:0 0 10px}p{color:#b9a4ad;line-height:1.55;margin:0 0 24px}.btn{display:inline-block;padding:12px 18px;border-radius:12px;background:#e11d48;color:#fff;text-decoration:none;font-weight:700}.help{font-size:.78rem;color:#806a72;margin-top:18px}</style></head><body><main class="card"><img src="assets/logo.svg" alt="Devil AI"><h1>GitHub sign-in couldn’t be completed</h1><p>'.$safe.'</p><a class="btn" href="'.$home.'">Back to sign in</a><div class="help">Your account and GitHub access were not changed.</div></main></body></html>'; exit;
+}
 if (isset($_GET['github_start']) && $ghId !== '') {
     $return = (($_SERVER['HTTP_HOST'] ?? '') === 'ai.devil.blazenxt.in') ? 'https://ai.devil.blazenxt.in/' : 'https://ai.devil.blazenxt.com/';
     // Signed, host-independent state survives the .in to .com OAuth callback relay.
@@ -37,7 +43,7 @@ if (isset($_GET['github_callback'])) {
     $state=(string)($_GET['state']??''); $code=(string)($_GET['code']??'');
     $rawState = base64_decode(strtr($state, '-_', '+/'), true); $parts = is_string($rawState) ? explode('|', $rawState) : [];
     $validState = count($parts) === 4 && hash_equals(hash_hmac('sha256', $parts[0].'|'.$parts[1].'|'.$parts[2], $ghSecret), $parts[3]) && (int)$parts[2] >= time() && in_array($parts[1], ['https://ai.devil.blazenxt.com/','https://ai.devil.blazenxt.in/'], true);
-    if (!$validState || $code==='' || $ghSecret==='') { http_response_code(400); exit('GitHub sign-in verification failed. Please restart GitHub sign-in.'); }
+    if (!$validState || $code==='' || $ghSecret==='') { devil_github_error_page('The GitHub authorization session expired or was not valid. Please start sign-in again.'); }
     $oauthReturn = $parts[1];
     $post=function($url,$data,$headers=[]){$ctx=stream_context_create(['http'=>['method'=>'POST','header'=>implode("\r\n",array_merge(['Accept: application/json','Content-Type: application/x-www-form-urlencoded','User-Agent: Devil-AI'],$headers)),'content'=>http_build_query($data),'timeout'=>10,'ignore_errors'=>true]]);return json_decode((string)@file_get_contents($url,false,$ctx),true);};
     $tok=$post('https://github.com/login/oauth/access_token',['client_id'=>$ghId,'client_secret'=>$ghSecret,'code'=>$code]); $access=(string)($tok['access_token']??'');
