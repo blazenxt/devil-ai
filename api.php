@@ -2249,21 +2249,6 @@ try {
         json_out(['ok' => true]);
     }
 
-    if ($action === 'security_sessions' && $method === 'GET') {
-        $all = devil_security_store_read('sessions'); $mine = []; $hash = substr(hash('sha256', $uid), 0, 32); $current = devil_security_session_id();
-        foreach ($all as $item) { if (is_array($item) && ($item['uid'] ?? '') === $hash) { $item['current'] = (($item['id'] ?? '') === $current); $mine[] = $item; } }
-        usort($mine, static function($a,$b){ return (int)($b['last_seen'] ?? 0) <=> (int)($a['last_seen'] ?? 0); });
-        json_out(['ok'=>true,'sessions'=>$mine]);
-    }
-    if ($action === 'security_session_revoke' && $method === 'POST') {
-        $in = input_json(); $sid = (string)($in['id'] ?? '');
-        if ($sid !== devil_security_session_id()) { devil_security_session_revoke($uid, $sid); }
-        json_out(['ok'=>true]);
-    }
-    if ($action === 'security_logout_all' && $method === 'POST') {
-        devil_security_session_revoke($uid); devil_session_destroy_all(); json_out(['ok'=>true]);
-    }
-
     if ($action === 'me' && $method === 'GET') {
         $u = current_user();
         json_out(['ok' => true, 'user' => $u ? ['name' => (string)$u['name'], 'email' => (string)$u['email']] : null]);
@@ -2470,6 +2455,21 @@ try {
     /* Release the PHP session lock before chat/file/AI work so parallel requests
        (chat_load + sidebar list, or page refresh + API calls) do not block each other. */
     if ($action !== 'account_delete' && session_status() === PHP_SESSION_ACTIVE) { @session_write_close(); }
+
+    if ($action === 'security_sessions' && $method === 'GET') {
+        $all = devil_security_store_read('sessions'); $mine = []; $hash = substr(hash('sha256', $uid), 0, 32); $current = devil_security_session_id();
+        foreach ($all as $item) { if (is_array($item) && ($item['uid'] ?? '') === $hash) { $item['current'] = (($item['id'] ?? '') === $current); $mine[] = $item; } }
+        usort($mine, static function($a,$b){ return (int)($b['last_seen'] ?? 0) <=> (int)($a['last_seen'] ?? 0); });
+        json_out(['ok'=>true,'sessions'=>$mine]);
+    }
+    if ($action === 'security_session_revoke' && $method === 'POST') {
+        $in = input_json(); $sid = (string)($in['id'] ?? '');
+        if ($sid !== devil_security_session_id()) { devil_security_session_revoke($uid, $sid); }
+        json_out(['ok'=>true]);
+    }
+    if ($action === 'security_logout_all' && $method === 'POST') {
+        devil_security_session_revoke($uid); devil_session_destroy_all(); json_out(['ok'=>true]);
+    }
 
     if ($action === 'dev_keys' && $method === 'GET') {
         $all = load_dev_keys();
