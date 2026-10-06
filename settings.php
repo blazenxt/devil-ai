@@ -190,6 +190,8 @@ a{text-decoration:none;color:inherit}button,input,select{font:inherit}button{cur
         </div>
       </section>
 
+      <section class="card" id="security-sessions"><h2>Active sessions</h2><p class="sub">Review devices signed in to your account and revoke unfamiliar sessions.</p><div id="securitySessions"><div class="sub">Loading sessions…</div></div><button class="btn danger" id="securityLogoutAll" type="button">Logout from all devices</button></section>
+
       <section class="card" id="data">
         <h2><?= icon('server', 18) ?> Data controls</h2>
         <p class="sub">Download your chats or update cookie/privacy choices.</p>
@@ -296,6 +298,9 @@ $('#confirmDelete').addEventListener('click',function(){var code=$('#deleteCode'
 </script>
 <script>
 if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
+</script>
+<script>
+(function(){var box=document.getElementById('securitySessions');if(!box)return;function load(){fetch('api.php?action=security_sessions').then(function(r){return r.json()}).then(function(j){if(!j.ok)throw 0;box.innerHTML=(j.sessions||[]).map(function(x){var text=(x.user_agent||'Unknown browser')+' · '+(x.ip||'Unknown IP')+' · '+new Date((x.last_seen||0)*1000).toLocaleString();return '<div class="pillrow" style="justify-content:space-between;margin:9px 0"><span class="pill">'+text+(x.current?' · This device':'')+'</span>'+(x.current?'':'<button class="btn ghost revoke-session" data-id="'+x.id+'">Revoke</button>')+'</div>'}).join('')||'<div class="sub">No active sessions found.</div>';box.querySelectorAll('.revoke-session').forEach(function(b){b.onclick=function(){fetch('api.php?action=security_session_revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.id})}).then(load)}})}).catch(function(){box.innerHTML='<div class="sub">Could not load sessions.</div>'})}document.getElementById('securityLogoutAll').onclick=function(){if(confirm('Logout from all devices?'))fetch('api.php?action=security_logout_all',{method:'POST'}).then(function(){location.href='login.php'})};load()})();
 </script>
 </body>
 </html>

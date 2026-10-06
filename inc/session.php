@@ -70,6 +70,7 @@ function devil_session_boot(): void {
     session_start();
     /* New sessions already get a cookie from session_start(); existing sessions are refreshed for rolling expiry. */
     if ($hadCookie) { devil_session_refresh(); }
+    if (!empty($_SESSION['devil_uid'])) { devil_security_session_touch((string)$_SESSION['devil_uid']); }
 }
 
 function devil_session_destroy_all(): void {

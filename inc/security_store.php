@@ -76,5 +76,33 @@ function devil_security_store_event(string $uid, string $type, array $details = 
     devil_security_store_write('audit', $events);
 }
 
+function devil_security_session_id(): string {
+    return hash('sha256', session_id());
+}
+function devil_security_session_touch(string $uid): void {
+    if ($uid === '' || session_id() === '') { return; }
+    $items = devil_security_store_read('sessions');
+    $sid = devil_security_session_id();
+    $items[$sid] = [
+        'id' => $sid,
+        'uid' => substr(hash('sha256', $uid), 0, 32),
+        'created' => (int)($items[$sid]['created'] ?? time()),
+        'last_seen' => time(),
+        'ip' => substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64),
+        'user_agent' => substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 240),
+    ];
+    foreach ($items as $key => $item) {
+        if (!is_array($item) || (int)($item['last_seen'] ?? 0) < time() - (30 * 86400)) { unset($items[$key]); }
+    }
+    devil_security_store_write('sessions', $items);
+}
+function devil_security_session_revoke(string $uid, string $sid = ''): void {
+    $items = devil_security_store_read('sessions');
+    foreach ($items as $key => $item) {
+        if (is_array($item) && ($item['uid'] ?? '') === substr(hash('sha256', $uid), 0, 32) && ($sid === '' || $key === $sid)) { unset($items[$key]); }
+    }
+    devil_security_store_write('sessions', $items);
+}
+
 // Initialize only the new security directory/files; existing data is untouched.
 devil_security_store_boot();
