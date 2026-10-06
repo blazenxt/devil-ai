@@ -105,7 +105,7 @@ $created = !empty($me['created']) ? date('d M Y', (int)$me['created']) : '—';
 (function(){function ck(n){var m=document.cookie.match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}var t=ck('devil_theme');try{t=t||localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();
-
+</script>
 <title>Account settings — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <link rel="manifest" href="manifest.webmanifest">
@@ -189,8 +189,6 @@ a{text-decoration:none;color:inherit}button,input,select{font:inherit}button{cur
           <div class="miniStatus" id="voiceStatus"></div>
         </div>
       </section>
-
-      <section class="card" id="security-sessions"><h2>Active sessions</h2><p class="sub">Review where your account is signed in. Revoke any session you do not recognize.</p><div id="sessionList"><div class="sub">Loading sessions…</div></div><button class="btn danger" id="logoutAllBtn" type="button">Logout from all devices</button><div class="status" id="sessionStatus"></div></section>
 
       <section class="card" id="data">
         <h2><?= icon('server', 18) ?> Data controls</h2>
@@ -298,9 +296,6 @@ $('#confirmDelete').addEventListener('click',function(){var code=$('#deleteCode'
 </script>
 <script>
 if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
-</script>
-<script>
-(function(){var list=document.getElementById('sessionList'),st=document.getElementById('sessionStatus');function esc(x){return String(x||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]})}function load(){fetch('api.php?action=sessions').then(function(r){return r.json()}).then(function(j){if(!j.ok)return;list.innerHTML=(j.sessions||[]).map(function(x){return '<div class="pillrow" style="justify-content:space-between;margin:10px 0"><span class="pill">'+esc(x.user_agent)+' · '+esc(x.ip)+' · '+new Date((x.last_seen||0)*1000).toLocaleString()+(x.current?' · This device':'')+'</span>'+(!x.current?'<button class="btn ghost revoke" data-id="'+esc(x.sid)+'">Revoke</button>':'')+'</div>'}).join('')||'<div class="sub">No active sessions.</div>';document.querySelectorAll('.revoke').forEach(function(b){b.onclick=function(){fetch('api.php?action=session_revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid:b.dataset.id})}).then(load)}})}).catch(function(){list.innerHTML='<div class="sub">Could not load sessions.</div>'})}document.getElementById('logoutAllBtn').onclick=function(){if(!confirm('Logout from all devices?'))return;fetch('api.php?action=logout_all',{method:'POST'}).then(function(){location.href='login.php'})};load()})();
 </script>
 </body>
 </html>

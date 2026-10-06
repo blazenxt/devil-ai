@@ -2249,13 +2249,6 @@ try {
         json_out(['ok' => true]);
     }
 
-    if ($action === 'sessions' && $method === 'GET') {
-        $f=__DIR__.'/data/sessions_index.json'; $all=is_readable($f)?json_decode((string)file_get_contents($f),true):[]; if(!is_array($all))$all=[]; $out=[]; $cur=hash('sha256',session_id());
-        foreach($all as $v){if(is_array($v)&&($v['uid']??'')===$uid){$v['current']=($v['sid']??'')===$cur;$out[]=$v;}} usort($out,function($a,$b){return (int)$b['last_seen']<=>(int)$a['last_seen'];}); json_out(['ok'=>true,'sessions'=>$out]);
-    }
-    if ($action === 'session_revoke' && $method === 'POST') { $in=input_json(); devil_session_revoke_registry($uid,(string)($in['sid']??'')); json_out(['ok'=>true]); }
-    if ($action === 'logout_all' && $method === 'POST') { devil_session_revoke_registry($uid); devil_session_destroy_all(); json_out(['ok'=>true]); }
-
     if ($action === 'me' && $method === 'GET') {
         $u = current_user();
         json_out(['ok' => true, 'user' => $u ? ['name' => (string)$u['name'], 'email' => (string)$u['email']] : null]);

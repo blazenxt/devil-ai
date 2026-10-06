@@ -69,7 +69,6 @@ function devil_session_boot(): void {
     session_start();
     /* New sessions already get a cookie from session_start(); existing sessions are refreshed for rolling expiry. */
     if ($hadCookie) { devil_session_refresh(); }
-    if (!empty($_SESSION['devil_uid'])) { devil_session_touch((string)$_SESSION['devil_uid']); }
 }
 
 function devil_session_destroy_all(): void {
@@ -79,16 +78,4 @@ function devil_session_destroy_all(): void {
         setcookie(session_name(), '', devil_session_cookie_options(time() - 3600));
     }
     @session_destroy();
-}
-
-function devil_session_registry_file(): string { return dirname(__DIR__) . '/data/sessions_index.json'; }
-function devil_session_touch(string $uid = ''): void {
-    if ($uid === '' || session_status() !== PHP_SESSION_ACTIVE) return;
-    $file=devil_session_registry_file(); $all=is_readable($file)?json_decode((string)file_get_contents($file),true):[]; if(!is_array($all))$all=[];
-    $sid=hash('sha256',session_id()); $all[$sid]=['uid'=>$uid,'sid'=>$sid,'created'=>(int)($all[$sid]['created']??time()),'last_seen'=>time(),'ip'=>substr((string)($_SERVER['REMOTE_ADDR']??''),0,64),'user_agent'=>substr((string)($_SERVER['HTTP_USER_AGENT']??''),0,240),'current'=>true];
-    foreach($all as $k=>$v){if(!is_array($v)||((int)($v['last_seen']??0)<time()-2592000)){unset($all[$k]);}}
-    @file_put_contents($file,json_encode($all,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES),LOCK_EX);
-}
-function devil_session_revoke_registry(string $uid, string $sid = ''): void {
-    $f=devil_session_registry_file();$a=is_readable($f)?json_decode((string)file_get_contents($f),true):[];if(!is_array($a))$a=[];foreach($a as $k=>$v){if(is_array($v)&&($v['uid']??'')===$uid&&($sid===''||$k===$sid))unset($a[$k]);}@file_put_contents($f,json_encode($a,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES),LOCK_EX);
 }
