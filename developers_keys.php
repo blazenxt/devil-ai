@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/inc/developer_console.php';
 $recaptchaSiteKey = function_exists('devil_security_recaptcha_site_key') ? devil_security_recaptcha_site_key() : '';
+$turnstileSiteKey = function_exists('devil_security_turnstile_site_key') ? devil_security_turnstile_site_key() : '';
 dev_console_start('API Keys', 'keys');
 ?>
 <section class="hero">
@@ -11,6 +12,7 @@ dev_console_start('API Keys', 'keys');
 <section class="card">
   <h2><?= icon('plus', 18) ?> Create key</h2>
   <p class="sub">Use a clear name so you can identify this key later.</p>
+  <?php if ($turnstileSiteKey !== ''): ?><div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($turnstileSiteKey, ENT_QUOTES) ?>" data-callback="devilDevTurnstileReady"></div><?php endif; ?>
   <div class="row"><input class="field" id="apiKeyName" type="text" maxlength="48" placeholder="Key name, e.g. Production server"><button class="btn primary" id="apiCreate" type="button"><?= icon('plus', 15) ?> Create key</button></div>
   <div class="tokenBox" id="apiTokenBox"><p class="sub" style="margin-bottom:8px">Copy this key now. You won’t be able to see it again.</p><code id="apiToken"></code><div class="row" style="margin-top:10px"><button class="btn ghost" id="apiCopy" type="button"><?= icon('copy', 14) ?> Copy key</button></div></div>
   <div class="status" id="apiStatus"></div>
@@ -21,6 +23,8 @@ dev_console_start('API Keys', 'keys');
   <p class="sub">Revoke keys you no longer use. Apps using revoked keys will stop working.</p>
   <div class="keyList" id="apiList"><div class="sub">Loading API keys…</div></div>
 </section>
+<?php if ($turnstileSiteKey !== ''): ?><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<?php endif; ?>
 <?php if ($recaptchaSiteKey !== ''): ?>
 <script src="https://www.google.com/recaptcha/api.js?render=<?= htmlspecialchars($recaptchaSiteKey, ENT_QUOTES) ?>" async defer></script>
 <script>window.DEVIL_DEV_RECAPTCHA_SITE_KEY = <?= json_encode($recaptchaSiteKey) ?>;</script>
@@ -43,6 +47,7 @@ function renderKeys(keys){
   });
 }
 function loadKeys(){D.apiGet('dev_keys').then(function(j){if(j.ok){renderKeys(j.keys||[])}else{D.$('#apiList').innerHTML='<div class="sub">Could not load API keys.</div>';D.setStatus('#apiStatus',j.error||'Could not load keys.','bad')}})}
+var TURNSTILE_TOKEN=''; window.devilDevTurnstileReady=function(t){TURNSTILE_TOKEN=t||'';};
 function recaptchaToken(action){
   var siteKey=window.DEVIL_DEV_RECAPTCHA_SITE_KEY||'';
   if(!siteKey){return Promise.resolve('')}
@@ -56,7 +61,7 @@ function recaptchaToken(action){
     run();
   })
 }
-D.$('#apiCreate').addEventListener('click',function(){var name=D.$('#apiKeyName').value;D.setStatus('#apiStatus','Security check…');recaptchaToken('dev_key_create').then(function(token){D.setStatus('#apiStatus','Creating API key…');D.api('dev_key_create',{name:name,recaptcha_token:token}).then(function(j){if(j.ok){D.$('#apiTokenBox').classList.add('show');D.$('#apiToken').textContent=j.token||'';D.$('#apiKeyName').value='';D.setStatus('#apiStatus','API key created. Copy it now.','ok');loadKeys()}else{D.setStatus('#apiStatus',j.error||'Could not create API key.','bad')}})})});
+D.$('#apiCreate').addEventListener('click',function(){var name=D.$('#apiKeyName').value;D.setStatus('#apiStatus','Security check…');recaptchaToken('dev_key_create').then(function(token){D.setStatus('#apiStatus','Creating API key…');D.api('dev_key_create',{name:name,recaptcha_token:token,turnstile_token:TURNSTILE_TOKEN}).then(function(j){if(j.ok){D.$('#apiTokenBox').classList.add('show');D.$('#apiToken').textContent=j.token||'';D.$('#apiKeyName').value='';D.setStatus('#apiStatus','API key created. Copy it now.','ok');loadKeys()}else{D.setStatus('#apiStatus',j.error||'Could not create API key.','bad')}})})});
 D.$('#apiCopy').addEventListener('click',function(){var t=D.$('#apiToken').textContent;if(!t)return;if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){D.setStatus('#apiStatus','Copied API key.','ok')}).catch(function(){D.setStatus('#apiStatus','Copy failed — select manually.','bad')})}else{D.setStatus('#apiStatus','Select and copy the key manually.','bad')}});
 loadKeys();
 })();

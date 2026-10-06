@@ -2190,6 +2190,9 @@ try {
             if (devil_security_recaptcha_required() && !devil_security_verify_recaptcha((string)($in['recaptcha_token'] ?? ''), client_ip())) {
                 json_out(['ok' => false, 'error' => 'Security verification failed. Please refresh and try again.'], 403);
             }
+            if (devil_security_turnstile_required() && !devil_security_verify_turnstile((string)($in['turnstile_token'] ?? ''), client_ip())) {
+                json_out(['ok' => false, 'error' => 'Cloudflare security verification failed. Please complete the verification and try again.'], 403);
+            }
             $existing = find_user_by_email($email) !== null;
             [$allowedEmail, $emailBlockMsg] = devil_security_email_auth_status($email, $existing);
             if (!$allowedEmail) { json_out(['ok' => false, 'error' => $emailBlockMsg], 403); }
@@ -2467,6 +2470,9 @@ try {
         $in = input_json();
         if (devil_security_recaptcha_required() && !devil_security_verify_recaptcha((string)($in['recaptcha_token'] ?? ''), client_ip())) {
             json_out(['ok' => false, 'error' => 'Security verification failed. Please refresh and try again.'], 403);
+        }
+        if (devil_security_turnstile_required() && !devil_security_verify_turnstile((string)($in['turnstile_token'] ?? ''), client_ip())) {
+            json_out(['ok' => false, 'error' => 'Cloudflare security verification failed. Please complete the verification and try again.'], 403);
         }
         $all = load_dev_keys();
         $active = 0;

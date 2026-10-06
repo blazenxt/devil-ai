@@ -19,6 +19,7 @@ if (isset($_SESSION['devil_uid'])) {
 }
 require_once __DIR__ . '/inc/icons.php';
 $recaptchaSiteKey = devil_security_recaptcha_site_key();
+$turnstileSiteKey = function_exists('devil_security_turnstile_site_key') ? devil_security_turnstile_site_key() : '';
 
 /* ── magic link (?token=…) — server-side verify + sign-in ── */
 $tokenNote = null;
@@ -89,6 +90,7 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Devil AI">
 <?php if ($recaptchaSiteKey !== ''): ?><script src="https://www.google.com/recaptcha/api.js?render=<?= htmlspecialchars($recaptchaSiteKey, ENT_QUOTES) ?>" async defer></script><?php endif; ?>
+<?php if ($turnstileSiteKey !== ''): ?><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script><?php endif; ?>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -172,6 +174,7 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:18
       <h1>Welcome</h1>
       <p class="sub">Enter your email — we'll send you a one-time login code. No passwords, ever.</p>
       <form id="emailForm" novalidate>
+<?php if ($turnstileSiteKey !== ''): ?><div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($turnstileSiteKey, ENT_QUOTES) ?>" data-callback="devilTurnstileReady"></div><?php endif; ?>
         <label for="email">Email</label>
         <div class="inrow"><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required autofocus></div>
         <p class="formnote">New here? Just enter your email — your account is created automatically.</p>
@@ -214,6 +217,8 @@ function post(action, body) {
     .catch(function () { return { ok: false, error: 'Network error — please try again.' }; });
 }
 var RECAPTCHA_SITE_KEY = <?= json_encode($recaptchaSiteKey) ?>;
+var TURNSTILE_TOKEN = "";
+window.devilTurnstileReady=function(t){TURNSTILE_TOKEN=t||"";};
 function recaptchaToken(action) {
   if (!RECAPTCHA_SITE_KEY || !window.grecaptcha) { return Promise.resolve(''); }
   return new Promise(function (resolve) {
@@ -239,7 +244,7 @@ $('#emailForm').addEventListener('submit', async function (e) {
   if (!email) { showErr($('#e1err'), 'Please enter your email address.'); return; }
   busy($('#e1btn'), true);
   var token = await recaptchaToken('login');
-  var j = await post('otp_request', { email: email, recaptcha_token: token });
+  var j = await post('otp_request', { email: email, recaptcha_token: token, turnstile_token: TURNSTILE_TOKEN });
   busy($('#e1btn'), false);
   if (j.ok) {
     email = email.toLowerCase();
@@ -274,7 +279,7 @@ $('#resend').addEventListener('click', async function () {
   if (resendT) { return; }
   hideErr($('#e2err'));
   var token = await recaptchaToken('login_resend');
-  var j = await post('otp_request', { email: email, recaptcha_token: token });
+  var j = await post('otp_request', { email: email, recaptcha_token: token, turnstile_token: TURNSTILE_TOKEN });
   if (j.ok) {
     var left = 60;
     var el = $('#resend');

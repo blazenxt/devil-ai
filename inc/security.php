@@ -302,6 +302,26 @@ function devil_security_config(): array {
     $runtime = devil_sec_json('config.json');
     return array_merge($cfg, $runtime);
 }
+function devil_security_turnstile_site_key(): string {
+    $cfg = devil_security_config();
+    return (string)($cfg['turnstile_site_key'] ?? '');
+}
+function devil_security_turnstile_required(): bool {
+    $cfg = devil_security_config();
+    return (string)($cfg['turnstile_secret_key'] ?? '') !== '' && (string)($cfg['turnstile_site_key'] ?? '') !== '';
+}
+function devil_security_verify_turnstile(string $token, string $ip = ''): bool {
+    $cfg = devil_security_config();
+    $secret = (string)($cfg['turnstile_secret_key'] ?? '');
+    if ($secret === '') { return true; }
+    if ($token === '') { return false; }
+    $body = http_build_query(['secret' => $secret, 'response' => $token, 'remoteip' => $ip]);
+    $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/x-www-form-urlencoded\r\n", 'content' => $body, 'timeout' => 8, 'ignore_errors' => true]]);
+    $raw = @file_get_contents('https://challenges.cloudflare.com/turnstile/v0/siteverify', false, $ctx);
+    if ($raw === false) { return false; }
+    $j = json_decode($raw, true);
+    return is_array($j) && !empty($j['success']);
+}
 function devil_security_recaptcha_site_key(): string {
     $cfg = devil_security_config();
     return !empty($cfg['security_require_recaptcha']) ? (string)($cfg['recaptcha_site_key'] ?? '') : '';
