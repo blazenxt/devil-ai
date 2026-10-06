@@ -9,6 +9,7 @@ if (!defined('DEVIL_SESSION_LIFETIME')) {
 }
 
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/security_store.php';
 devil_security_boot();
 
 function devil_is_https(): bool {
