@@ -1,5 +1,4 @@
 const ORIGIN = 'https://blazepanel.mywp.info';
-const BACKEND_ORIGIN = 'https://rdp.mywp.info';
 const APP_BASE = '/devil-ai';
 const PRIMARY_HOST = 'ai.devil.blazenxt.com';
 const HOST_REDIRECTS = {
@@ -168,10 +167,10 @@ function securityBlockResponse(request, reason) {
 
 function mapToOriginPath(pathname, host) {
   if (host === API_HOST) {
-    if (API_DOC_PATHS.has(pathname)) return '/developers_docs.php';
-    if (pathname === '/widget.js' || pathname === '/support-widget.js') return '/support-widget.js';
-    if (pathname === '/openapi.json') return '/openapi.json';
-    return pathname;
+    if (API_DOC_PATHS.has(pathname)) return APP_BASE + '/developers_docs.php';
+    if (pathname === '/widget.js' || pathname === '/support-widget.js') return APP_BASE + '/support-widget.js';
+    if (pathname === '/openapi.json') return APP_BASE + '/openapi.json';
+    return APP_BASE + pathname;
   }
   if (pathname === APP_BASE || pathname.startsWith(APP_BASE + '/')) return pathname;
   if (pathname === '/') return APP_BASE + '/';
@@ -237,14 +236,9 @@ async function handleRequest(request) {
       incomingUrl.protocol = 'https:';
       return Response.redirect(incomingUrl.toString(), 301);
     }
-    if (host === API_HOST && request.method === 'OPTIONS') {
-      const origin = request.headers.get('Origin') || '';
-      const allowed = ['https://ai.devil.blazenxt.com','https://ai.devil.blazenxt.in'].includes(origin) ? origin : 'https://ai.devil.blazenxt.com';
-      return new Response(null, {status:204, headers:{'Access-Control-Allow-Origin':allowed,'Access-Control-Allow-Credentials':'true','Access-Control-Allow-Headers':'Authorization, Content-Type, X-Devil-API-Key','Access-Control-Allow-Methods':'GET, POST, OPTIONS','Vary':'Origin'}});
-    }
     const reason = await blockReason(request, incomingUrl);
     if (reason) return securityBlockResponse(request, reason);
-    const originUrl = new URL(host === API_HOST ? BACKEND_ORIGIN : ORIGIN);
+    const originUrl = new URL(ORIGIN);
     originUrl.pathname = mapToOriginPath(incomingUrl.pathname, host);
     originUrl.search = incomingUrl.search;
 
@@ -254,7 +248,6 @@ async function handleRequest(request) {
     headers.set('X-Forwarded-Proto', incomingUrl.protocol.replace(':', ''));
     headers.set('X-Devil-AI-Proxy', 'cloudflare');
     headers.set('X-Devil-Client-IP', request.headers.get('CF-Connecting-IP') || '');
-    headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
     headers.set('X-Devil-Client-ASN', String(cf.asn || ''));
     headers.set('X-Devil-Client-ASO', String(cf.asOrganization || cf.asnOrganization || ''));
     headers.set('X-Devil-Client-Country', String(cf.country || ''));
