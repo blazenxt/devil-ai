@@ -315,7 +315,7 @@ function devil_security_verify_turnstile(string $token, string $ip = ''): bool {
     $secret = (string)($cfg['turnstile_secret_key'] ?? '');
     if ($secret === '') { return true; }
     if ($token === '') { return false; }
-    $body = http_build_query(['secret' => $secret, 'response' => $token, 'remoteip' => $ip]);
+    $body = http_build_query(['secret' => $secret, 'response' => $token]);
     $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/x-www-form-urlencoded\r\n", 'content' => $body, 'timeout' => 8, 'ignore_errors' => true]]);
     $raw = @file_get_contents('https://challenges.cloudflare.com/turnstile/v0/siteverify', false, $ctx);
     if ($raw === false) { return false; }
@@ -335,7 +335,7 @@ function devil_security_verify_recaptcha(string $token, string $ip = ''): bool {
     $secret = (string)($cfg['recaptcha_secret_key'] ?? '');
     if ($secret === '') { return true; }
     if ($token === '') { return false; }
-    $body = http_build_query(['secret' => $secret, 'response' => $token, 'remoteip' => $ip]);
+    $body = http_build_query(['secret' => $secret, 'response' => $token]);
     $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/x-www-form-urlencoded\r\n", 'content' => $body, 'timeout' => 8, 'ignore_errors' => true]]);
     $raw = @file_get_contents('https://www.google.com/recaptcha/api/siteverify', false, $ctx);
     if ($raw === false) { return false; }
