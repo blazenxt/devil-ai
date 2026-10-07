@@ -74,13 +74,15 @@ if(window.DevilCaptcha&&(window.DEVIL_DEV_TURNSTILE_SITE_KEY||window.DEVIL_DEV_R
     visibleHost:'#captchaTurnstile'
   });
 }
-D.$('#apiCreate').addEventListener('click',function(){
+function createKey(){
   var name=D.$('#apiKeyName').value;
   if(cap&&!cap.ready()){D.setStatus('#apiStatus','Please complete the security check first.','bad');return}
   D.setStatus('#apiStatus','Security check…');
-  var go=function(tk){D.setStatus('#apiStatus','Creating API key…');D.api('dev_key_create',{name:name,recaptcha_token:tk.rec,recaptcha_v2_token:tk.v2,turnstile_token:tk.ts}).then(function(j){if(j.ok){if(cap){cap.resetAfterUse()}D.$('#apiTokenBox').classList.add('show');D.$('#apiToken').textContent=j.token||'';D.$('#apiKeyName').value='';D.setStatus('#apiStatus','API key created. Copy it now.','ok');loadKeys()}else{if(cap){cap.handleResponse(j)}D.setStatus('#apiStatus',j.error||'Could not create API key.','bad')}})};
+  if(cap){cap.retry=createKey}
+  var go=function(tk){D.setStatus('#apiStatus','Creating API key…');D.api('dev_key_create',{name:name,recaptcha_token:tk.rec,recaptcha_v2_token:tk.v2,turnstile_token:tk.ts}).then(function(j){if(j.ok){if(cap){cap.resetAfterUse();cap.retry=null}D.$('#apiTokenBox').classList.add('show');D.$('#apiToken').textContent=j.token||'';D.$('#apiKeyName').value='';D.setStatus('#apiStatus','API key created. Copy it now.','ok');loadKeys()}else{if(cap){cap.handleResponse(j)}D.setStatus('#apiStatus',j.error||'Could not create API key.','bad')}})};
   if(cap){cap.ensure('dev_key_create').then(go)}else{go({ts:'',rec:'',v2:''})}
-});
+}
+D.$('#apiCreate').addEventListener('click',createKey);
 D.$('#apiCopy').addEventListener('click',function(){var t=D.$('#apiToken').textContent;if(!t)return;if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){D.setStatus('#apiStatus','Copied API key.','ok')}).catch(function(){D.setStatus('#apiStatus','Copy failed — select manually.','bad')})}else{D.setStatus('#apiStatus','Select and copy the key manually.','bad')}});
 loadKeys();
 })();

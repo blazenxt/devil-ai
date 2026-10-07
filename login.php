@@ -301,18 +301,18 @@ var email = '';
 var step1 = $('#step1'), step2 = $('#step2');
 
 /* step 1 → request code */
-$('#emailForm').addEventListener('submit', async function (e) {
-  e.preventDefault();
+async function submitEmail() {
   hideErr($('#e1err'));
   email = $('#email').value.trim();
   if (!email) { showErr($('#e1err'), 'Please enter your email address.'); return; }
   if (cap && !cap.ready()) { showErr($('#e1err'), 'Please complete the security check first.'); return; }
   busy($('#e1btn'), true);
+  if (cap) { cap.retry = submitEmail; }
   var tk = cap ? await cap.ensure('login') : { ts: '', rec: '', v2: '' };
   var j = await post('otp_request', { email: email, recaptcha_token: tk.rec, recaptcha_v2_token: tk.v2, turnstile_token: tk.ts });
   busy($('#e1btn'), false);
   if (j.ok) {
-    if (cap) { cap.resetAfterUse(); }
+    if (cap) { cap.resetAfterUse(); cap.retry = null; }
     email = email.toLowerCase();
     step1.classList.add('hidden');
     step2.classList.remove('hidden');
@@ -324,7 +324,8 @@ $('#emailForm').addEventListener('submit', async function (e) {
     if (cap) { cap.handleResponse(j); }
     showErr($('#e1err'), j.error || 'Could not send the code.');
   }
-});
+}
+$('#emailForm').addEventListener('submit', function (e) { e.preventDefault(); submitEmail(); });
 
 /* step 2 → verify */
 $('#codeForm').addEventListener('submit', async function (e) {
@@ -342,14 +343,15 @@ $('#codeForm').addEventListener('submit', async function (e) {
 
 /* resend with 60s cooldown */
 var resendT = null;
-$('#resend').addEventListener('click', async function () {
+async function resendCode() {
   if (resendT) { return; }
   if (cap && !cap.ready()) { showErr($('#e2err'), 'Please complete the security check first.'); return; }
   hideErr($('#e2err'));
+  if (cap) { cap.retry = resendCode; }
   var tk = cap ? await cap.ensure('login_resend') : { ts: '', rec: '', v2: '' };
   var j = await post('otp_request', { email: email, recaptcha_token: tk.rec, recaptcha_v2_token: tk.v2, turnstile_token: tk.ts });
   if (j.ok) {
-    if (cap) { cap.resetAfterUse(); }
+    if (cap) { cap.resetAfterUse(); cap.retry = null; }
     var left = 60;
     var el = $('#resend');
     el.classList.add('off');
@@ -365,7 +367,8 @@ $('#resend').addEventListener('click', async function () {
     if (cap) { cap.handleResponse(j); cap.gate(); }
     showErr($('#e2err'), j.error || 'Could not resend.');
   }
-});
+}
+$('#resend').addEventListener('click', resendCode);
 
 /* back to step 1 */
 $('#changeEmail').addEventListener('click', function () {
