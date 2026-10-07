@@ -76,8 +76,8 @@ function devil_security_store_event(string $uid, string $type, array $details = 
     devil_security_store_write('audit', $events);
 }
 
-function devil_security_record_login(string $uid, string $method): void {
-    if ($uid === '' || $method === '') { return; }
+function devil_security_record_login(string $uid, string $method): ?array {
+    if ($uid === '' || $method === '') { return null; }
     $hash = substr(hash('sha256', $uid), 0, 32);
     $ip = substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64);
     $ua = substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 240);
@@ -93,7 +93,7 @@ function devil_security_record_login(string $uid, string $method): void {
     }
     $events = devil_security_store_read('login_history');
     $id = 'lh_' . bin2hex(random_bytes(12));
-    $events[$id] = [
+    $rec = [
         'id' => $id,
         'uid' => $hash,
         'method' => substr($method, 0, 24),
@@ -102,13 +102,40 @@ function devil_security_record_login(string $uid, string $method): void {
         'new_device' => $newDevice,
         'created' => time(),
     ];
+    $events[$id] = $rec;
     // Keep the login history bounded without deleting user/chat data.
     if (count($events) > 1000) {
         uasort($events, static function ($a, $b) { return (int)($a['created'] ?? 0) <=> (int)($b['created'] ?? 0); });
         $events = array_slice($events, -1000, null, true);
     }
     devil_security_store_write('login_history', $events);
-    devil_security_store_event($uid, 'login', ['method' => substr($method, 0, 24), 'new_device' => $newDevice]);
+    devil_security_store_event($uid, 'login', ['method' => $rec['method'], 'new_device' => $newDevice]);
+    /* Suspicious-login alert: a sign-in from an unrecognized device/browser. */
+    if ($newDevice) {
+        devil_security_store_alert($uid, 'new_device', ['ip' => $ip, 'user_agent' => $ua, 'method' => $rec['method']]);
+    }
+    return $rec;
+}
+
+/* Append a security alert for a user (bounded store, newest kept). */
+function devil_security_store_alert(string $uid, string $type, array $details = []): void {
+    if ($uid === '' || $type === '') { return; }
+    $alerts = devil_security_store_read('security_alerts');
+    $id = 'sa_' . bin2hex(random_bytes(12));
+    $alerts[$id] = [
+        'id' => $id,
+        'uid' => substr(hash('sha256', $uid), 0, 32),
+        'type' => substr($type, 0, 40),
+        'details' => $details,
+        'created' => time(),
+        'read' => false,
+    ];
+    if (count($alerts) > 2000) {
+        uasort($alerts, static function ($a, $b) { return (int)($a['created'] ?? 0) <=> (int)($b['created'] ?? 0); });
+        $alerts = array_slice($alerts, -2000, null, true);
+    }
+    devil_security_store_write('security_alerts', $alerts);
+    devil_security_store_event($uid, 'security_alert', ['type' => substr($type, 0, 40)]);
 }
 
 function devil_security_session_id(): string {

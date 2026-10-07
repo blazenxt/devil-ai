@@ -313,7 +313,7 @@ function devil_security_turnstile_required(): bool {
 function devil_security_verify_turnstile(string $token, string $ip = ''): bool {
     $cfg = devil_security_config();
     $secret = (string)($cfg['turnstile_secret_key'] ?? '');
-    if ($secret === '') { return true; }
+    if ($secret === '') { return false; } /* fail closed — never pass when unconfigured */
     if ($token === '') { return false; }
     $body = http_build_query(['secret' => $secret, 'response' => $token, 'remoteip' => $ip]);
     $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/x-www-form-urlencoded\r\n", 'content' => $body, 'timeout' => 8, 'ignore_errors' => true]]);
@@ -333,7 +333,7 @@ function devil_security_recaptcha_required(): bool {
 function devil_security_verify_recaptcha(string $token, string $ip = ''): bool {
     $cfg = devil_security_config();
     $secret = (string)($cfg['recaptcha_secret_key'] ?? '');
-    if ($secret === '') { return true; }
+    if ($secret === '') { return false; } /* fail closed — never pass when unconfigured */
     if ($token === '') { return false; }
     $body = http_build_query(['secret' => $secret, 'response' => $token, 'remoteip' => $ip]);
     $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/x-www-form-urlencoded\r\n", 'content' => $body, 'timeout' => 8, 'ignore_errors' => true]]);

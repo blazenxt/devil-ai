@@ -410,7 +410,7 @@ function rate_ok(string $file, string $key, int $max, int $windowSec): bool {
     }
     if (count($hits) >= $max) {
         $map[$key] = $hits;
-        @file_put_contents($path, json_encode($map), LOCK_EX);
+        save_json_atomic($path, $map);
         return false;
     }
     $hits[] = $now;
@@ -421,7 +421,7 @@ function rate_ok(string $file, string $key, int $max, int $windowSec): bool {
             if ($fresh === []) { unset($map[$k]); } else { $map[$k] = $fresh; }
         }
     }
-    @file_put_contents($path, json_encode($map), LOCK_EX);
+    save_json_atomic($path, $map);
     return true;
 }
 
@@ -2063,7 +2063,7 @@ function public_chat_payload(array $chat, array $user): array {
         'source_chat' => (string)($chat['id'] ?? ''),
         'source_slug' => (string)($chat['slug'] ?? ''),
         'source_variant' => (string)($chat['active_variant'] ?? ''),
-        'shared_by' => ['name' => (string)($user['name'] ?? 'Devil user')],
+        'shared_by' => ['name' => (string)($user['name'] ?? 'Devil user'), 'uid' => (string)($user['id'] ?? '')],
         'message_count' => count($messages),
         'messages' => $messages,
     ];
@@ -2087,7 +2087,8 @@ function login_email(string $email): ?array {
             session_regenerate_id(true);
             $_SESSION['devil_uid'] = (string)$u['id'];
             devil_session_refresh();
-            devil_security_record_login((string)$u['id'], 'email_code');
+            $loginRec = devil_security_record_login((string)$u['id'], 'email_code');
+            security_alert_email($u, $loginRec);
             return $u;
         }
     }
@@ -2112,6 +2113,25 @@ function devil_api_recaptcha_gate(array $in): void {
     if (!$v3ok && !$v2ok) {
         json_out(['ok' => false, 'error' => 'Security verification failed. Please complete the verification and try again.'], 403);
     }
+}
+
+/* Best-effort email when an existing account is used from a new device/browser. */
+function security_alert_email(array $user, ?array $loginRec): void {
+    if (empty($loginRec['new_device'])) { return; }
+    $email = strtolower(trim((string)($user['email'] ?? '')));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) { return; }
+    $when = date('Y-m-d H:i T');
+    $ip = (string)($loginRec['ip'] ?? '');
+    $ua = mb_substr((string)($loginRec['user_agent'] ?? ''), 0, 200);
+    $html = '<div style="font-family:Segoe UI,Arial,sans-serif;line-height:1.6">'
+        . '<h2>New sign-in to your Devil AI account</h2>'
+        . '<p>Your account was just used to sign in from a device we don\'t recognize.</p>'
+        . '<p><b>Time:</b> ' . htmlspecialchars($when, ENT_QUOTES) . '<br>'
+        . '<b>IP address:</b> ' . htmlspecialchars($ip, ENT_QUOTES) . '<br>'
+        . '<b>Browser:</b> ' . htmlspecialchars($ua, ENT_QUOTES) . '</p>'
+        . '<p>If this was you, you can ignore this email. If it wasn\'t you, sign in and use <b>Logout from all devices</b> in Settings → Active sessions right away.</p></div>';
+    $text = "New sign-in to your Devil AI account\nTime: {$when}\nIP address: {$ip}\nBrowser: {$ua}\n\nIf this was you, you can ignore this email. If it wasn't you, sign in and use 'Logout from all devices' in Settings > Active sessions right away.";
+    @devil_mail($email, 'New sign-in to your Devil AI account', $html, $text);
 }
 
 /* ══════════════ MAIN ══════════════ */
@@ -2467,7 +2487,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history'], true)) {
+    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -2495,6 +2515,56 @@ try {
         foreach ($all as $item) { if (is_array($item) && ($item['uid'] ?? '') === $hash) { $mine[] = $item; } }
         usort($mine, static function($a,$b){ return (int)($b['created'] ?? 0) <=> (int)($a['created'] ?? 0); });
         json_out(['ok'=>true,'history'=>array_slice($mine, 0, 25)]);
+    }
+    if ($action === 'security_alerts' && $method === 'GET') {
+        $all = devil_security_store_read('security_alerts'); $mine = []; $hash = substr(hash('sha256', $uid), 0, 32);
+        foreach ($all as $item) { if (is_array($item) && ($item['uid'] ?? '') === $hash) { $mine[] = $item; } }
+        usort($mine, static function($a,$b){ return (int)($b['created'] ?? 0) <=> (int)($a['created'] ?? 0); });
+        json_out(['ok'=>true,'alerts'=>array_slice($mine, 0, 25)]);
+    }
+    if ($action === 'security_alert_dismiss' && $method === 'POST') {
+        $in = input_json();
+        $id = preg_replace('/[^a-zA-Z0-9_]/', '', (string)($in['id'] ?? ''));
+        $all = devil_security_store_read('security_alerts'); $hash = substr(hash('sha256', $uid), 0, 32); $removed = false;
+        foreach ($all as $key => $item) {
+            if (is_array($item) && ($item['uid'] ?? '') === $hash && (string)($item['id'] ?? '') === $id) { unset($all[$key]); $removed = true; }
+        }
+        if ($removed) { devil_security_store_write('security_alerts', $all); devil_security_store_event($uid, 'security_alert_dismissed', ['id' => $id]); }
+        json_out(['ok'=>true,'dismissed'=>$removed]);
+    }
+    if ($action === 'security_export' && $method === 'GET') {
+        /* Privacy export: everything this account owns, as a JSON download.
+           Never includes API key hashes or tokens. */
+        $export = [
+            'exported_at' => date('c'),
+            'profile' => ['id' => $uid, 'name' => (string)($user['name'] ?? ''), 'email' => (string)($user['email'] ?? ''), 'created' => (int)($user['created'] ?? 0)],
+            'chats' => [],
+            'api_keys' => [],
+            'login_history' => [],
+            'security_alerts' => [],
+        ];
+        foreach (list_chats($uid) as $c) {
+            if (!is_array($c) || empty($c['id'])) { continue; }
+            $full = load_chat($uid, (string)$c['id']);
+            $export['chats'][] = $full ?: $c;
+        }
+        foreach (load_dev_keys() as $rec) {
+            if (!is_array($rec) || (string)($rec['uid'] ?? '') !== $uid) { continue; }
+            $export['api_keys'][] = [
+                'id' => (string)($rec['id'] ?? ''), 'name' => (string)($rec['name'] ?? ''),
+                'prefix' => (string)($rec['prefix'] ?? ''), 'last4' => (string)($rec['last4'] ?? ''),
+                'created' => (int)($rec['created'] ?? 0), 'revoked' => !empty($rec['revoked']),
+                'requests' => (int)($rec['requests'] ?? 0), 'last_used' => (int)($rec['last_used'] ?? 0),
+            ];
+        }
+        $hash = substr(hash('sha256', $uid), 0, 32);
+        foreach (devil_security_store_read('login_history') as $item) { if (is_array($item) && ($item['uid'] ?? '') === $hash) { $export['login_history'][] = $item; } }
+        foreach (devil_security_store_read('security_alerts') as $item) { if (is_array($item) && ($item['uid'] ?? '') === $hash) { $export['security_alerts'][] = $item; } }
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename="devil-ai-export-' . date('Ymd-His') . '.json"');
+        header('Cache-Control: no-store');
+        echo json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
     }
 
     if ($action === 'dev_keys' && $method === 'GET') {
@@ -2617,10 +2687,33 @@ try {
         if (!otp_consume((string)$user['email'], $code, 'delete')) {
             json_out(['ok' => false, 'error' => 'Wrong or expired code. Request a new one.'], 403);
         }
+        /* collect this account's chat ids first, so their public shares can be removed too */
+        $myChatIds = [];
+        foreach (list_chats($uid) as $c) { if (is_array($c) && !empty($c['id'])) { $myChatIds[(string)$c['id']] = true; } }
+        /* revoke this account's developer API keys — a deleted account must not keep API access */
+        $keys = load_dev_keys(); $keysChanged = false;
+        foreach ($keys as $kid => $rec) {
+            if (is_array($rec) && (string)($rec['uid'] ?? '') === $uid && empty($rec['revoked'])) { $keys[$kid]['revoked'] = true; $keysChanged = true; }
+        }
+        if ($keysChanged) { save_dev_keys($keys); }
+        /* remove this account's public shares (by source chat, or by owner uid on new shares) */
+        foreach (glob(shares_dir() . '/*.json') ?: [] as $sf) {
+            $sh = load_json($sf);
+            $srcChat = (string)($sh['source_chat'] ?? '');
+            $byUid = (string)($sh['shared_by']['uid'] ?? '');
+            if (($srcChat !== '' && isset($myChatIds[$srcChat])) || ($byUid !== '' && $byUid === $uid)) { @unlink($sf); }
+        }
+        /* remove this account's feedback entries */
+        $fb = load_json(feedback_path()); $fbChanged = false;
+        foreach ($fb as $k => $entry) {
+            if (is_array($entry) && (string)(($entry['user'] ?? [])['id'] ?? '') === $uid) { unset($fb[$k]); $fbChanged = true; }
+        }
+        if ($fbChanged) { save_json_atomic(feedback_path(), $fb); }
         rrmdir(chats_dir($uid));
         $users = load_users();
         unset($users[$uid]);
         save_users($users);
+        devil_security_session_revoke($uid);
         devil_session_destroy_all();
         json_out(['ok' => true]);
     }
