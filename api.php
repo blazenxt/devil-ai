@@ -2102,6 +2102,18 @@ function login_email(string $email): ?array {
     return $users[$uid];
 }
 
+/* reCAPTCHA gate: accepts the invisible v3 token, with the visible v2
+   checkbox token as a fallback when the auto verification fails. */
+function devil_api_recaptcha_gate(array $in): void {
+    if (!devil_security_recaptcha_required()) { return; }
+    $v3ok = devil_security_verify_recaptcha((string)($in['recaptcha_token'] ?? ''), client_ip());
+    $v2token = (string)($in['recaptcha_v2_token'] ?? '');
+    $v2ok = $v2token !== '' && devil_security_verify_recaptcha_v2($v2token, client_ip());
+    if (!$v3ok && !$v2ok) {
+        json_out(['ok' => false, 'error' => 'Security verification failed. Please complete the verification and try again.'], 403);
+    }
+}
+
 /* ══════════════ MAIN ══════════════ */
 
 try {
@@ -2189,9 +2201,7 @@ try {
         } else {
             $email = strtolower(trim((string)($in['email'] ?? '')));
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { json_out(['ok' => false, 'error' => 'Please enter a valid email address.']); }
-            if (devil_security_recaptcha_required() && !devil_security_verify_recaptcha((string)($in['recaptcha_token'] ?? ''), client_ip())) {
-                json_out(['ok' => false, 'error' => 'Security verification failed. Please refresh and try again.'], 403);
-            }
+            devil_api_recaptcha_gate($in);
             if (devil_security_turnstile_required() && !devil_security_verify_turnstile((string)($in['turnstile_token'] ?? ''), client_ip())) {
                 json_out(['ok' => false, 'error' => 'Cloudflare security verification failed. Please complete the verification and try again.'], 403);
             }
@@ -2280,6 +2290,8 @@ try {
                 'recaptcha_site_key' => (string)($cfg['recaptcha_site_key'] ?? ''),
                 'recaptcha_secret_set' => (string)($cfg['recaptcha_secret_key'] ?? '') !== '',
                 'recaptcha_min_score' => (float)($cfg['recaptcha_min_score'] ?? 0.45),
+                'recaptcha_v2_site_key' => (string)($cfg['recaptcha_v2_site_key'] ?? ''),
+                'recaptcha_v2_secret_set' => (string)($cfg['recaptcha_v2_secret_key'] ?? '') !== '',
                 'security_block_disposable_emails' => !isset($cfg['security_block_disposable_emails']) || !empty($cfg['security_block_disposable_emails']),
                 'security_block_subdomain_emails' => !isset($cfg['security_block_subdomain_emails']) || !empty($cfg['security_block_subdomain_emails']),
                 'security_extra_blocked_email_domains' => normalize_domain_list($cfg['security_extra_blocked_email_domains'] ?? []),
@@ -2328,6 +2340,12 @@ try {
             if ($sec !== '') { $new['recaptcha_secret_key'] = mb_substr($sec, 0, 260); }
         }
         if (!empty($in['recaptcha_secret_clear'])) { $new['recaptcha_secret_key'] = ''; }
+        if (isset($in['recaptcha_v2_site_key']) && is_string($in['recaptcha_v2_site_key'])) { $new['recaptcha_v2_site_key'] = mb_substr(trim($in['recaptcha_v2_site_key']), 0, 220); }
+        if (isset($in['recaptcha_v2_secret_key']) && is_string($in['recaptcha_v2_secret_key'])) {
+            $sec = trim($in['recaptcha_v2_secret_key']);
+            if ($sec !== '') { $new['recaptcha_v2_secret_key'] = mb_substr($sec, 0, 260); }
+        }
+        if (!empty($in['recaptcha_v2_secret_clear'])) { $new['recaptcha_v2_secret_key'] = ''; }
         if (isset($in['recaptcha_min_score'])) { $new['recaptcha_min_score'] = max(0.1, min(0.9, (float)$in['recaptcha_min_score'])); }
         if (array_key_exists('security_block_disposable_emails', $in)) { $new['security_block_disposable_emails'] = !empty($in['security_block_disposable_emails']); }
         if (array_key_exists('security_block_subdomain_emails', $in)) { $new['security_block_subdomain_emails'] = !empty($in['security_block_subdomain_emails']); }
@@ -2491,9 +2509,7 @@ try {
 
     if ($action === 'dev_key_create' && $method === 'POST') {
         $in = input_json();
-        if (devil_security_recaptcha_required() && !devil_security_verify_recaptcha((string)($in['recaptcha_token'] ?? ''), client_ip())) {
-            json_out(['ok' => false, 'error' => 'Security verification failed. Please refresh and try again.'], 403);
-        }
+        devil_api_recaptcha_gate($in);
         if (devil_security_turnstile_required() && !devil_security_verify_turnstile((string)($in['turnstile_token'] ?? ''), client_ip())) {
             json_out(['ok' => false, 'error' => 'Cloudflare security verification failed. Please complete the verification and try again.'], 403);
         }

@@ -95,6 +95,8 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <div class="switchrow"><span><b>reCAPTCHA v3 verification</b><small>Invisible Google verification for login/signup OTP requests.</small></span><button class="switch" id="recaptchaToggle" type="button" aria-pressed="false"></button></div>
         <div class="row"><div><label>reCAPTCHA site key</label><input id="recSite" placeholder="6Lc..."></div><div><label>reCAPTCHA min score</label><input id="recScore" type="number" step="0.05" min="0.1" max="0.9"></div></div>
         <label>reCAPTCHA secret key <span style="color:var(--dim2);font-weight:500">(leave empty to keep existing)</span></label><input id="recSecret" placeholder="Secret key is never displayed">
+        <label>reCAPTCHA v2 site key <span style="color:var(--dim2);font-weight:500">(optional — shows a checkbox if invisible verification fails)</span></label><input id="recV2Site" placeholder="6Lc...">
+        <label>reCAPTCHA v2 secret key <span style="color:var(--dim2);font-weight:500">(leave empty to keep existing)</span></label><input id="recV2Secret" placeholder="Secret key is never displayed">
         <div class="switchrow"><span><b>Block disposable/temp emails</b><small>Mailinator, 10MinuteMail, mail.tm, Yopmail, fake/spam/burner patterns, and your extra block list.</small></span><button class="switch" id="dispToggle" type="button" aria-pressed="true"></button></div>
         <div class="switchrow"><span><b>Block subdomain emails</b><small>Blocks user@mail.google.com and user@sub.company.com while allowing normal root domains and common co.in/co.uk style domains.</small></span><button class="switch" id="subToggle" type="button" aria-pressed="true"></button></div>
         <div class="row"><div><label>Extra blocked email domains</label><textarea id="blockedDomains" placeholder="one domain per line"></textarea></div><div><label>Trusted/exception domains</label><textarea id="trustedDomains" placeholder="one domain per line"></textarea></div></div>
@@ -185,6 +187,9 @@ function fill(cfg, sec, adminUser) {
   $('#recSecret').value = '';
   $('#recSecret').placeholder = CFG.recaptcha_secret_set ? 'Secret key saved — leave blank to keep' : 'Secret key is not set';
   $('#recScore').value = CFG.recaptcha_min_score || 0.45;
+  $('#recV2Site').value = CFG.recaptcha_v2_site_key || '';
+  $('#recV2Secret').value = '';
+  $('#recV2Secret').placeholder = CFG.recaptcha_v2_secret_set ? 'Secret key saved — leave blank to keep' : 'Secret key is not set';
   setSwitch($('#dispToggle'), CFG.security_block_disposable_emails !== false);
   setSwitch($('#subToggle'), CFG.security_block_subdomain_emails !== false);
   $('#blockedDomains').value = joinLines(CFG.security_extra_blocked_email_domains || []);
@@ -219,6 +224,8 @@ function payload() {
     security_require_recaptcha: getSwitch($('#recaptchaToggle')),
     recaptcha_site_key: $('#recSite').value.trim(),
     recaptcha_secret_key: $('#recSecret').value.trim(),
+    recaptcha_v2_site_key: $('#recV2Site').value.trim(),
+    recaptcha_v2_secret_key: $('#recV2Secret').value.trim(),
     recaptcha_min_score: parseFloat($('#recScore').value) || 0.45,
     security_block_disposable_emails: getSwitch($('#dispToggle')),
     security_block_subdomain_emails: getSwitch($('#subToggle')),

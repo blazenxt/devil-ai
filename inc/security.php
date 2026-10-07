@@ -344,3 +344,22 @@ function devil_security_verify_recaptcha(string $token, string $ip = ''): bool {
     if (isset($j['score']) && (float)$j['score'] < (float)($cfg['recaptcha_min_score'] ?? 0.45)) { return false; }
     return true;
 }
+
+/* Optional visible reCAPTCHA v2 checkbox — used as the fallback when the
+   invisible v3 verification fails. Verified with its own secret key. */
+function devil_security_recaptcha_v2_site_key(): string {
+    $cfg = devil_security_config();
+    return !empty($cfg['security_require_recaptcha']) ? (string)($cfg['recaptcha_v2_site_key'] ?? '') : '';
+}
+function devil_security_verify_recaptcha_v2(string $token, string $ip = ''): bool {
+    $cfg = devil_security_config();
+    $secret = (string)($cfg['recaptcha_v2_secret_key'] ?? '');
+    if ($secret === '') { return false; }
+    if ($token === '') { return false; }
+    $body = http_build_query(['secret' => $secret, 'response' => $token, 'remoteip' => $ip]);
+    $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/x-www-form-urlencoded\r\n", 'content' => $body, 'timeout' => 8, 'ignore_errors' => true]]);
+    $raw = @file_get_contents('https://www.google.com/recaptcha/api/siteverify', false, $ctx);
+    if ($raw === false) { return false; }
+    $j = json_decode($raw, true);
+    return is_array($j) && !empty($j['success']);
+}

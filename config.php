@@ -57,6 +57,8 @@ return [
     'security_require_recaptcha' => false,
     'recaptcha_site_key' => '',
     'recaptcha_secret_key' => '',
+    'recaptcha_v2_site_key' => '',
+    'recaptcha_v2_secret_key' => '',
     'recaptcha_min_score' => 0.45,
     'security_block_disposable_emails' => true,
     'security_block_subdomain_emails' => true,
