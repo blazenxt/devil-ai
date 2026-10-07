@@ -1,4 +1,5 @@
 const ORIGIN = 'https://blazepanel.mywp.info';
+const API_ORIGIN = 'https://rdp.mywp.info';
 const APP_BASE = '/devil-ai';
 const PRIMARY_HOST = 'ai.devil.blazenxt.com';
 const HOST_REDIRECTS = {
@@ -165,8 +166,9 @@ function securityBlockResponse(request, reason) {
   return new Response(html, { status: 403, headers });
 }
 
-function mapToOriginPath(pathname, host) {
+function mapToOriginPath(pathname, host, apiBackend) {
   if (host === API_HOST) {
+    if (apiBackend) return pathname; // API backend (files6) serves /v1 from the site root.
     if (API_DOC_PATHS.has(pathname)) return APP_BASE + '/developers_docs.php';
     if (pathname === '/widget.js' || pathname === '/support-widget.js') return APP_BASE + '/support-widget.js';
     if (pathname === '/openapi.json') return APP_BASE + '/openapi.json';
@@ -238,8 +240,9 @@ async function handleRequest(request) {
     }
     const reason = await blockReason(request, incomingUrl);
     if (reason) return securityBlockResponse(request, reason);
-    const originUrl = new URL(ORIGIN);
-    originUrl.pathname = mapToOriginPath(incomingUrl.pathname, host);
+    const apiBackend = host === API_HOST && (incomingUrl.pathname === '/v1' || incomingUrl.pathname.startsWith('/v1/'));
+    const originUrl = new URL(apiBackend ? API_ORIGIN : ORIGIN);
+    originUrl.pathname = mapToOriginPath(incomingUrl.pathname, host, apiBackend);
     originUrl.search = incomingUrl.search;
 
     const headers = new Headers(request.headers);
