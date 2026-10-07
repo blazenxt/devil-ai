@@ -192,6 +192,8 @@ a{text-decoration:none;color:inherit}button,input,select{font:inherit}button{cur
 
       <section class="card" id="security-sessions"><h2>Active sessions</h2><p class="sub">Review devices signed in to your account and revoke unfamiliar sessions.</p><div id="securitySessions"><div class="sub">Loading sessions…</div></div><button class="btn danger" id="securityLogoutAll" type="button">Logout from all devices</button></section>
 
+      <section class="card" id="security-history"><h2>Login history</h2><p class="sub">Recent sign-ins to your account. If you don’t recognize one, use “Logout from all devices” above.</p><div id="securityHistory"><div class="sub">Loading history…</div></div></section>
+
       <section class="card" id="data">
         <h2><?= icon('server', 18) ?> Data controls</h2>
         <p class="sub">Download your chats or update cookie/privacy choices.</p>
@@ -301,6 +303,9 @@ if ('serviceWorker' in navigator) { window.addEventListener('load', function () 
 </script>
 <script>
 (function(){var box=document.getElementById('securitySessions');if(!box)return;function load(){fetch('api.php?action=security_sessions').then(function(r){return r.json()}).then(function(j){if(!j.ok)throw 0;box.innerHTML=(j.sessions||[]).map(function(x){var text=(x.user_agent||'Unknown browser')+' · '+(x.ip||'Unknown IP')+' · '+new Date((x.last_seen||0)*1000).toLocaleString();return '<div class="pillrow" style="justify-content:space-between;margin:9px 0"><span class="pill">'+text+(x.current?' · This device':'')+'</span>'+(x.current?'':'<button class="btn ghost revoke-session" data-id="'+x.id+'">Revoke</button>')+'</div>'}).join('')||'<div class="sub">No active sessions found.</div>';box.querySelectorAll('.revoke-session').forEach(function(b){b.onclick=function(){fetch('api.php?action=security_session_revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.id})}).then(load)}})}).catch(function(){box.innerHTML='<div class="sub">Could not load sessions.</div>'})}document.getElementById('securityLogoutAll').onclick=function(){if(confirm('Logout from all devices?'))fetch('api.php?action=security_logout_all',{method:'POST'}).then(function(){location.href='login.php'})};load()})();
+</script>
+<script>
+(function(){var box=document.getElementById('securityHistory');if(!box)return;function esc(s){var d=document.createElement('span');d.textContent=String(s==null?'':s);return d.innerHTML}function shortDevice(ua){ua=String(ua||'');var b=/Edg\//.test(ua)?'Edge':/Chrome\//.test(ua)?'Chrome':/Firefox\//.test(ua)?'Firefox':/Safari\//.test(ua)?'Safari':'';var o=/Windows/.test(ua)?'Windows':/Android/.test(ua)?'Android':/iPhone|iPad/.test(ua)?'iOS':/Mac OS/.test(ua)?'macOS':/Linux/.test(ua)?'Linux':'';return (b&&o)?(b+' on '+o):(b||o||'Unknown device')}function methodLabel(m){return ({email_code:'Email code',magic_link:'Magic link',github:'GitHub'})[String(m||'')]||'Sign-in'}function load(){fetch('api.php?action=security_login_history').then(function(r){return r.json()}).then(function(j){if(!j.ok)throw 0;var rows=(j.history||[]).map(function(x){var when=new Date((x.created||0)*1000).toLocaleString();return '<div class="pillrow" style="justify-content:space-between;margin:9px 0"><span class="pill">'+esc(methodLabel(x.method))+' · '+esc(shortDevice(x.user_agent))+' · '+esc(x.ip||'Unknown IP')+' · '+esc(when)+(x.new_device?' · <b style="color:var(--soft)">New device</b>':'')+'</span></div>'}).join('');box.innerHTML=rows||'<div class="sub">No sign-ins recorded yet.</div>'}).catch(function(){box.innerHTML='<div class="sub">Could not load login history.</div>'})}load()})();
 </script>
 </body>
 </html>

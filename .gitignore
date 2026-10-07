@@ -6,6 +6,8 @@ data/users.json
 data/chats/
 
 data/sessions/
+data/otps.json
+data/security/
 data/feedback.json
 data/shares/
 data/api_keys.json

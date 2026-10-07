@@ -52,7 +52,7 @@ if (isset($_GET['github_callback'])) {
     if ($email==='' && !empty($profile['email'])) $email=strtolower((string)$profile['email']);
     $usersFile=__DIR__.'/data/users.json';$users=json_decode((string)@file_get_contents($usersFile),true);if(!is_array($users))$users=[];$found=null;foreach($users as $u){if(strcasecmp((string)($u['email']??''),$email)===0){$found=$u;break;}}
     if($email===''||!$found){$uid='u'.bin2hex(random_bytes(8));$name=trim((string)($profile['name']??$profile['login']??'Devil'));$users[$uid]=['id'=>$uid,'name'=>mb_substr($name,0,60),'email'=>$email,'created'=>time(),'github_id'=>(string)($profile['id']??'')];@file_put_contents($usersFile,json_encode($users,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),LOCK_EX);$found=$users[$uid];}
-    session_regenerate_id(true);$_SESSION['devil_uid']=(string)$found['id'];$_SESSION['devil_name']=(string)($found['name']??'Devil');devil_session_refresh();header('Location: '.($oauthReturn ?? 'https://ai.devil.blazenxt.com/'));exit;
+    session_regenerate_id(true);$_SESSION['devil_uid']=(string)$found['id'];$_SESSION['devil_name']=(string)($found['name']??'Devil');devil_session_refresh();devil_security_record_login((string)$found['id'], 'github');header('Location: '.($oauthReturn ?? 'https://ai.devil.blazenxt.com/'));exit;
 }
 /* ── magic link (?token=…) — server-side verify + sign-in ── */
 $tokenNote = null;
@@ -96,6 +96,7 @@ if (isset($_GET['token']) && is_string($_GET['token'])) {
                         session_regenerate_id(true);
                         $_SESSION['devil_uid'] = (string)$found['id'];
                         devil_session_refresh();
+                        devil_security_record_login((string)$found['id'], 'magic_link');
                         $ok = true;
                         break;
                     }

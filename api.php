@@ -2087,6 +2087,7 @@ function login_email(string $email): ?array {
             session_regenerate_id(true);
             $_SESSION['devil_uid'] = (string)$u['id'];
             devil_session_refresh();
+            devil_security_record_login((string)$u['id'], 'email_code');
             return $u;
         }
     }
@@ -2097,6 +2098,7 @@ function login_email(string $email): ?array {
     session_regenerate_id(true);
     $_SESSION['devil_uid'] = $uid;
     devil_session_refresh();
+    devil_security_record_login($uid, 'email_code');
     return $users[$uid];
 }
 
@@ -2447,7 +2449,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all'], true)) {
+    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -2469,6 +2471,12 @@ try {
     }
     if ($action === 'security_logout_all' && $method === 'POST') {
         devil_security_session_revoke($uid); devil_session_destroy_all(); json_out(['ok'=>true]);
+    }
+    if ($action === 'security_login_history' && $method === 'GET') {
+        $all = devil_security_store_read('login_history'); $mine = []; $hash = substr(hash('sha256', $uid), 0, 32);
+        foreach ($all as $item) { if (is_array($item) && ($item['uid'] ?? '') === $hash) { $mine[] = $item; } }
+        usort($mine, static function($a,$b){ return (int)($b['created'] ?? 0) <=> (int)($a['created'] ?? 0); });
+        json_out(['ok'=>true,'history'=>array_slice($mine, 0, 25)]);
     }
 
     if ($action === 'dev_keys' && $method === 'GET') {

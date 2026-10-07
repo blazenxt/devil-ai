@@ -76,6 +76,41 @@ function devil_security_store_event(string $uid, string $type, array $details = 
     devil_security_store_write('audit', $events);
 }
 
+function devil_security_record_login(string $uid, string $method): void {
+    if ($uid === '' || $method === '') { return; }
+    $hash = substr(hash('sha256', $uid), 0, 32);
+    $ip = substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64);
+    $ua = substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 240);
+    /* A sign-in counts as a new device only when no other known session of
+       this user shares the same IP + browser fingerprint. The current session
+       is not in the store yet (it is touched on the next request). */
+    $newDevice = true;
+    foreach (devil_security_store_read('sessions') as $item) {
+        if (is_array($item) && ($item['uid'] ?? '') === $hash && ($item['ip'] ?? '') === $ip && ($item['user_agent'] ?? '') === $ua) {
+            $newDevice = false;
+            break;
+        }
+    }
+    $events = devil_security_store_read('login_history');
+    $id = 'lh_' . bin2hex(random_bytes(12));
+    $events[$id] = [
+        'id' => $id,
+        'uid' => $hash,
+        'method' => substr($method, 0, 24),
+        'ip' => $ip,
+        'user_agent' => $ua,
+        'new_device' => $newDevice,
+        'created' => time(),
+    ];
+    // Keep the login history bounded without deleting user/chat data.
+    if (count($events) > 1000) {
+        uasort($events, static function ($a, $b) { return (int)($a['created'] ?? 0) <=> (int)($b['created'] ?? 0); });
+        $events = array_slice($events, -1000, null, true);
+    }
+    devil_security_store_write('login_history', $events);
+    devil_security_store_event($uid, 'login', ['method' => substr($method, 0, 24), 'new_device' => $newDevice]);
+}
+
 function devil_security_session_id(): string {
     return hash('sha256', session_id());
 }
