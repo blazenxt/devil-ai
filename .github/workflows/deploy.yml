@@ -168,6 +168,7 @@ jobs:
           DEVIL_VERCEL_TOKEN: ${{ secrets.DEVIL_VERCEL_TOKEN }}
           DEVIL_VERCEL_TEAM_ID: ${{ secrets.DEVIL_VERCEL_TEAM_ID }}
           DEVIL_VERCEL_PROJECT_ID: ${{ secrets.DEVIL_VERCEL_PROJECT_ID }}
+          DEVIL_PREVIEW_KEY: ${{ secrets.DEVIL_PREVIEW_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ] && [ -z "${DEVIL_VERCEL_TOKEN:-}" ]; then
@@ -217,6 +218,12 @@ jobs:
                   'sandbox_provider': 'devil',
                   'sandbox_url': 'https://api.sandbox.devil.blazenxt.qzz.io',
               })
+          if os.environ.get('DEVIL_PREVIEW_KEY'):
+              # previews on our own domain (devil-preview Worker; skips the Daytona warning page)
+              cfg['preview_domain'] = 'preview.devil.blazenxthost.qzz.io'
+              cfg['preview_key'] = os.environ['DEVIL_PREVIEW_KEY']
+          else:
+              cfg.pop('preview_key', None)
           cfg.setdefault('agent_sandbox_max_steps', 30)
           path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
           print('sandbox config patched; provider:', cfg.get('sandbox_provider'), '| keys:', len(cfg))

@@ -99,6 +99,26 @@ function sbx_use(array $cfg, string $sid, bool $create = true): string {
     return 'vercel';
 }
 
+/**
+ * provider preview URL → our own preview domain (preview_domain + preview_key; proxied by the devil-preview Worker,
+ * which also skips Daytona's warning page). Unknown URLs are returned unchanged.
+ */
+function sbx_public_url(array $cfg, string $url): string {
+    $dom = trim((string)($cfg['preview_domain'] ?? ''), " .\t\n");
+    $key = (string)($cfg['preview_key'] ?? '');
+    if ($dom === '' || $key === '' || $url === '') { return $url; }
+    $h = strtolower((string)parse_url($url, PHP_URL_HOST));
+    if (preg_match('/^(\d{2,5})-([0-9a-f]{8})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{12})\.daytonaproxy01\.net$/', $h, $m)) {
+        $label = 'd' . $m[1] . '-' . $m[2] . $m[3] . $m[4] . $m[5] . $m[6];
+    } elseif (preg_match('/^(sb-[a-z0-9]{6,32})\.vercel\.run$/', $h, $m)) {
+        $label = 'v-' . $m[1];
+    } else {
+        return $url;
+    }
+    $path = (string)parse_url($url, PHP_URL_PATH);
+    return 'https://' . $label . '-' . substr(hash_hmac('sha256', $label, $key), 0, 10) . '.' . $dom . ($path !== '/' ? $path : '');
+}
+
 /** move a chat from Daytona to Vercel (full internet), copying its workspace. */
 function sbx_move_to_vercel(array $cfg, string $sid): array {
     if (sbx_backend($cfg, $sid) === 'vercel') { return ['ok' => true, 'already' => true]; }
@@ -230,7 +250,11 @@ function sbx_delete(array $cfg, string $sid, string $path): array {
     return $r['ok'] ? ['ok' => true] : ['ok' => false, 'error' => $r['error']];
 }
 function sbx_ports(array $cfg, string $sid): array {
-    if (sbx_is_cloud($cfg)) { return sbx_backend($cfg, $sid) === 'vercel' ? vcl_ports($cfg, $sid) : dyt_ports($cfg, $sid); }
+    if (sbx_is_cloud($cfg)) {
+        $r = sbx_backend($cfg, $sid) === 'vercel' ? vcl_ports($cfg, $sid) : dyt_ports($cfg, $sid);
+        foreach ((array)($r['ports'] ?? []) as $i => $row) { if (!empty($row['url'])) { $r['ports'][$i]['url'] = sbx_public_url($cfg, (string)$row['url']); } }
+        return $r;
+    }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/ports', '', 20);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'], 'ports' => []];
 }
