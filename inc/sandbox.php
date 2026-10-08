@@ -195,9 +195,23 @@ function sbx_run_tool(array $ctx, string $name, string $input): array {
             $out = (string)($r['stdout'] ?? '');
             if (preg_match('/__DEVIL_STILL_RUNNING__ pid=(\d+) log=(\S+)\n?/', $out, $m)) {
                 $tail = trim(str_replace($m[0], '', $out));
+                $meta = ['background' => true, 'pid' => (int)$m[1], 'log' => $m[2]];
+                /* a dev server started from bash (npm run dev, vite, flask…): hand back its preview URL */
+                $srv = '';
+                $p = sbx_ports($cfg, $sid);
+                foreach ((array)($p['ports'] ?? []) as $pp) {
+                    $pt = (int)($pp['port'] ?? 0);
+                    if ($pt < 1024 || $pt === 49983) { continue; }
+                    if (!empty($pp['localhost_only'])) {
+                        $srv .= "\nA server is listening on 127.0.0.1:{$pt} only, so the user's preview cannot reach it. Restart it bound to 0.0.0.0 with start_server (for Vite: npx vite --host 0.0.0.0 --port {$pt}).";
+                    } elseif (!empty($pp['url']) && empty($meta['url'])) {
+                        $meta['port'] = $pt; $meta['url'] = (string)$pp['url'];
+                        $srv .= "\nA server is running on port {$pt}. Preview URL: {$pp['url']} (the user sees it in the Preview tab — never give the user localhost links).";
+                    }
+                }
                 return ['ok' => true, 'text' => "The command is still running in the background after {$wait}s (pid {$m[1]}). "
-                    . "Its output keeps going to {$m[2]} — check it later with: tail -n 40 {$m[2]}  (or wait with: sleep 20; tail -n 40 {$m[2]}).\n"
-                    . ($tail !== '' ? "Output so far:\n" . $tail : '(no output yet)'), 'meta' => ['background' => true, 'pid' => (int)$m[1], 'log' => $m[2]]];
+                    . "Its output keeps going to {$m[2]} — check it later with: tail -n 40 {$m[2]}  (or wait with: sleep 20; tail -n 40 {$m[2]})." . $srv . "\n"
+                    . ($tail !== '' ? "Output so far:\n" . $tail : '(no output yet)'), 'meta' => $meta];
             }
             $f = sbx_fmt_exec($r);
             return ['ok' => $f['ok'], 'text' => $f['text'], 'meta' => ['exit_code' => $f['exit_code'] ?? null]];

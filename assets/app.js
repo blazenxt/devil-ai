@@ -2736,7 +2736,7 @@ function agxOutHtml(s) {
   else { h = esc(out); }
   var img = meta.screenshot || meta.image;
   if (img && SBX.on) { h += '<img class="agx-shot" loading="lazy" alt="" src="' + esc(sbxFileUrl(img)) + '">'; }
-  if (meta.url && s.tool === 'start_server') { h += '<button type="button" class="agx-pv" data-port="' + (meta.port || '') + '">' + (I.monitor || '') + ' Open preview</button>'; }
+  if (meta.url && meta.port) { h += '<button type="button" class="agx-pv" data-port="' + (meta.port || '') + '">' + (I.monitor || '') + ' Open preview</button>'; }
   return h;
 }
 
@@ -2960,7 +2960,7 @@ function agentStop() {
 function sbxAfterStep(s) {
   if (!SBX.on) { return; }
   SBX.lastList = 0;
-  if (s.tool === 'start_server' && s.ok && s.meta && s.meta.port) {
+  if (s.ok && s.meta && s.meta.port && (s.tool === 'start_server' || s.meta.url)) {
     SBX.port = Number(s.meta.port);
     openWsTab('preview');
     return;
