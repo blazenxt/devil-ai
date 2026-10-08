@@ -138,3 +138,53 @@ jobs:
           put .deploy_runtime/config.json -o "$SFTP_TARGET/data/config.json"
           bye
           EOF
+
+      - name: Patch live sandbox config
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_TARGET: ${{ secrets.SFTP_TARGET }}
+          DEVIL_SANDBOX_SECRET: ${{ secrets.DEVIL_SANDBOX_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ]; then
+            echo "No sandbox secret set; skipping sandbox config patch."
+            exit 0
+          fi
+          mkdir -p .deploy_runtime
+          rm -f .deploy_runtime/config.json
+          lftp -u "$SFTP_USERNAME","$SFTP_PASSWORD" -p "$SFTP_PORT" "sftp://$SFTP_HOST" <<EOF
+          set sftp:auto-confirm yes
+          set net:timeout 30
+          set net:max-retries 2
+          get "$SFTP_TARGET/data/config.json" -o .deploy_runtime/config.json
+          bye
+          EOF
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+          path = pathlib.Path('.deploy_runtime/config.json')
+          text = path.read_text() if path.exists() else ''
+          if not text.strip():
+              sys.exit('Live config.json could not be read; refusing to overwrite it.')
+          cfg = json.loads(text)
+          if not isinstance(cfg, dict) or len(cfg) < 3:
+              sys.exit('Live config.json looks wrong; refusing to overwrite it.')
+          cfg.update({
+              'sandbox_enabled': True,
+              'sandbox_url': 'https://api.sandbox.devil.blazenxt.qzz.io',
+              'sandbox_secret': os.environ['DEVIL_SANDBOX_SECRET'],
+          })
+          cfg.setdefault('agent_sandbox_max_steps', 30)
+          path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+          print('sandbox config patched; keys:', len(cfg))
+          PY
+          lftp -u "$SFTP_USERNAME","$SFTP_PASSWORD" -p "$SFTP_PORT" "sftp://$SFTP_HOST" <<EOF
+          set sftp:auto-confirm yes
+          set net:timeout 30
+          set net:max-retries 2
+          put .deploy_runtime/config.json -o "$SFTP_TARGET/data/config.json"
+          bye
+          EOF
+          rm -rf .deploy_runtime
