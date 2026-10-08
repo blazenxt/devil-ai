@@ -376,7 +376,7 @@ function sbx_fmt_exec(array $r): array {
     $code = (int)($r['exit_code'] ?? 0);
     $txt = '';
     if ($out !== '') { $txt .= $out . "\n"; }
-    if ($err !== '') { $txt .= ($out !== '' ? "\n[stderr]\n" : '') . $err . "\n"; }
+    if ($err !== '') { $txt .= ($out !== '' ? "\n[stderr]\n" : "[stderr]\n") . $err . "\n"; }   /* marker always present → the UI splits STDOUT / STDERR */
     if ($txt === '') { $txt = "(no output)\n"; }
     if (!empty($r['timed_out'])) { $txt .= "\n[timed out — for long tasks use start_server or run it in the background with nohup … &]"; }
     $txt .= "\n[exit code {$code}]";
@@ -408,11 +408,13 @@ function sbx_run_tool(array $ctx, string $name, string $input): array {
             $wait = max(10, min(55, (int)($cfg['agent_bash_wait'] ?? 25)));
             $job = '/home/user/.bg/cmd-' . bin2hex(random_bytes(4));
             $wrapper = 'mkdir -p /home/user/.bg; J=' . $job . '; echo ' . base64_encode($cmd) . ' | base64 -d > "$J.sh"; '
-                . 'nohup setsid bash -c \'bash -l "$1" > "$1.log" 2>&1; echo $? > "$1.rc"\' _ "$J.sh" > /dev/null 2>&1 < /dev/null & P=$!; '
+                . 'nohup setsid bash -c \'bash -l "$1" > >(tee "$1.out" >> "$1.log") 2> >(tee "$1.err" >> "$1.log"); r=$?; sleep 0.2; echo $r > "$1.rc"\' _ "$J.sh" > /dev/null 2>&1 < /dev/null & P=$!; '
                 . 'i=0; while [ ! -f "$J.sh.rc" ] && [ $i -lt ' . ($wait * 5) . ' ]; do sleep 0.2; i=$((i+1)); done; '
-                . 'if [ -f "$J.sh.rc" ]; then sz=$(stat -c %s "$J.sh.log" 2>/dev/null || echo 0); '
-                . 'if [ "$sz" -gt 14000 ]; then head -c 3000 "$J.sh.log"; echo; echo "… [$sz bytes of output, middle cut] …"; tail -c 10000 "$J.sh.log"; else cat "$J.sh.log"; fi; '
-                . 'rc=$(cat "$J.sh.rc"); rm -f "$J.sh" "$J.sh.rc" "$J.sh.log"; exit $rc; '
+                . 'if [ -f "$J.sh.rc" ]; then sz=$(stat -c %s "$J.sh.out" 2>/dev/null || echo 0); '
+                . 'if [ "$sz" -gt 14000 ]; then head -c 3000 "$J.sh.out"; echo; echo "… [$sz bytes of output, middle cut] …"; tail -c 10000 "$J.sh.out"; else cat "$J.sh.out" 2>/dev/null; fi; '
+                /* stderr comes back after a marker so the UI can show STDOUT and STDERR separately (like the reference agent) */
+                . 'if [ -s "$J.sh.err" ]; then es=$(stat -c %s "$J.sh.err"); echo; echo __DEVIL_STDERR__; if [ "$es" -gt 6000 ]; then head -c 1500 "$J.sh.err"; echo; echo "… [$es bytes, middle cut] …"; tail -c 4000 "$J.sh.err"; else cat "$J.sh.err"; fi; fi; '
+                . 'rc=$(cat "$J.sh.rc"); rm -f "$J.sh" "$J.sh.rc" "$J.sh.log" "$J.sh.out" "$J.sh.err"; exit $rc; '
                 . 'else echo "__DEVIL_STILL_RUNNING__ pid=$P log=$J.sh.log"; tail -c 3000 "$J.sh.log" 2>/dev/null; exit 0; fi';
             $r = sbx_exec($cfg, $sid, $wrapper, $wait + 15);
             $out = (string)($r['stdout'] ?? '');
@@ -435,6 +437,12 @@ function sbx_run_tool(array $ctx, string $name, string $input): array {
                 return ['ok' => true, 'text' => "The command is still running in the background after {$wait}s (pid {$m[1]}). "
                     . "Its output keeps going to {$m[2]} — check it later with: tail -n 40 {$m[2]}  (or wait with: sleep 20; tail -n 40 {$m[2]})." . $srv . "\n"
                     . ($tail !== '' ? "Output so far:\n" . $tail : '(no output yet)'), 'meta' => $meta];
+            }
+            $k = strpos($out, "\n__DEVIL_STDERR__\n");
+            if ($k !== false) {
+                $se = trim((string)($r['stderr'] ?? ''));
+                $r['stderr'] = rtrim(substr($out, $k + 18)) . ($se !== '' ? "\n" . $se : '');
+                $r['stdout'] = substr($out, 0, $k);
             }
             $f = sbx_fmt_exec($r);
             return ['ok' => $f['ok'], 'text' => $f['text'], 'meta' => ['exit_code' => $f['exit_code'] ?? null]];

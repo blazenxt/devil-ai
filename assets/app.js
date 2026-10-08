@@ -708,6 +708,8 @@ function fillUserBubble(b, text, img, edited, attachments) {
       var nm = document.createElement('span');
       nm.textContent = a.name || 'attachment';
       one.appendChild(nm);
+      var ex = (String(a.name || '').match(/\.([a-z0-9]{1,5})$/i) || [])[1];
+      if (ex) { var eb = document.createElement('b'); eb.className = 'ext'; eb.textContent = ex.toUpperCase(); one.appendChild(eb); }
       fw.appendChild(one);
     });
     b.appendChild(fw);
@@ -729,6 +731,8 @@ function addUserMsg(text, img, meta) {
   b.className = 'bub';
   fillUserBubble(b, text, img, !!meta.edited, meta.attachments || []);
   d.appendChild(b);
+  /* Agent Mode (the reference agent): attached files sit as chips above the bubble */
+  if (agentMode) { var fw = b.querySelector('.msg-files'); if (fw) { d.insertBefore(fw, b); } if (typeof agtTaskCardClose === 'function') { agtTaskCardClose(); } }
   var nav = makeBranchNav(meta.index, meta.branchGroup || branchGroupFor(meta.index));
   if (nav) { d.appendChild(nav); }
   if (text) {
@@ -2745,8 +2749,9 @@ function agxOutHtml(s) {
   return h;
 }
 
+/* classic activity timeline — still used by AI Mode (web search steps) */
 /* render a whole trace (used for saved messages and when a run finishes) */
-renderAgentTrace = function (el, steps, ms, live) {
+var renderAgentTraceClassic = function (el, steps, ms, live) {
   steps = steps || [];
   if (!el || (!steps.length && !ms && !live)) { return null; }
   var old = el.querySelector('.agx'); if (old) { old.remove(); }
@@ -2757,7 +2762,7 @@ renderAgentTrace = function (el, steps, ms, live) {
     '<span class="agx-time"></span><span class="agx-chev">' + (I.chevR || '') + '</span></button>' + (live ? '' : agentSummaryHtml(steps)) +
     '<div class="agx-list"></div>';
   var list = box.querySelector('.agx-list');
-  steps.forEach(function (s, i) { list.appendChild(agxStepEl(s, i)); });
+  steps.forEach(function (s, i) { list.appendChild(agxStepElClassic(s, i)); });
   if (!live && steps.length) { var dn = document.createElement('div'); dn.className = 'agx-done'; dn.innerHTML = (I.check || '') + ' Done'; list.appendChild(dn); }
   box.querySelector('.agx-head').addEventListener('click', function () { box.classList.toggle('open'); });
   var body = el.querySelector('.body');
@@ -2765,7 +2770,7 @@ renderAgentTrace = function (el, steps, ms, live) {
   if (!live) { renderSourceCards(el, steps); }
   return box;
 };
-function agxStepEl(s, i, running) {
+function agxStepElClassic(s, i, running) {
   var t = AGX_TOOLS[s.tool] || { verb: 'Used ' + (s.tool || 'tool'), icon: 'brainS' };
   var st = document.createElement('div');
   st.className = 'agx-step' + (running ? ' running' : (s.ok ? '' : ' fail'));
@@ -2787,37 +2792,361 @@ function agxStepEl(s, i, running) {
   return st;
 }
 
-/* ask_user: clickable answer chips under the question */
-function renderAskChips(el, ask) {
-  if (!el || !ask || !ask.options || !ask.options.length) { return; }
-  var w = document.createElement('div');
-  w.className = 'ask-chips';
-  ask.options.forEach(function (o) {
-    var b = document.createElement('button');
-    b.type = 'button'; b.className = 'ask-chip'; b.textContent = o;
-    b.addEventListener('click', function () { if (busy) { return; } inp.value = o; resize(); send(); });
-    w.appendChild(b);
+/* ═══════════ Pro-style agent transcript (matches the reference agent) ═══════════
+   The agent's own words are plain prose between the tool calls. Shell commands are bordered cards:
+   header "›_ $ command…   exit 0 · 2.4s ⌄ ✓", body COMMAND / STDOUT / STDERR. File work is a slim
+   inline row ("Write  app.html  120 lines  open ›"), and an HTML file gets a live preview card.
+   While the agent works there is one status line at the bottom: a pulsing dot + "Thinking…". */
+function agtSvg(p, w, sw) { return '<svg viewBox="0 0 24 24" width="' + (w || 13) + '" height="' + (w || 13) + '" fill="none" stroke="currentColor" stroke-width="' + (sw || 2) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>'; }
+var AGT = {
+  prompt: agtSvg('<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>', 13),
+  ok: agtSvg('<path d="M20 6 9 17l-5-5"/>', 13, 2.4),
+  bad: agtSvg('<path d="M18 6 6 18M6 6l12 12"/>', 13, 2.4),
+  chev: agtSvg('<path d="m6 9 6 6 6-6"/>', 13),
+  yes: agtSvg('<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>', 15),
+  no: agtSvg('<circle cx="12" cy="12" r="9"/><path d="m9.5 9.5 5 5m0-5-5 5"/>', 15),
+  pen: agtSvg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 15),
+  eye: agtSvg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>', 14),
+  win: agtSvg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01"/>', 15),
+  copy: agtSvg('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', 12),
+  send: agtSvg('<path d="M5 12h14M13 6l6 6-6 6"/>', 14),
+  x: agtSvg('<path d="M18 6 6 18M6 6l12 12"/>', 13)
+};
+var AGT_SBX_TOOLS = /^(bash|write_file|read_file|list_files|start_server|browser|generate_image|ask_user)$/;
+function agtUse(steps, live) {
+  if (live || agentMode) { return true; }
+  return (steps || []).some(function (s) { return s && AGT_SBX_TOOLS.test(s.tool || ''); });
+}
+function agtMs(ms) {
+  if (!ms && ms !== 0) { return ''; }
+  if (ms < 1000) { return Math.max(1, Math.round(ms)) + 'ms'; }
+  if (ms < 60000) { return (ms / 1000).toFixed(1).replace(/\.0$/, '') + 's'; }
+  return Math.floor(ms / 60000) + 'm ' + Math.round((ms % 60000) / 1000) + 's';
+}
+function agtUnfence(s) {
+  var t = String(s || '').replace(/^\s*\n/, '').replace(/\s+$/, '');
+  var m = t.match(/^\s*```[\w.+-]*[ \t]*\r?\n([\s\S]*?)\r?\n?```\s*$/);
+  return m ? m[1] : t;
+}
+/* split our bash result text back into stdout / stderr / exit code */
+function agtExec(s) {
+  var t = String(s.output || ''), code = s.meta && s.meta.exit_code !== undefined ? s.meta.exit_code : null;
+  var em = t.match(/\n*\[exit code (-?\d+)\]\s*$/);
+  if (em) { code = Number(em[1]); t = t.slice(0, em.index); }
+  var out = t, err = '', k = t.indexOf('\n[stderr]\n');
+  if (k >= 0) { out = t.slice(0, k); err = t.slice(k + 10); }
+  else if (/^\[stderr\]\r?\n/.test(t)) { out = ''; err = t.replace(/^\[stderr\]\r?\n/, ''); }
+  out = out.replace(/\s+$/, ''); err = err.replace(/\s+$/, '');
+  if (out === '(no output)') { out = ''; }
+  return { out: out, err: err, code: code };
+}
+function agtPre(text, cls) {
+  return '<div class="agt-pw"><pre class="agt-pre' + (cls ? ' ' + cls : '') + '">' + esc(text) + '</pre>' +
+    '<button type="button" class="agt-cp" title="Copy" aria-label="Copy">' + AGT.copy + '</button></div>';
+}
+function agtCode(text, opts) {
+  opts = opts || {};
+  var lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') { lines.pop(); }
+  var start = opts.start || 1, max = opts.max || 600, cut = lines.length > max;
+  if (opts.tail && lines.length > opts.tail) { start += lines.length - opts.tail; lines = lines.slice(-opts.tail); cut = false; }
+  return '<div class="agt-code' + (opts.cls ? ' ' + opts.cls : '') + '">' + lines.slice(0, max).map(function (l, i) {
+    return '<div class="ln"><i>' + (start + i) + '</i><span>' + (esc(l) || ' ') + '</span></div>';
+  }).join('') + (cut || opts.more ? '<div class="ln more"><i></i><span>… ' + esc(opts.more || 'more lines') + '</span></div>' : '') + '</div>';
+}
+function agtThought(text) {
+  var t = String(text || '').trim();
+  if (!t) { return null; }
+  var d = document.createElement('div');
+  d.className = 'agt-say';
+  d.innerHTML = md(t);
+  return d;
+}
+function agtBindCopy(root) {
+  Array.prototype.forEach.call(root.querySelectorAll('.agt-cp'), function (b) {
+    b.addEventListener('click', function (e) { e.stopPropagation(); var p = b.parentNode.querySelector('pre'); copyText(p ? p.textContent : ''); });
   });
+}
+function agtToggle(box, head) {
+  head.setAttribute('aria-expanded', box.classList.contains('open') ? 'true' : 'false');
+  head.setAttribute('aria-label', box.classList.contains('open') ? 'Collapse' : 'Expand');
+  head.addEventListener('click', function (e) {
+    if (e.target.closest('.agt-open')) { return; }
+    box.classList.toggle('open');
+    head.setAttribute('aria-expanded', box.classList.contains('open') ? 'true' : 'false');
+    head.setAttribute('aria-label', box.classList.contains('open') ? 'Collapse' : 'Expand');
+  });
+}
+function agtStatusIc(running, ok) { return '<span class="agt-st">' + (running ? '<span class="agx-spin"></span>' : (ok ? AGT.ok : AGT.bad)) + '</span>'; }
+
+/* terminal card: bash + start_server */
+function agtTerm(s, running) {
+  var m = s.meta || {}, srv = s.tool === 'start_server', inp = String(s.input || ''), cmd, port = '';
+  if (srv) { var l = inp.replace(/^\s+/, '').split('\n'); port = (l[0] || '').trim(); cmd = agtUnfence(l.slice(1).join('\n')) || ('serve on port ' + port); }
+  else { cmd = agtUnfence(inp); }
+  var x = running ? null : agtExec(s), meta = '';
+  if (!running) {
+    if (srv) { meta = 'port ' + (m.port || port); }
+    else if (m.background) { meta = 'background'; }
+    else if (x.code !== null && x.code !== undefined) { meta = 'exit ' + x.code; }
+    else if (!s.ok) { meta = 'error'; }
+    meta += (meta && s.ms ? ' · ' : '') + (s.ms ? agtMs(s.ms) : '');
+  }
+  var c = document.createElement('div');
+  c.className = 'agt-card agt-term' + (running ? ' running' : ' open') + (!running && !s.ok ? ' fail' : '');
+  var body = '';
+  if (!running) {
+    body = '<div class="agt-lb">Command</div>' + agtPre(cmd);
+    if (srv || m.background) { body += '<div class="agt-lb">' + (srv ? 'Log' : 'Output') + '</div>' + agtPre(String(s.output || '').trim() || '(no output)', String(s.output || '').trim() ? '' : 'muted'); }
+    else {
+      if (x.out) { body += '<div class="agt-lb">Stdout</div>' + agtPre(x.out); }
+      if (x.err) { body += '<div class="agt-lb">Stderr</div>' + agtPre(x.err, 'err'); }
+      if (!x.out && !x.err) { body += '<div class="agt-lb">Stdout</div>' + agtPre('(no output)', 'muted'); }
+    }
+    if (m.url && m.port) { body += '<button type="button" class="agt-pvbtn" data-port="' + esc(String(m.port)) + '">' + (I.monitor || '') + ' Open preview</button>'; }
+  }
+  c.innerHTML = '<button type="button" class="agt-hd"><span class="agt-tic">' + AGT.prompt + '</span>' +
+    '<span class="agt-cmd">$ ' + esc(cmd.replace(/\s*\n\s*/g, ' ')) + '</span>' +
+    (meta ? '<span class="agt-meta">' + esc(meta) + '</span>' : '') +
+    (running ? '' : '<span class="agt-chev">' + AGT.chev + '</span>') + agtStatusIc(running, s.ok) + '</button>' +
+    (running ? '' : '<div class="agt-bd">' + body + '</div>');
+  if (!running) {
+    agtToggle(c, c.querySelector('.agt-hd'));
+    agtBindCopy(c);
+    var pv = c.querySelector('.agt-pvbtn');
+    if (pv) { pv.addEventListener('click', function () { SBX.port = Number(pv.dataset.port) || 0; openWsTab('preview'); }); }
+  }
+  return c;
+}
+
+/* slim inline row for everything else (Write / Read / List / Browse / Search …) */
+function agtRow(s, running) {
+  var m = s.meta || {}, inp = String(s.input || ''), first = inp.replace(/^\s*```[\w.+-]*\s*\n/, '').split('\n')[0].trim();
+  var out = String(s.output || '').trim(), verb, arg = first, info = '', body = '', extra = null, openPath = '', live = '';
+  switch (s.tool) {
+    case 'write_file': {
+      var content = agtUnfence(inp.replace(/^\s*[^\n]*\n?/, ''));
+      var nl = (out.match(/(\d+) lines\)/) || [])[1], total = nl ? Number(nl) + 1 : content.split('\n').length;
+      verb = running ? 'Writing' : 'Write'; openPath = running ? '' : first;
+      info = running ? '' : total + ' line' + (total === 1 ? '' : 's');
+      var shown = content.split('\n').length, partial = !running && total > shown + 1;
+      body = content.trim() ? agtCode(content, { more: partial ? (total - shown) + ' more lines — open the file to see all' : '' }) : '';
+      if (running && content.trim()) { live = agtCode(content, { tail: 8, cls: 'stream' }); }
+      if (!running && s.ok && /\.html?$/i.test(first)) { extra = agtHtmlCard(first); }
+      break;
+    }
+    case 'read_file': verb = running ? 'Reading' : 'Read'; openPath = running ? '' : first;
+      if (out) { var rl = out.split('\n').length; info = rl + ' line' + (rl === 1 ? '' : 's'); body = agtCode(out); } break;
+    case 'list_files': verb = running ? 'Listing' : 'List'; arg = first || '.'; body = out ? agtPre(out) : ''; break;
+    case 'browser': verb = running ? 'Browsing' : 'Browse'; body = out ? agtPre(out) : '';
+      if (m.screenshot && SBX.on) { extra = agtImg(m.screenshot); } break;
+    case 'generate_image': verb = running ? 'Generating image' : 'Generate image'; arg = (m.image || first);
+      body = inp.split('\n').slice(1).join('\n').trim() ? '<div class="agt-lb">Prompt</div>' + agtPre(inp.split('\n').slice(1).join('\n').trim()) : '';
+      if (m.image && SBX.on) { extra = agtImg(m.image); } break;
+    case 'web_search': verb = running ? 'Searching' : 'Search'; body = out ? agtPre(out) : ''; break;
+    case 'fetch_url': verb = running ? 'Fetching' : 'Fetch'; arg = agxArg(s); body = out ? agtPre(out) : ''; break;
+    case 'calculator': verb = running ? 'Calculating' : 'Calculate'; body = out ? agtPre(out) : ''; break;
+    case 'datetime': verb = 'Check time'; arg = first || 'server clock'; body = out ? agtPre(out) : ''; break;
+    case 'ask_user': verb = 'Ask'; body = out ? agtPre(out) : ''; break;
+    default: verb = (running ? 'Using ' : 'Used ') + (s.tool || 'tool'); body = out ? agtPre(out) : '';
+  }
+  if (!running && !s.ok) { info = (info ? info + ' · ' : '') + 'failed'; if (!body && out) { body = agtPre(out, 'err'); } }
+  if (!running && s.ms && s.tool !== 'write_file' && s.tool !== 'read_file') { info = (info ? info + ' · ' : '') + agtMs(s.ms); }
+  var r = document.createElement('div');
+  r.className = 'agt-row' + (running ? ' running' : '') + (!running && !s.ok ? ' fail' : '');
+  r.innerHTML = '<button type="button" class="agt-rh"><span class="agt-verb' + (running ? ' agx-shimmer' : '') + '">' + esc(verb) + '</span>' +
+    (arg ? '<span class="agt-arg">' + esc(arg) + '</span>' : '') + (info ? '<span class="agt-info">' + esc(info) + '</span>' : '') +
+    (openPath && SBX.on ? '<span class="agt-open" role="link" tabindex="0">open</span>' : '') +
+    (s.tool === 'fetch_url' && /^https?:\/\//i.test(first) ? '<a class="agt-open" href="' + esc(first) + '" target="_blank" rel="noopener noreferrer">open ↗</a>' : '') +
+    (body && !running ? '<span class="agt-chev">' + AGT.chev + '</span>' : '') +
+    (!running && !s.ok ? agtStatusIc(false, false) : '') + '</button>' +
+    (body && !running ? '<div class="agt-rb">' + body + '</div>' : '') + live;
+  if (body && !running) { agtToggle(r, r.querySelector('.agt-rh')); agtBindCopy(r); }
+  var op = r.querySelector('span.agt-open');
+  if (op) {
+    var go = function (e) { e.stopPropagation(); e.preventDefault(); SBX.view = { path: openPath }; openWsTab('files'); };
+    op.addEventListener('click', go);
+    op.addEventListener('keydown', function (e) { if (e.key === 'Enter') { go(e); } });
+  }
+  if (extra) { r.appendChild(extra); }
+  return r;
+}
+function agtImg(path) {
+  var w = document.createElement('div');
+  w.className = 'agt-media';
+  var im = document.createElement('img');
+  im.loading = 'lazy'; im.alt = ''; im.src = sbxFileUrl(path);
+  im.addEventListener('error', function () { w.remove(); });
+  im.addEventListener('click', function () { openImgView(im.src); });
+  w.appendChild(im);
+  return w;
+}
+/* HTML file → preview card (title + HTML badge, live render). The file is fetched as text and shown in a
+   sandboxed srcdoc iframe without allow-same-origin, so agent-made pages can never touch our origin. */
+function agtHtmlCard(path) {
+  if (!SBX.on) { return null; }
+  var c = document.createElement('div');
+  c.className = 'agt-pvc';
+  c.innerHTML = '<div class="agt-pvh"><span class="agt-pvi">' + AGT.win + '</span><span class="tt"></span><span class="bd">HTML</span></div>' +
+    '<div class="agt-pvf"><div class="agt-pvload"><span class="agx-spin"></span></div><span class="agt-pvv">' + AGT.eye + ' View</span></div>';
+  c.querySelector('.tt').textContent = path.split('/').pop();
+  var src = '', started = false;
+  function load() {
+    if (started) { return; } started = true;
+    fetch(sbxFileUrl(path), { credentials: 'same-origin' }).then(function (r) { if (!r.ok) { throw new Error('gone'); } return r.text(); }).then(function (t) {
+      src = t;
+      var tm = t.match(/<title[^>]*>([^<]{1,140})<\/title>/i);
+      if (tm && tm[1].trim()) { c.querySelector('.tt').textContent = tm[1].trim().replace(/&amp;/g, '&').replace(/&mdash;/g, '—'); }
+      var f = document.createElement('iframe');
+      f.setAttribute('sandbox', 'allow-scripts');
+      f.setAttribute('loading', 'lazy');
+      f.setAttribute('tabindex', '-1');
+      f.title = 'Preview of ' + path;
+      f.srcdoc = t;
+      var ld = c.querySelector('.agt-pvload'); if (ld) { ld.remove(); }
+      c.querySelector('.agt-pvf').insertBefore(f, c.querySelector('.agt-pvv'));
+    }).catch(function () { c.remove(); });
+  }
+  if (window.IntersectionObserver) {
+    var io = new IntersectionObserver(function (en) { if (en.some(function (e) { return e.isIntersecting; })) { io.disconnect(); load(); } }, { rootMargin: '200px' });
+    setTimeout(function () { io.observe(c); }, 0);
+  } else { setTimeout(load, 0); }
+  c.querySelector('.agt-pvf').addEventListener('click', function () { if (src) { agtFullView(c.querySelector('.tt').textContent, src, path); } });
+  return c;
+}
+function agtFullView(title, src, path) {
+  var old = document.getElementById('agtFull'); if (old) { old.remove(); }
+  var d = document.createElement('div');
+  d.id = 'agtFull';
+  d.innerHTML = '<div class="agt-fbox"><div class="agt-fh"><span class="agt-pvi">' + AGT.win + '</span><span class="tt"></span>' +
+    '<button type="button" class="fo" title="Open in workspace">Files</button><button type="button" class="fx" title="Close" aria-label="Close">' + AGT.x + '</button></div><iframe sandbox="allow-scripts allow-forms allow-modals"></iframe></div>';
+  d.querySelector('.tt').textContent = title;
+  d.querySelector('iframe').srcdoc = src;
+  function close() { d.remove(); document.removeEventListener('keydown', onKey); }
+  function onKey(e) { if (e.key === 'Escape') { close(); } }
+  d.addEventListener('click', function (e) { if (e.target === d) { close(); } });
+  d.querySelector('.fx').addEventListener('click', close);
+  d.querySelector('.fo').addEventListener('click', function () { close(); SBX.view = { path: path }; openWsTab('files'); });
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(d);
+}
+
+/* one step = the agent's words (if any) + its tool card/row */
+function agxStepEl(s, i, running) {
+  var w = document.createElement('div');
+  w.className = 'agt-step';
+  w.dataset.i = i;
+  var th = agtThought(s.thought);
+  if (th) { w.appendChild(th); }
+  w.appendChild(s.tool === 'bash' || s.tool === 'start_server' ? agtTerm(s, running) : agtRow(s, running));
+  return w;
+}
+
+/* render a whole trace (saved messages, and the live container while a run is going) */
+renderAgentTrace = function (el, steps, ms, live) {
+  steps = steps || [];
+  if (!agtUse(steps, live)) { return renderAgentTraceClassic(el, steps, ms, live); }
+  if (!el || (!steps.length && !live)) { return null; }
+  var old = el.querySelector('.agt, .agx'); if (old) { old.remove(); }
+  var box = document.createElement('div');
+  box.className = 'agt' + (live ? ' live' : '');
+  steps.forEach(function (s, i) { box.appendChild(agxStepEl(s, i, false)); });
+  if (live) { box.insertAdjacentHTML('beforeend', '<div class="agt-live" aria-live="polite"><span class="agt-dot"></span><span class="agt-lt agx-shimmer">Thinking…</span><span class="agt-tm"></span></div>'); }
+  var body = el.querySelector('.body');
+  if (body) { body.insertBefore(box, el.querySelector('.content')); }
+  if (!live) { renderSourceCards(el, steps); }
+  return box;
+};
+function agtAppend(el, node) {
+  var box = el && el.querySelector('.agt');
+  if (!box) { return; }
+  box.insertBefore(node, box.querySelector('.agt-live'));
+}
+
+/* ask_user → Battle clarification card: radio options, "write your own", Skip */
+function renderAskChips(el, ask) {
+  if (!el || !ask) { return; }
+  var opts = ask.options || [];
+  var w = document.createElement('div');
+  w.className = 'agt-ask';
+  w.setAttribute('role', 'radiogroup');
+  w.setAttribute('aria-label', 'question');
+  w.innerHTML = '<div class="agt-askh"><span>' + (opts.length ? 'Pick an option' : 'Your answer') + '</span><button type="button" class="agt-skip">Skip</button></div>' +
+    opts.map(function (o, i) { return '<button type="button" role="radio" aria-checked="false" class="agt-opt" data-i="' + i + '"><span class="rd"></span><span class="ol"></span></button>'; }).join('') +
+    '<form class="agt-askc"><input type="text" maxlength="2000" placeholder="Revise options or write your own..." aria-label="Write your own answer"><button type="submit" aria-label="Submit custom response" title="Send">' + AGT.send + '</button></form>';
+  Array.prototype.forEach.call(w.querySelectorAll('.agt-opt'), function (b) { b.querySelector('.ol').textContent = opts[Number(b.dataset.i)]; });
+  function answer(text) {
+    if (busy || !text) { return; }
+    Array.prototype.forEach.call(w.querySelectorAll('button,input'), function (x) { x.disabled = true; });
+    w.classList.add('done');
+    inp.value = text; resize(); send();
+  }
+  w.addEventListener('click', function (e) {
+    var b = e.target.closest('.agt-opt');
+    if (b) { b.setAttribute('aria-checked', 'true'); answer(opts[Number(b.dataset.i)]); return; }
+    if (e.target.closest('.agt-skip')) { answer('Skip this question — use your best judgement and continue.'); }
+  });
+  w.querySelector('form').addEventListener('submit', function (e) { e.preventDefault(); answer(w.querySelector('input').value.trim()); });
   var c = el.querySelector('.content');
   c.parentNode.insertBefore(w, c.nextSibling);
 }
 
+/* "Was this task successful?" — shown above the composer after a finished agent run */
+var agtTaskObs = null;
+function agtTaskCardClose() {
+  var c = document.getElementById('agtTask'); if (c) { c.remove(); }
+  document.removeEventListener('keydown', agtTaskKey);
+  if (agtTaskObs) { agtTaskObs.disconnect(); agtTaskObs = null; }
+}
+function agtTaskKey(e) { if (e.key === 'Escape' && !document.getElementById('agtFull') && !document.querySelector('.modal.show,#imgView.show')) { agtTaskCardClose(); } }
+function agtTaskCard(el, reply, idx) {
+  agtTaskCardClose();
+  var box = document.querySelector('#composer .compbox');
+  if (!box) { return; }
+  var c = document.createElement('div');
+  c.id = 'agtTask';
+  c.innerHTML = '<div class="h"><span>Was this task successful?</span><span class="x"><kbd>Esc</kbd><button type="button" class="cl" aria-label="Dismiss">' + AGT.x + '</button></span></div>' +
+    '<div class="ol"><button type="button" data-a="yes">' + AGT.yes + ' Yes</button><button type="button" data-a="no">' + AGT.no + ' No</button><button type="button" data-a="more">' + AGT.pen + ' Keep working</button></div>';
+  c.addEventListener('click', function (e) {
+    if (e.target.closest('.cl')) { agtTaskCardClose(); return; }
+    var b = e.target.closest('[data-a]'); if (!b) { return; }
+    var a = b.dataset.a;
+    agtTaskCardClose();
+    if (a === 'more') { if (!busy) { inp.value = 'Keep working'; resize(); send(); } return; }
+    var rating = a === 'yes' ? 'good' : 'bad', meta = { index: idx }, key = feedbackKey(meta, reply);
+    var up = el && el.querySelector('.acts button[title="Good response"]'), down = el && el.querySelector('.acts button[title="Bad response"]');
+    if (!read(key)) {
+      store(key, rating);
+      if (up && down) { markFeedbackButtons(up, down, rating); }
+      api('feedback', { rating: rating, content: reply, chat_id: (currentChat && currentChat.id) || '', message_index: idx });
+    }
+    if (a === 'yes') { toast('Thanks for the feedback'); }
+    else { toast('Thanks — tell the agent what to fix'); inp.focus(); }
+  });
+  box.parentNode.insertBefore(c, box);
+  document.addEventListener('keydown', agtTaskKey);
+  /* chat switched / new chat / message removed → the question no longer applies */
+  if (window.MutationObserver && msgs) {
+    agtTaskObs = new MutationObserver(function () { if (!el || !document.body.contains(el) || msgs.lastElementChild !== el) { agtTaskCardClose(); } });
+    agtTaskObs.observe(msgs, { childList: true });
+  }
+}
+
 /* ── the live loop ── */
 function agentLiveEl() {
+  agtTaskCardClose();
   var el = addAiMsg({ modelTag: activeModelLabel() });
   el.classList.add('agent-live');
   var box = renderAgentTrace(el, [], 0, true);
-  /* one live status only — in the header (like the reference agent): "Thinking…" while the model plans,
-     "Working…" while a tool runs (the step row itself shows which tool). No second line below. */
-  var lbl = box.querySelector('.agx-lbl');
-  lbl.classList.add('agx-shimmer'); lbl.textContent = 'Thinking…';
+  /* one live status only, at the bottom of the turn (like the reference agent): a pulsing dot + "Thinking…"
+     while the model plans, "Working…" while a tool runs (the tool card itself shows which one). */
   el.querySelector('.content').innerHTML = '';
-  var t0 = Date.now(), tm = box.querySelector('.agx-time');
+  var t0 = Date.now(), tm = box.querySelector('.agt-tm');
   var iv = setInterval(function () { if (!document.body.contains(el) || !el.classList.contains('agent-live')) { clearInterval(iv); return; } tm.textContent = fmtDur(Date.now() - t0); }, 1000);
   refreshMessageActions(); scrollDown();
   return el;
 }
-function agentStatus(el, text) { var s = el && el.querySelector('.agx.live .agx-lbl'); if (s) { s.textContent = text; } }
+function agentStatus(el, text) { var s = el && el.querySelector('.agt-live .agt-lt'); if (s) { s.textContent = text; } }
 
 function runAgent(payload) {
   busy = true;
@@ -2885,17 +3214,16 @@ function agentLoop() {
     }
     r.fails = 0;
     var ev = j.event || {};
-    var list = r.el.querySelector('.agx-list');
     if (ev.type === 'tool_start') {
       var s = { tool: ev.tool, input: ev.input, thought: ev.thought };
       r.runEl = agxStepEl(s, r.steps.length, true);
-      list.appendChild(r.runEl);
+      agtAppend(r.el, r.runEl);
       agentStatus(r.el, 'Working…');
       scrollDown();
     } else if (ev.type === 'tool_done' && ev.step) {
       r.steps.push(ev.step);
       var done = agxStepEl(ev.step, r.steps.length - 1, false);
-      if (r.runEl && r.runEl.parentNode) { r.runEl.parentNode.replaceChild(done, r.runEl); } else { list.appendChild(done); }
+      if (r.runEl && r.runEl.parentNode) { r.runEl.parentNode.replaceChild(done, r.runEl); } else { agtAppend(r.el, done); }
       r.runEl = null;
       agentStatus(r.el, 'Thinking…');
       sbxAfterStep(ev.step);
@@ -2932,10 +3260,18 @@ function agentFinish(j) {
   }
   var idx = currentChat ? currentChat.messages.length - 1 : 0;
   aiContent(el, reply, { index: idx, ms: ms });
-  renderAgentTrace(el, steps, ms);
+  var lb = el.querySelector('.agt.live');
+  if (lb && lb.querySelectorAll('.agt-step').length === steps.length && !lb.querySelector('.agt-row.running,.agt-card.running')) {
+    var ll = lb.querySelector('.agt-live'); if (ll) { ll.remove(); }
+    lb.classList.remove('live');
+    renderSourceCards(el, steps);
+  } else { renderAgentTrace(el, steps, ms); }
+  var stopped = !!(r.stopped || j.stopped);
+  if (stopped) { var gs = document.createElement('div'); gs.className = 'agt-stopped'; gs.setAttribute('aria-label', 'Response ended'); gs.textContent = 'Generation stopped'; el.querySelector('.content').insertAdjacentElement('afterend', gs); }
   if (j.ask) { renderAskChips(el, j.ask); }
   renderWorkspace();
   agentEnd();
+  if (!stopped && !j.ask && !j.error && steps.length && reply) { agtTaskCard(el, reply, idx); }
   if (!isTempChat) { loadChats(); }
 }
 function agentEnd() {
@@ -2952,6 +3288,7 @@ function agentStop() {
   if (activeController) { try { activeController.abort(); } catch (e) {} }
   if (!r.job) { r.el.remove(); agentEnd(); return true; }
   agentStatus(r.el, 'Stopping…');
+  r.stopped = true;
   var job = r.job;
   api('agent_cancel', { job: job }).then(function (j) {
     agentRun = r; r.seq = sendSeq;
