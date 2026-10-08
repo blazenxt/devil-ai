@@ -1864,18 +1864,23 @@ function chat_lock_open(string $uid, string $id) {
 function chat_lock_close($h): void { if ($h) { @flock($h, LOCK_UN); @fclose($h); } }
 
 function battle_votes_path(): string { return data_dir() . '/battle_votes.json'; }
-function battle_record_vote(string $a, string $b, string $vote): void {
+function battle_user_hash(string $uid): string { return substr(hash('sha256', 'battle-voter|' . $uid), 0, 16); }
+function battle_record_vote(string $a, string $b, string $vote, string $uid = ''): void {
     $lockF = @fopen(data_dir() . '/.battle_votes.lock', 'c');
     if ($lockF) { @flock($lockF, LOCK_EX); }
     $p = battle_votes_path();
     $list = is_readable($p) ? json_decode((string)file_get_contents($p), true) : [];
     if (!is_array($list)) { $list = []; }
-    $list[] = ['a' => $a, 'b' => $b, 'v' => $vote, 't' => time()];
+    $entry = ['a' => $a, 'b' => $b, 'v' => $vote, 't' => time()];
+    if ($uid !== '') { $entry['u'] = battle_user_hash($uid); }
+    $list[] = $entry;
     if (count($list) > 20000) { $list = array_slice($list, -20000); }
     save_json_atomic($p, $list);
     if ($lockF) { @flock($lockF, LOCK_UN); @fclose($lockF); }
 }
-function battle_leaderboard(): array {
+function battle_leaderboard(string $uid = ''): array {
+    $me = $uid !== '' ? battle_user_hash($uid) : '';
+    $mine = ['votes' => 0, 'a' => 0, 'b' => 0, 'tie' => 0, 'bad' => 0, 'picks' => []];
     $rows = [];
     foreach (battle_pool() as $m) { $rows[$m['id']] = ['id' => $m['id'], 'label' => $m['label'], 'icon' => $m['icon'], 'score' => 1000.0, 'wins' => 0, 'losses' => 0, 'ties' => 0, 'votes' => 0]; }
     $p = battle_votes_path();
@@ -1887,6 +1892,12 @@ function battle_leaderboard(): array {
         if ($a === '' || $b === '' || $a === $b) { continue; }
         foreach ([$a, $b] as $id) {
             if (!isset($rows[$id])) { $rows[$id] = ['id' => $id, 'label' => model_label($id), 'icon' => 'devil', 'score' => 1000.0, 'wins' => 0, 'losses' => 0, 'ties' => 0, 'votes' => 0]; }
+        }
+        if ($me !== '' && (string)($v['u'] ?? '') === $me) {
+            $mine['votes']++;
+            if (isset($mine[$r])) { $mine[$r]++; }
+            $pick = $r === 'a' ? $a : ($r === 'b' ? $b : '');
+            if ($pick !== '') { $mine['picks'][$pick] = ($mine['picks'][$pick] ?? 0) + 1; }
         }
         $sa = $r === 'a' ? 1.0 : ($r === 'b' ? 0.0 : 0.5);
         $ea = 1 / (1 + pow(10, ($rows[$b]['score'] - $rows[$a]['score']) / 400));
@@ -1905,7 +1916,11 @@ function battle_leaderboard(): array {
         $r['win_rate'] = $r['votes'] ? (int)round(100 * ($r['wins'] + 0.5 * $r['ties']) / $r['votes']) : null;
     }
     unset($r);
-    return ['models' => $out, 'total' => count($list)];
+    arsort($mine['picks']);
+    $picks = [];
+    foreach ($mine['picks'] as $pid => $cnt) { $picks[] = ['id' => (string)$pid, 'label' => isset($rows[$pid]) ? $rows[$pid]['label'] : model_label((string)$pid), 'count' => (int)$cnt]; }
+    $mine['picks'] = array_slice($picks, 0, 8);
+    return ['models' => $out, 'total' => count($list), 'mine' => $mine];
 }
 
 function infer_chat_mode(array $chat): string {
@@ -2044,6 +2059,7 @@ function list_chats(string $uid): array {
             'url_type'  => (string)($j['url_type'] ?? 'chat'),
             'mode'    => infer_chat_mode($j),
             'title'   => (string)($j['title'] ?? 'New chat'),
+            'pinned'  => !empty($j['pinned']),
             'updated' => (int)($j['updated'] ?? filemtime($f) ?: 0),
         ];
         if (count($out) >= 200) { break; }
@@ -2879,6 +2895,75 @@ try {
         json_out(['ok' => true]);
     }
 
+    if ($action === 'chat_pin' && $method === 'POST') {
+        $in = input_json();
+        $chat = load_chat($uid, (string)($in['id'] ?? ''));
+        if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+        if (!empty($in['pinned'])) { $chat['pinned'] = time(); } else { unset($chat['pinned']); }
+        save_chat($uid, $chat);
+        json_out(['ok' => true, 'pinned' => !empty($chat['pinned'])]);
+    }
+
+    /* 3 short follow-up questions for the latest answer (AI Mode + Agent Mode) */
+    if ($action === 'followups' && $method === 'POST') {
+        $in = input_json();
+        $q = trim(mb_substr((string)($in['question'] ?? ''), 0, 1500));
+        $a = trim(mb_substr((string)($in['answer'] ?? ''), 0, 3500));
+        if ($a === '') { json_out(['ok' => true, 'items' => []]); }
+        if (!rate_ok('rl_fu.json', 'fu:' . $uid, 240, 3600)) { json_out(['ok' => true, 'items' => []]); }
+        $cfgAll = load_config();
+        $prompt = "Conversation so far:\nUSER: " . ($q !== '' ? $q : '(file or image)') . "\nASSISTANT: " . $a . "\n\n"
+            . "Write exactly 3 short follow-up questions the USER is likely to ask next. Use exactly the same language as the USER message: English question → English; Hinglish (Hindi in Latin letters) → Hinglish; Hindi script → Hindi. "
+            . "Each under 12 words, no numbering, no quotes, no emojis, one per line. Output only the 3 lines.";
+        list($ok, $reply) = ai_respond($cfgAll, 'flash', [
+            ['role' => 'system', 'content' => 'You suggest concise follow-up questions. Reply with plain lines only.'],
+            ['role' => 'user', 'content' => $prompt],
+        ], '');
+        $items = [];
+        if ($ok) {
+            foreach (preg_split('/\R/u', (string)$reply) as $line) {
+                $line = trim(preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', $line));
+                $line = trim($line, " \t\"'“”‘’`*");
+                if ($line === '' || mb_strlen($line) < 4 || mb_strlen($line) > 120) { continue; }
+                if (preg_match('/^(here are|sure|follow-?up)/i', $line)) { continue; }
+                $items[] = $line;
+                if (count($items) >= 3) { break; }
+            }
+        }
+        json_out(['ok' => true, 'items' => $items]);
+    }
+
+    /* "Continue with winner": copy a Battle / Side by Side conversation into a Direct (AI Mode) chat with one side's answers */
+    if ($action === 'compare_fork' && $method === 'POST') {
+        $in = input_json();
+        $side = (($in['side'] ?? '') === 'b') ? 'b' : 'a';
+        $src = load_chat($uid, (string)($in['id'] ?? ''));
+        if (!$src || !is_compare_mode(infer_chat_mode($src))) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+        if (infer_chat_mode($src) === 'battle' && empty($src['revealed'])) { json_out(['ok' => false, 'error' => 'Vote first — then you can continue with a model.'], 400); }
+        $cfgAll = load_config();
+        if (count(list_chats($uid)) >= (int)$cfgAll['max_chats']) { json_out(['ok' => false, 'error' => 'You reached your chat limit (' . (int)$cfgAll['max_chats'] . ').', 'hint' => 'Delete some old chats to make room.'], 400); }
+        $out = []; $modelId = ''; $pendingUser = null;
+        foreach (array_values(array_filter($src['messages'] ?? [], 'is_array')) as $m) {
+            if (($m['role'] ?? '') === 'user') { $pendingUser = ['role' => 'user', 'content' => (string)($m['content'] ?? ''), 'ts' => (int)($m['ts'] ?? time())]; continue; }
+            if (empty($m['compare'])) { continue; }
+            $ans = $m['answers'][$side] ?? [];
+            if (($ans['status'] ?? '') !== 'done' || trim((string)($ans['content'] ?? '')) === '' || !$pendingUser) { $pendingUser = null; continue; }
+            $modelId = (string)($ans['model_id'] ?? 'flash');
+            $am = ['role' => 'assistant', 'content' => (string)$ans['content'], 'ts' => (int)($m['ts'] ?? time()), 'model_label' => model_label($modelId)];
+            if (strpos($modelId, 'custom:') === 0) { $am['model_id'] = 'custom'; $am['custom_model'] = substr($modelId, 7); }
+            else { $am['model_id'] = $modelId; }
+            if (!empty($ans['ms'])) { $am['ms'] = (int)$ans['ms']; }
+            $out[] = $pendingUser; $out[] = $am; $pendingUser = null;
+        }
+        if (!$out) { json_out(['ok' => false, 'error' => 'That side has no finished answers yet.'], 400); }
+        $title = trim((string)($src['title'] ?? 'Chat'));
+        $chat = ['id' => 'c' . bin2hex(random_bytes(8)), 'title' => (mb_strlen($title) > 60 ? mb_substr($title, 0, 57) . '…' : $title), 'created' => time(), 'updated' => time(), 'mode' => 'ai', 'forked_from' => (string)$src['id'], 'messages' => $out];
+        ensure_chat_meta($chat);
+        if (!save_chat($uid, $chat)) { json_out(['ok' => false, 'error' => 'Could not save the chat.'], 500); }
+        $model = strpos($modelId, 'custom:') === 0 ? ['id' => 'custom', 'custom' => substr($modelId, 7), 'label' => model_label($modelId)] : ['id' => $modelId, 'label' => model_label($modelId)];
+        json_out(['ok' => true, 'id' => $chat['id'], 'slug' => $chat['slug'], 'url_model' => $chat['url_model'], 'url_type' => $chat['url_type'], 'model' => $model]);
+    }
+
     if ($action === 'chat_rename' && $method === 'POST') {
         $in = input_json();
         $id = (string)($in['id'] ?? '');
@@ -3132,10 +3217,12 @@ try {
         $aiModel = ($model === 'custom') ? ('custom:' . $customModel) : $model;
         $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
 
+        $t0 = microtime(true);
         list($ok, $reply, $used) = ai_respond($cfgAll, $aiModel, $providerMsgs, $aiImg);
+        $replyMs = (int)round((microtime(true) - $t0) * 1000);
         if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }
 
-        $assistantMsg = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => $displayLabel];
+        $assistantMsg = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => $displayLabel, 'ms' => $replyMs];
         if ($customModel !== '') { $assistantMsg['custom_model'] = $customModel; }
         $chat['messages'][] = $assistantMsg;
         if ($chat['title'] === '') {
@@ -3151,7 +3238,7 @@ try {
         if ($customModel !== '') { $modelOut['custom'] = $customModel; }
 
         if ($temp) {
-            json_out(['ok' => true, 'id' => null, 'temp' => true, 'title' => 'Temporary chat', 'reply' => $reply, 'model' => $modelOut]);
+            json_out(['ok' => true, 'id' => null, 'temp' => true, 'title' => 'Temporary chat', 'reply' => $reply, 'model' => $modelOut, 'ms' => $replyMs]);
         }
 
         if ($rootChatForSend) {
@@ -3172,7 +3259,7 @@ try {
             $outModel = (string)($chat['url_model'] ?? 'flash');
             $outType = (string)($chat['url_type'] ?? 'chat');
         }
-        json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'reply' => $reply, 'model' => $modelOut]);
+        json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'reply' => $reply, 'model' => $modelOut, 'ms' => $replyMs]);
     }
 
     /* ── Agent mode: chat_send with a tool-use loop (web search / fetch / calc / time) ── */
@@ -3313,7 +3400,7 @@ try {
 
     /* ── Battle modes: Battle (2 anonymous models) + Side by Side (2 chosen models) ── */
     if ($action === 'battle_leaderboard' && $method === 'GET') {
-        json_out(['ok' => true] + battle_leaderboard());
+        json_out(['ok' => true] + battle_leaderboard($uid));
     }
 
     if ($action === 'compare_start' && $method === 'POST') {
@@ -3450,7 +3537,7 @@ try {
         $saved = save_chat($uid, $chat);
         chat_lock_close($lock);
         if (!$saved) { json_out(['ok' => false, 'error' => 'Could not save your vote.'], 500); }
-        if ($counted) { battle_record_vote((string)$m['answers']['a']['model_id'], (string)$m['answers']['b']['model_id'], $vote); }
+        if ($counted) { battle_record_vote((string)$m['answers']['a']['model_id'], (string)$m['answers']['b']['model_id'], $vote, $uid); }
         $pub = compare_public_chat($chat);
         json_out(['ok' => true, 'vote' => $vote, 'counted' => $counted, 'messages' => $pub['messages']]);
     }

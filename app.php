@@ -77,6 +77,9 @@ $JS_ICONS = [
     'shuffle' => icon('shuffle', 15), 'arrowL' => icon('arrow-left', 15), 'arrowR' => icon('arrow-right', 15), 'arrowD' => icon('arrow-down', 17),
     'equal' => icon('equal', 15), 'sparkM' => icon('spark', 17), 'swordsM' => icon('swords', 17), 'columnsM' => icon('columns', 17), 'messageM' => icon('message', 15),
     'swordsS' => icon('swords', 13), 'columnsS' => icon('columns', 13), 'sparkS' => icon('spark', 13), 'msgS' => icon('message', 13), 'chevS' => icon('chevron-down', 13),
+    'pin' => icon('pin', 14), 'pinS' => icon('pin', 12), 'download' => icon('download', 16), 'keyboard' => icon('keyboard', 16), 'swap' => icon('swap', 15),
+    'fork' => icon('fork', 14), 'external' => icon('external', 13), 'listS' => icon('list', 13), 'clockS' => icon('clock', 12), 'globeS' => icon('globe', 12),
+    'fileS' => icon('file-text', 12), 'calcS' => icon('calculator', 12), 'linkS' => icon('link', 12), 'retryS' => icon('retry', 13), 'sparklesS' => icon('sparkles', 13),
 ];
 ?><!DOCTYPE html>
 <html lang="en">
@@ -143,6 +146,20 @@ img{-webkit-user-drag:none}
 .chatitem .act button{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--dim2)}
 .chatitem .act button:hover{background:rgba(244,63,94,.18);color:var(--soft)}
 .list-empty{color:var(--dim2);font-size:.8rem;padding:16px 10px;text-align:center;line-height:1.6}
+.sb-filter{display:flex;gap:3px;margin:-2px 12px 6px;padding:3px;border-radius:10px;background:rgba(0,0,0,.18);border:1px solid var(--border)}
+.sb-filter button{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:0;height:26px;padding:0 6px;border-radius:7px;font-size:.7rem;font-weight:600;color:var(--dim2);white-space:nowrap}
+.sb-filter button span{overflow:hidden;text-overflow:ellipsis}
+.sb-filter button:hover{color:var(--text)}
+.sb-filter button.on{background:var(--panel3,rgba(255,255,255,.08));color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.18)}
+[data-theme=light] .sb-filter{background:rgba(120,80,90,.06)}
+[data-theme=light] .sb-filter button.on{background:#fff}
+.sb-filter button:not(.on) span{display:none}
+.sb-filter button:not(.on):not([data-f=all]){flex:0 0 32px;padding:0}
+.sb-filter button.on{flex:1 1 auto}
+.grp.pin{display:flex;align-items:center;gap:5px}
+.chatitem .act button.pinned{color:var(--soft)}
+.chatitem.pinned:not(:hover) .t::after{content:"";display:inline-block}
+@media (hover:none){.chatitem.on .act{display:flex}}
 
 /* user menu */
 .sb-bottom{border-top:1px solid var(--border);padding:10px 12px;position:relative}
@@ -953,6 +970,149 @@ body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
   .sheet{max-height:calc(100dvh - 20px)}
   .lbbody{max-height:calc(100dvh - 190px)}
 }
+/* ═══ extra features (export, pins, follow-ups, stats, sources, battle extras) ═══ */
+.popmenu{position:fixed;z-index:400;min-width:220px;max-width:min(320px,calc(100vw - 16px));overflow-y:auto;overscroll-behavior:contain;padding:6px;border-radius:14px;background:var(--panel);border:1px solid var(--border);box-shadow:0 12px 36px rgba(0,0,0,.28),0 2px 6px rgba(0,0,0,.12);animation:pmIn .14s ease}
+@keyframes pmIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.popmenu .pmhead{font-size:.66rem;letter-spacing:1px;text-transform:uppercase;color:var(--dim2);font-weight:700;padding:8px 10px 5px}
+.popmenu hr{border:none;border-top:1px solid var(--border);margin:5px 4px}
+.popmenu .pmi{width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;text-align:left;color:var(--text);transition:background .12s}
+.popmenu .pmi:hover,.popmenu .pmi:focus-visible{background:var(--ag-hover,rgba(255,255,255,.06))}
+.popmenu .pmi.on{background:var(--panel2)}
+.popmenu .pmic{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--panel2);color:var(--dim)}
+.popmenu .pmic img,.popmenu .pmic svg{width:15px;height:15px}
+.popmenu .pmtx{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.popmenu .pmtx b{font-size:.84rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.popmenu .pmtx small{font-size:.72rem;color:var(--dim2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.popmenu .pmck{color:var(--soft,#f43f5e);display:inline-flex}
+.popmenu.pm-models{width:290px}
+[data-theme=light] .popmenu{box-shadow:0 12px 34px rgba(60,40,30,.14),0 2px 6px rgba(60,40,30,.08)}
+
+/* AI message: retry-with chevron, SBS hand-off, stats */
+.acts .rwith{width:20px!important;margin-left:-6px}
+.acts .rwith svg{width:12px;height:12px}
+.acts .mstat{margin-left:auto;align-self:center;font-size:.72rem;color:var(--dim2);white-space:nowrap;font-variant-numeric:tabular-nums;padding:0 4px}
+
+/* follow-up chips */
+.fups{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:12px;animation:pmIn .2s ease}
+.fup{display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:7px 12px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--dim);font-size:.84rem;text-align:left;line-height:1.35;transition:.14s}
+.fup .fi{display:inline-flex;color:var(--dim2);flex-shrink:0}
+.fup .fi svg{width:13px;height:13px}
+.fup:hover{background:var(--panel2);color:var(--text);border-color:var(--border-hi,var(--border))}
+.fup .ft{min-width:0}
+
+/* agent: summary chips, per-step copy/open, sources cards */
+.agx-sum{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+.agx-sum span{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;background:var(--panel2);border:1px solid var(--ag-line,var(--border));font-size:.72rem;color:var(--dim)}
+.agx-sum span svg{color:var(--dim2)}
+.agx-out{position:relative;padding:0!important;overflow:hidden!important;max-height:none!important}
+.agx-otx{padding:10px 40px 10px 12px;max-height:240px;overflow:auto}
+.agx-copy{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--dim2);background:var(--panel);border:1px solid var(--ag-line,var(--border))}
+.agx-copy:hover{color:var(--text)}
+.agx-copy svg{width:13px;height:13px}
+.agx-open{position:absolute;right:0;top:4px;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--dim2)}
+.agx-open:hover{background:var(--ag-hover,rgba(255,255,255,.06));color:var(--text)}
+.agx-step:has(.agx-open) .agx-row{padding-right:34px}
+.agx-src{margin:14px 0 2px}
+.agx-src .srchead{display:flex;align-items:center;gap:6px;font-size:.74rem;font-weight:600;color:var(--dim);margin-bottom:7px}
+.agx-src .srchead span{font-weight:500;color:var(--dim2)}
+.agx-src .srcrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.srccard{display:flex;flex-direction:column;justify-content:space-between;gap:8px;min-width:0;min-height:72px;padding:9px 11px;border-radius:12px;border:1px solid var(--border);background:var(--panel);color:var(--text);text-decoration:none;text-align:left;transition:.14s}
+.srccard:hover{border-color:var(--border-hi,var(--border));background:var(--panel2);transform:translateY(-1px)}
+.srccard .st{font-size:.78rem;line-height:1.35;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.srccard .sh{display:flex;align-items:center;gap:6px;min-width:0;font-size:.7rem;color:var(--dim2)}
+.srccard .fav{position:relative;width:16px;height:16px;border-radius:4px;flex-shrink:0;overflow:hidden;background:var(--panel3);display:flex;align-items:center;justify-content:center}
+.srccard .fav img{position:absolute;inset:0;width:16px;height:16px}
+.srccard .fav i{font-style:normal;font-size:.6rem;font-weight:700;color:var(--dim)}
+.srccard .hn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srccard .rd{margin-left:auto;font-size:.62rem;padding:1px 6px;border-radius:999px;background:var(--panel2);color:var(--dim)}
+.srccard.more{align-items:flex-start;color:var(--dim)}
+.srccard.more .st{font-weight:600}
+
+/* agent task templates (empty state) */
+#agentTasks{display:none;max-width:680px;margin:14px auto 0;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+body.agent-mode.agent-empty #agentTasks{display:grid}
+.atask{display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--panel);color:var(--text);text-align:left;transition:.14s}
+.atask:hover{background:var(--panel2);border-color:var(--border-hi,var(--border));transform:translateY(-1px)}
+.atask .ai{width:30px;height:30px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--panel2);color:var(--dim)}
+.atask b{display:block;font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atask small{display:block;font-size:.72rem;color:var(--dim2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atask > span:last-child{min-width:0}
+
+/* battle: keyboard hints, regenerate both, continue with winner, sync, swap */
+.cmp-vote kbd{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;margin-left:2px;border-radius:5px;border:1px solid var(--border);background:var(--panel2);font:600 .66rem/1 ui-monospace,Consolas,monospace;color:var(--dim2)}
+.cmp-vote .kh{color:var(--dim2);opacity:.8}
+@media (hover:none),(max-width:760px){.cmp-vote kbd,.cmp-vote .kh{display:none}}
+.cmp-vote button.kbd-hit{border-color:var(--text);background:var(--panel2)}
+.cmp-vx{width:100%;display:flex;justify-content:center;margin-top:2px}
+.cmp-vote .cmp-vx button.regen{height:30px;padding:0 12px;border:none;background:transparent;color:var(--dim);font-size:.78rem}
+.cmp-vote .cmp-vx button.regen:hover{background:var(--panel2);color:var(--text);transform:none}
+.cmp-result button.alt{background:transparent;color:var(--text);border:1px solid var(--border)}
+.cmp-result button.fork{max-width:100%}
+.cmp-ibtn[data-act=sync]{opacity:.55}
+.cmp-ibtn[data-act=sync].on{opacity:1;color:var(--text)}
+@media (max-width:760px){.cmp-ibtn[data-act=sync]{display:none!important}}
+.cmpswap{display:none;order:3;width:28px;height:28px;border-radius:8px;align-items:center;justify-content:center;color:var(--dim);flex-shrink:0}
+.cmpswap:hover{background:var(--ag-hover,rgba(255,255,255,.06));color:var(--text)}
+.cmpswap.spin svg{animation:swapSpin .35s ease}
+@keyframes swapSpin{from{transform:rotate(-180deg)}to{transform:none}}
+body.sbs-mode .cmpswap{display:inline-flex}
+
+/* leaderboard: tabs + my votes */
+.lbtabs{display:flex;gap:4px;padding:3px;border-radius:10px;background:var(--panel2);border:1px solid var(--border);margin:12px 0 2px;width:max-content;max-width:100%}
+.lbtabs button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:7px;font-size:.8rem;font-weight:600;color:var(--dim)}
+.lbtabs button.on{background:var(--panel);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.mystats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:4px 0 6px}
+.mst{padding:10px;border-radius:12px;border:1px solid var(--border);background:var(--panel);text-align:center;min-width:0}
+.mst b{display:block;font-size:1.25rem;font-weight:700;color:var(--text)}
+.mst span{display:block;font-size:.68rem;color:var(--dim2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lbsec{font-size:.68rem;letter-spacing:1px;text-transform:uppercase;color:var(--dim2);font-weight:700;margin:14px 2px 6px}
+.mypicks{display:flex;flex-direction:column;gap:6px}
+.mpk{display:flex;align-items:center;gap:9px;font-size:.84rem}
+.mpk .oi{display:inline-flex;color:var(--dim)}
+.mpk .nm{width:34%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mpk .bar{flex:1;height:8px;border-radius:999px;background:var(--panel2);overflow:hidden}
+.mpk .bar i{display:block;height:100%;border-radius:999px;background:var(--ag-accent,#f43f5e)}
+.myv{padding:10px 12px 12px}
+.mpk .ct{width:26px;text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
+.myrecent{display:flex;flex-direction:column;gap:2px}
+.mrc{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;color:var(--text);text-decoration:none;font-size:.84rem}
+.mrc:hover{background:var(--panel2)}
+.mrc svg{color:var(--dim2);flex-shrink:0}
+.mrc .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrc .d{font-size:.72rem;color:var(--dim2);white-space:nowrap}
+.lbfoot{margin-top:12px;font-size:.74rem;color:var(--dim2)}
+
+/* keyboard shortcuts modal */
+.kbdsheet{max-width:440px}
+.kbdlist{margin-top:10px}
+.kgrp{font-size:.66rem;letter-spacing:1px;text-transform:uppercase;color:var(--dim2);font-weight:700;margin:14px 0 4px}
+.krow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);font-size:.86rem}
+.krow:last-child{border-bottom:none}
+.krow .keys{display:inline-flex;align-items:center;gap:4px;color:var(--dim2);font-size:.74rem;white-space:nowrap}
+.krow kbd,.kbdsheet kbd{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:6px;border:1px solid var(--border);border-bottom-width:2px;background:var(--panel2);font:600 .7rem/1 ui-monospace,Consolas,monospace;color:var(--text)}
+
+/* phones */
+@media (max-width:600px){
+  #agentTasks{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
+  .atask{padding:8px 9px;gap:8px}
+  .atask .ai{width:26px;height:26px}
+  .atask small{display:none}
+  body.agent-mode.agent-empty #composer{padding-bottom:6vh}
+  .agx-src .srcrow{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .srccard{min-height:64px;padding:8px 9px}
+  .mystats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .acts .mstat{flex-basis:100%;margin-left:0;padding:2px 2px 0}
+  .fup{font-size:.82rem}
+}
+@media (max-width:480px){
+  body.sbs-mode .cmppick .cmpbtn > svg{display:none}
+  .atask b{white-space:normal;font-size:.78rem;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  body.sbs-mode .cmpswap{width:24px;height:28px}
+  body.sbs-mode .cmpswap svg{width:13px;height:13px}
+}
+@media (max-height:500px) and (orientation:landscape){
+  body.agent-mode.agent-empty #agentTasks{display:none}
+}
 </style>
 </head>
 <body class="devil-ui<?= $ROUTE_MODE === 'agent' ? ' agent-mode' : '' ?><?= $ROUTE_MODE !== 'ai' ? ' alt-mode' : '' ?><?= $IS_CMP ? ' cmp-mode ' . $ROUTE_MODE . '-mode' : '' ?><?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? ' loading-chat' : '' ?>">
@@ -969,12 +1129,20 @@ body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
     <button class="newchat" id="newChatBtn"><?= icon('square-pen', 17) ?> New chat</button>
     <button class="sbnav" id="sbBoard" type="button"><?= icon('trophy', 16) ?> Leaderboard</button>
     <div class="sb-search"><?= icon('search', 15) ?><input id="searchInp" type="text" placeholder="Search chats…" autocomplete="off"></div>
+    <div class="sb-filter" id="sbFilter" role="tablist" aria-label="Filter chats by mode">
+      <button type="button" data-f="all" class="on">All</button>
+      <button type="button" data-f="ai" title="AI Mode chats"><?= icon('message', 13) ?><span>AI</span></button>
+      <button type="button" data-f="agent" title="Agent Mode chats"><?= icon('spark', 13) ?><span>Agent</span></button>
+      <button type="button" data-f="battle" title="Battle chats"><?= icon('swords', 13) ?><span>Battle</span></button>
+      <button type="button" data-f="sbs" title="Side by Side chats"><?= icon('columns', 13) ?><span>SBS</span></button>
+    </div>
     <nav id="chatList" aria-label="Chat history"></nav>
     <div class="sb-bottom">
       <div id="userMenu">
         <?php if (strtolower((string)($me['email'] ?? '')) === 'bk.w.p.bk@gmail.com'): ?><a class="mi" href="admin.php"><?= icon('shield-check', 16) ?> Admin control</a><?php endif; ?>
         <a class="mi" href="developers.php"><?= icon('code', 16) ?> Developer API</a>
         <a class="mi" href="settings.php"><?= icon('settings', 16) ?> Account settings</a>
+        <button class="mi" id="mKbd" type="button"><?= icon('keyboard', 16) ?> Keyboard shortcuts</button>
         <button class="mi" id="mCookies"><?= icon('cookie', 16) ?> Cookie settings</button>
         <hr>
         <button class="mi danger" id="mDelAcc"><?= icon('warning', 16) ?> Delete account</button>
@@ -1021,6 +1189,7 @@ body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
 
     <div class="chattools" id="chatTools" aria-label="Chat actions">
       <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
+      <button class="ctbtn" id="exportBtn" type="button" title="Export chat (Markdown / PDF)" aria-haspopup="menu"><?= icon('download', 17) ?><span class="txt">Export</span></button>
       <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
       <button class="ctbtn" id="wsBtn" type="button" title="Workspace — sources and tool activity" aria-expanded="false"><?= icon('folder', 18) ?><span class="txt">Workspace</span></button>
     </div>
@@ -1065,6 +1234,7 @@ body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
             </div>
             <span id="cmpAuto" class="cmpchip" title="Two random Devil models are picked for every battle. Their names stay hidden until you vote."><?= icon('shuffle', 14) ?><span class="lb">Random models</span></span>
             <div class="cmppick" id="cmpPickA" data-side="a"><button type="button" class="cmpbtn" aria-haspopup="menu"><span class="cmpab">A</span><span class="lb">Devil Flash</span><?= icon('chevron-down', 13) ?></button><div class="cmpmenu" role="menu"></div></div>
+            <button type="button" id="cmpSwap" class="cmpswap" title="Swap model A and B" aria-label="Swap model A and B"><?= icon('swap', 15) ?></button>
             <div class="cmppick" id="cmpPickB" data-side="b"><button type="button" class="cmpbtn" aria-haspopup="menu"><span class="cmpab">B</span><span class="lb">Devil Pro</span><?= icon('chevron-down', 13) ?></button><div class="cmpmenu" role="menu"></div></div>
             <button id="voiceBtn" title="Live voice chat" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
             <button id="promptBtn" title="Prompt library" type="button"><?= icon('lightbulb', 16) ?></button>
@@ -1079,6 +1249,14 @@ body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
           <button id="quickVoiceBtn" title="Voice input" type="button"><?= icon('mic', 17) ?></button>
           <button id="sendBtn" title="Send (Enter)" type="button" disabled hidden><?= icon('send', 17) ?></button>
         </div>
+      </div>
+      <div id="agentTasks" aria-label="Agent task ideas">
+        <button type="button" class="atask" data-fill="Research the latest news about "><span class="ai"><?= icon('globe', 16) ?></span><span><b>Research a topic</b><small>Latest news, cited sources</small></span></button>
+        <button type="button" class="atask" data-fill="Compare the current prices and specs of "><span class="ai"><?= icon('layers', 16) ?></span><span><b>Compare products</b><small>Prices, specs, pros &amp; cons</small></span></button>
+        <button type="button" class="atask" data-fill="Read this page and summarize the key points: https://"><span class="ai"><?= icon('file-text', 16) ?></span><span><b>Summarize a page</b><small>Paste any public link</small></span></button>
+        <button type="button" class="atask" data-fill="Plan a 3-day trip to  with a day-by-day itinerary and a budget in INR"><span class="ai"><?= icon('list', 16) ?></span><span><b>Plan a trip</b><small>Day-by-day itinerary + budget</small></span></button>
+        <button type="button" class="atask" data-fill="Fact-check this claim with sources: "><span class="ai"><?= icon('shield-check', 16) ?></span><span><b>Fact-check a claim</b><small>Verify with real sources</small></span></button>
+        <button type="button" class="atask" data-fill="Calculate the EMI for a loan of ₹10,00,000 at 9% for 5 years and show the formula"><span class="ai"><?= icon('calculator', 16) ?></span><span><b>Crunch numbers</b><small>EMI, percentages, conversions</small></span></button>
       </div>
       <p class="hint"><span class="hk">Enter = new line • Ctrl/⌘ + Enter = send • </span>Devil AI can make mistakes.</p>
     </div>
@@ -1114,9 +1292,31 @@ body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
 <!-- ═══ leaderboard modal (Battle Mode votes) ═══ -->
 <div class="modal hidden" id="lbModal"><div class="sheet lbsheet">
   <div class="shead"><h3><?= icon('trophy', 17) ?> Devil Battle Leaderboard</h3><button class="iconbtn" data-close="lbModal"><?= icon('x', 16) ?></button></div>
+  <div class="lbtabs" id="lbTabs" role="tablist"><button type="button" class="on" data-lbt="board"><?= icon('trophy', 14) ?> Leaderboard</button><button type="button" data-lbt="mine"><?= icon('user', 14) ?> My votes</button></div>
   <p class="snote" id="lbNote">Rankings come from anonymous Battle Mode votes (Elo score).</p>
   <div id="lbBody" class="lbbody"></div>
   <div class="btnrow"><button class="btn primary" id="lbBattle" type="button"><?= icon('swords', 15) ?> Start a battle</button><button class="btn ghost" data-close="lbModal">Close</button></div>
+</div></div>
+
+<!-- ═══ keyboard shortcuts ═══ -->
+<div class="modal hidden" id="kbdModal"><div class="sheet kbdsheet">
+  <div class="shead"><h3><?= icon('keyboard', 17) ?> Keyboard shortcuts</h3><button class="iconbtn" data-close="kbdModal"><?= icon('x', 16) ?></button></div>
+  <div class="kbdlist">
+    <div class="kgrp">General</div>
+    <div class="krow"><span>Search chats</span><span class="keys"><kbd class="kmod">Ctrl</kbd><kbd>K</kbd></span></div>
+    <div class="krow"><span>New chat</span><span class="keys"><kbd class="kmod">Ctrl</kbd><kbd>Shift</kbd><kbd>O</kbd></span></div>
+    <div class="krow"><span>Toggle sidebar</span><span class="keys"><kbd class="kmod">Ctrl</kbd><kbd>Shift</kbd><kbd>S</kbd></span></div>
+    <div class="krow"><span>Focus the message box</span><span class="keys"><kbd>/</kbd> or <kbd>Shift</kbd><kbd>Esc</kbd></span></div>
+    <div class="krow"><span>Send message</span><span class="keys"><kbd class="kmod">Ctrl</kbd><kbd>Enter</kbd></span></div>
+    <div class="krow"><span>Show shortcuts</span><span class="keys"><kbd class="kmod">Ctrl</kbd><kbd>/</kbd></span></div>
+    <div class="krow"><span>Close menus and dialogs</span><span class="keys"><kbd>Esc</kbd></span></div>
+    <div class="kgrp">Battle &amp; Side by Side</div>
+    <div class="krow"><span>A is better</span><span class="keys"><kbd>1</kbd></span></div>
+    <div class="krow"><span>B is better</span><span class="keys"><kbd>2</kbd></span></div>
+    <div class="krow"><span>It’s a tie</span><span class="keys"><kbd>3</kbd></span></div>
+    <div class="krow"><span>Both are bad</span><span class="keys"><kbd>4</kbd></span></div>
+  </div>
+  <div class="btnrow"><button class="btn ghost" data-close="kbdModal">Close</button></div>
 </div></div>
 
 <!-- ═══ compare answer full view ═══ -->
@@ -1178,6 +1378,7 @@ var $$ = function (s) { return Array.prototype.slice.call(document.querySelector
 var models = [], modelById = {}, currentModel = 'flash';
 var customModels = [], customById = {}, currentCustom = 'devil-09';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages, temp?} */
+var listModeFilter = 'all';
 var busy = false, isTempChat = false, activeController = null, sendSeq = 0, inlineEdit = null, editRestoreChat = null;
 var chatMode = ROUTE_MODE, agentMode = ROUTE_MODE === 'agent', agentEnabled = true;
 var BATTLE_POOL = [], battleById = {}, cmpA = 'flash', cmpB = 'pro', cmpFromChat = false;
@@ -1537,8 +1738,7 @@ function refreshMessageActions() {
   retryBtns.forEach(function (b) { b.hidden = true; });
   var last = msgs ? msgs.lastElementChild : null;
   if (last && last.classList.contains('msg-ai') && !last.classList.contains('thinking')) {
-    var rb = last.querySelector('.retryAct');
-    if (rb) { rb.hidden = false; }
+    Array.prototype.forEach.call(last.querySelectorAll('.retryAct'), function (rb) { rb.hidden = false; });
   }
 }
 
@@ -1709,37 +1909,68 @@ function renderList(filter) {
   filter = (filter || '').toLowerCase();
   var now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   var yest = today - 86400000, week = today - 7 * 86400000;
-  var groups = { today: [], yest: [], week: [], older: [] };
+  var groups = { pinned: [], today: [], yest: [], week: [], older: [] };
   chats.forEach(function (c) {
     if (filter && (c.title || '').toLowerCase().indexOf(filter) === -1) { return; }
+    if (listModeFilter !== 'all' && (c.mode || 'ai') !== listModeFilter) { return; }
     var t = c.updated ? c.updated * 1000 : 0;
-    if (t >= today) { groups.today.push(c); }
+    if (c.pinned) { groups.pinned.push(c); }
+    else if (t >= today) { groups.today.push(c); }
     else if (t >= yest) { groups.yest.push(c); }
     else if (t >= week) { groups.week.push(c); }
     else { groups.older.push(c); }
   });
   var html = '';
-  var labels = { today: 'Today', yest: 'Yesterday', week: 'Previous 7 days', older: 'Older' };
+  var labels = { pinned: 'Pinned', today: 'Today', yest: 'Yesterday', week: 'Previous 7 days', older: 'Older' };
   var any = false;
   Object.keys(labels).forEach(function (k) {
     if (!groups[k].length) { return; }
     any = true;
-    html += '<div class="grp">' + labels[k] + '</div>';
+    html += '<div class="grp' + (k === 'pinned' ? ' pin' : '') + '">' + (k === 'pinned' ? I.pinS + ' ' : '') + labels[k] + '</div>';
     groups[k].forEach(function (c) {
       var isOn = currentChat && (currentChat.id === c.id || currentChat.root_id === c.id || (currentChat.slug && currentChat.slug === c.slug));
-      html += '<div class="chatitem' + (isOn ? ' on' : '') + '" data-id="' + c.id + '" data-slug="' + (c.slug || '') + '">' +
+      html += '<div class="chatitem' + (isOn ? ' on' : '') + (c.pinned ? ' pinned' : '') + '" data-id="' + c.id + '" data-slug="' + (c.slug || '') + '">' +
         '<span class="cmode" title="' + ((MODE_INFO[c.mode] || MODE_INFO.ai || { label: 'AI Mode' }).label) + '">' + I[c.mode === 'battle' ? 'swordsS' : (c.mode === 'sbs' ? 'columnsS' : (c.mode === 'agent' ? 'sparkS' : 'msgS'))] + '</span>' +
         '<span class="t"></span><span class="act">' +
+        '<button data-pin="' + c.id + '" title="' + (c.pinned ? 'Unpin' : 'Pin to top') + '" class="' + (c.pinned ? 'pinned' : '') + '">' + I.pin + '</button>' +
         '<button data-rename="' + c.id + '" title="Rename">' + I.pencil + '</button>' +
         '<button data-del="' + c.id + '" title="Delete">' + I.trash + '</button></span></div>';
     });
   });
-  if (!any) { html = '<div class="list-empty">' + (filter ? 'No chats match your search.' : 'No chats yet — your conversations will appear here.') + '</div>'; }
+  if (!any) {
+    var fl = listModeFilter !== 'all' ? ((MODE_INFO[listModeFilter] || {}).label || 'this mode') : '';
+    html = '<div class="list-empty">' + (filter ? 'No chats match your search.' : (fl ? 'No ' + fl + ' chats yet.' : 'No chats yet — your conversations will appear here.')) + '</div>';
+  }
   box.innerHTML = html;
   $$('#chatList .chatitem').forEach(function (el) {
     el.querySelector('.t').textContent = (chats.filter(function (c) { return c.id === el.dataset.id; })[0] || {}).title || 'New chat';
   });
 }
+
+function togglePin(id) {
+  var c = chats.filter(function (x) { return x.id === id; })[0];
+  if (!c) { return; }
+  var want = !c.pinned;
+  c.pinned = want; renderList($('#searchInp').value);
+  api('chat_pin', { id: id, pinned: want }).then(function (j) {
+    if (!j.ok) { c.pinned = !want; renderList($('#searchInp').value); toast(j.error || 'Could not pin the chat.'); return; }
+    toast(want ? 'Pinned to the top' : 'Unpinned');
+  }).catch(function () { c.pinned = !want; renderList($('#searchInp').value); toast('Network error.'); });
+}
+function setListFilter(f) {
+  listModeFilter = ['all', 'ai', 'agent', 'battle', 'sbs'].indexOf(f) >= 0 ? f : 'all';
+  store('devil_list_filter', listModeFilter);
+  $$('#sbFilter button').forEach(function (b) { b.classList.toggle('on', b.dataset.f === listModeFilter); b.setAttribute('aria-selected', b.dataset.f === listModeFilter ? 'true' : 'false'); });
+  renderList($('#searchInp').value);
+}
+$('#sbFilter').addEventListener('click', function (e) { var b = e.target.closest('button[data-f]'); if (b) { setListFilter(b.dataset.f); } });
+(function () {
+  var f = read('devil_list_filter');
+  if (['ai', 'agent', 'battle', 'sbs'].indexOf(f) >= 0) {
+    listModeFilter = f;
+    $$('#sbFilter button').forEach(function (b) { b.classList.toggle('on', b.dataset.f === f); });
+  }
+})();
 
 function loadChats() {
   return api('chats').then(function (j) {
@@ -1749,7 +1980,8 @@ function loadChats() {
 $('#searchInp').addEventListener('input', function () { renderList(this.value); });
 
 $('#chatList').addEventListener('click', function (e) {
-  var rn = e.target.closest('[data-rename]'), del = e.target.closest('[data-del]');
+  var rn = e.target.closest('[data-rename]'), del = e.target.closest('[data-del]'), pn = e.target.closest('[data-pin]');
+  if (pn) { e.stopPropagation(); togglePin(pn.dataset.pin); return; }
   if (rn) { e.stopPropagation(); openRename(rn.dataset.rename); return; }
   if (del) { e.stopPropagation(); deleteChat(del.dataset.del); return; }
   var it = e.target.closest('.chatitem');
@@ -1935,18 +2167,22 @@ function renderAgentTrace(el, steps, ms) {
       '<span class="agx-ic">' + (I[t.icon] || '') + '</span>' +
       '<button type="button" class="agx-row"><span class="agx-verb">' + esc(s.ok ? t.verb : t.verb + ' — failed') + '</span>' +
       '<span class="agx-arg">' + esc(agxArg(s)) + '</span>' + (out ? '<span class="agx-chev">' + (I.chevR || '') + '</span>' : '') + '</button>' +
-      (out ? '<div class="agx-out">' + esc(out) + '</div>' : '') + '</div>';
+      (s.tool === 'fetch_url' && /^https?:\/\//i.test(String(s.input || '').trim()) ? '<a class="agx-open" href="' + esc(String(s.input).trim()) + '" target="_blank" rel="noopener noreferrer" title="Open page">' + I.external + '</a>' : '') +
+      (out ? '<div class="agx-out"><button type="button" class="agx-copy" title="Copy output">' + I.copy + '</button><div class="agx-otx">' + esc(out) + '</div></div>' : '') + '</div>';
   }).join('');
   box.innerHTML = '<button type="button" class="agx-head"><span class="agx-spark">' + (I.spark || '') + '</span><span>' + esc(label) + '</span>' +
-    (steps.length ? '<span class="agx-chev">' + (I.chevR || '') + '</span>' : '') + '</button>' +
+    (steps.length ? '<span class="agx-chev">' + (I.chevR || '') + '</span>' : '') + '</button>' + agentSummaryHtml(steps) +
     (steps.length ? '<div class="agx-list">' + rows + '<div class="agx-done">' + (I.check || '') + ' Done</div></div>' : '');
   box.querySelector('.agx-head').addEventListener('click', function () { if (steps.length) { box.classList.toggle('open'); } });
   Array.prototype.forEach.call(box.querySelectorAll('.agx-step'), function (st) {
     var r = st.querySelector('.agx-row');
     if (st.querySelector('.agx-out')) { r.addEventListener('click', function () { st.classList.toggle('open'); }); }
+    var cp = st.querySelector('.agx-copy');
+    if (cp) { cp.addEventListener('click', function (e) { e.stopPropagation(); copyText(String((steps[Number(st.dataset.i)] || {}).output || '')); }); }
   });
   var body = el.querySelector('.body');
   if (body) { body.insertBefore(box, el.querySelector('.content')); }
+  renderSourceCards(el, steps);
 }
 
 /* workspace panel: sources + tool activity gathered from this chat's agent steps */
@@ -2009,6 +2245,24 @@ function aiContent(el, text, meta) {
   var rt = actionBtn(I.retry, 'Retry', 'Regenerate last response', retryLast);
   rt.className = 'retryAct';
   acts.appendChild(rt);
+  if (!agentMode) {
+    var rw = actionBtn(I.chevS, 'Retry with', 'Retry with another model', function (e) { e.stopPropagation(); if (!busy) { openRetryWith(rw); } });
+    rw.className = 'retryAct rwith';
+    acts.appendChild(rw);
+    var sbsb = actionBtn(I.columns, 'Side by Side', 'Compare this prompt in Side by Side', function () { openInSideBySide(meta.index); });
+    sbsb.className = 'sbsAct';
+    acts.appendChild(sbsb);
+  }
+  var stat = [], wc = wordCount(text);
+  if (meta.ms) { stat.push(fmtSecs(meta.ms)); }
+  if (wc) { stat.push(wc + ' word' + (wc === 1 ? '' : 's')); }
+  if (stat.length) {
+    var sp = document.createElement('span');
+    sp.className = 'mstat';
+    sp.textContent = stat.join(' · ');
+    sp.title = (meta.ms ? 'Answered in ' + fmtSecs(meta.ms) + ' · ' : '') + wc + ' words';
+    acts.appendChild(sp);
+  }
   refreshMessageActions();
   scrollDown();
 }
@@ -2022,7 +2276,7 @@ function renderCurrentMessages() {
     if (!m || !m.role) { return; }
     if (m.compare) { renderCompareTurn(m, idx); return; }
     if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited, branchGroup: branchGroupFor(idx), attachments: m.attachments || [] }); }
-    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx }); if ((m.agent_steps && m.agent_steps.length) || m.agent_ms) { renderAgentTrace(el, m.agent_steps || [], m.agent_ms); } }
+    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx, ms: m.ms || m.agent_ms }); if ((m.agent_steps && m.agent_steps.length) || m.agent_ms) { renderAgentTrace(el, m.agent_steps || [], m.agent_ms); } }
   });
   refreshMessageActions();
   scrollDown();
@@ -2536,6 +2790,8 @@ function updateChatActions() {
   var tt = tb.querySelector('.txt');
   if (tt) { tt.textContent = isTempChat ? 'Temp on' : 'Temp'; }
   $('#topNewChatBtn').style.display = (currentChat && !isTempChat) ? 'inline-flex' : 'none';
+  var exb = $('#exportBtn');
+  if (exb) { exb.style.display = (currentChat && currentChat.messages && currentChat.messages.length) ? 'inline-flex' : 'none'; }
 }
 function updateSendButton() {
   var hasPayload = !!(inp.value.trim() || (pendingFiles && pendingFiles.length));
@@ -2744,6 +3000,16 @@ function newChatView() {
 }
 $('#newChatBtn').addEventListener('click', function () { window.location.href = newChatPath(); });
 
+$$('#agentTasks .atask').forEach(function (c) {
+  c.addEventListener('click', function () {
+    var t = c.dataset.fill || '';
+    inp.value = t; resize(); inp.focus();
+    var gap = t.indexOf('  ');
+    var pos = gap >= 0 ? gap + 1 : t.length;
+    try { inp.setSelectionRange(pos, pos); } catch (e) {}
+    if (typeof updateSendButton === 'function') { updateSendButton(); }
+  });
+});
 $$('#welcome .card').forEach(function (c) {
   c.addEventListener('click', function () { inp.value = c.dataset.fill; resize(); send(); });
 });
@@ -2783,6 +3049,7 @@ function retryLast() {
 
 function runSend(payload) {
   busy = true;
+  clearFollowups(); closePop();
   if (voiceMode) { stopVoiceListening(); setVoiceStatus('Thinking…'); }
   var seq = ++sendSeq;
   activeController = window.AbortController ? new AbortController() : null;
@@ -2820,12 +3087,15 @@ function runSend(payload) {
       var am = { role: 'assistant', content: j.reply, model_label: (j.model && j.model.label) || activeModelLabel() };
       if (j.agent && j.agent.steps && j.agent.steps.length) { am.agent_steps = j.agent.steps; }
       if (j.agent && j.agent.ms) { am.agent_ms = j.agent.ms; }
+      if (j.ms) { am.ms = j.ms; }
+      if (j.model && j.model.id) { am.model_id = j.model.id; if (j.model.id === 'custom' && payload.custom_model) { am.custom_model = payload.custom_model; } }
       if (currentChat && j.mode) { currentChat.mode = j.mode; }
       currentChat.messages.push(am);
       var aiIndex = currentChat.messages.length - 1;
       var el = addAiMsg({ modelTag: (j.model && j.model.label) || activeModelLabel() });
-      aiContent(el, j.reply, { index: aiIndex });
+      aiContent(el, j.reply, { index: aiIndex, ms: j.ms || (j.agent && j.agent.ms) });
       if (j.agent) { renderAgentTrace(el, j.agent.steps || [], j.agent.ms); renderWorkspace(); }
+      loadFollowups(el, payload.retry ? promptBefore(aiIndex) : payload.message, j.reply);
       if (voiceMode) { speakText(j.reply); }
       if (!isTempChat) { loadChats(); }
       updateChatActions();
@@ -2857,15 +3127,17 @@ function buildCompareTurn(turnIdx, m) {
   ['a', 'b'].forEach(function (s) {
     html += '<div class="cmp-col" data-side="' + s + '"><div class="cmp-head"><span class="cmpab">' + s.toUpperCase() + '</span><span class="cmp-name"></span><span class="cmp-time"></span><span class="sp"></span>' +
       '<button type="button" class="cmp-ibtn" data-act="copy" title="Copy">' + I.copy + '</button>' +
+      '<button type="button" class="cmp-ibtn' + (cmpSyncOn() ? ' on' : '') + '" data-act="sync" title="' + (cmpSyncOn() ? 'Scroll sync on — click to turn off' : 'Scroll sync off — click to turn on') + '">' + I.linkS + '</button>' +
       '<button type="button" class="cmp-ibtn" data-act="retry" title="Regenerate this answer">' + I.retry + '</button>' +
       '<button type="button" class="cmp-ibtn" data-act="expand" title="Expand">' + I.maximize + '</button></div>' +
       '<div class="cmp-body"><div class="content"></div></div></div>';
   });
-  html += '</div><div class="cmp-vote" hidden><div class="vq">Which response is better?</div>' +
-    '<button type="button" data-vote="a">' + I.arrowL + ' A is better</button>' +
-    '<button type="button" data-vote="tie">' + I.equal + ' It’s a tie</button>' +
-    '<button type="button" data-vote="bad">' + I.thumbDown + ' Both are bad</button>' +
-    '<button type="button" data-vote="b">B is better ' + I.arrowR + '</button></div><div class="cmp-result"></div>';
+  html += '</div><div class="cmp-vote" hidden><div class="vq">Which response is better?<span class="kh"> Press 1 · 2 · 3 · 4</span></div>' +
+    '<button type="button" data-vote="a">' + I.arrowL + ' A is better<kbd>1</kbd></button>' +
+    '<button type="button" data-vote="tie">' + I.equal + ' It’s a tie<kbd>3</kbd></button>' +
+    '<button type="button" data-vote="bad">' + I.thumbDown + ' Both are bad<kbd>4</kbd></button>' +
+    '<button type="button" data-vote="b">B is better ' + I.arrowR + '<kbd>2</kbd></button>' +
+    '<div class="cmp-vx"><button type="button" class="regen" data-act="regenboth" title="Get fresh answers from both models">' + I.retryS + ' Regenerate both</button></div></div><div class="cmp-result"></div>';
   d.innerHTML = html;
   d._m = m;
   (function () {
@@ -2891,7 +3163,11 @@ function buildCompareTurn(turnIdx, m) {
     }
     else if (act === 'retry') { retryCompareSide(d, side); }
     else if (act === 'newbattle') { window.location.href = 'battle'; }
+    else if (act === 'sync') { toggleCmpSync(); }
+    else if (act === 'regenboth') { regenBoth(d); }
+    else if (act === 'fork') { continueWithWinner(d, b.dataset.side, b); }
   });
+  wireScrollSync(d);
   msgs.appendChild(d);
   welcome.style.display = 'none';
   $$('.cmp-turn').forEach(updateCompareTurn);
@@ -2932,7 +3208,10 @@ function updateCompareTurn(d) {
     var txt = { a: 'You voted: A is better', b: 'You voted: B is better', tie: 'You voted: it’s a tie', bad: 'You voted: both are bad' }[m.vote] || 'Voted';
     var h = '<span>' + esc(txt) + '</span>';
     if (chatMode === 'battle' && revealed) { h += '<span class="pill"><b>A</b> ' + esc(m.answers.a.label || '?') + '</span><span class="pill"><b>B</b> ' + esc(m.answers.b.label || '?') + '</span>'; }
-    if (chatMode === 'battle' && d === lastCompareTurn()) { h += '<button type="button" data-act="newbattle">' + I.swordsS + ' New battle</button>'; }
+    if ((m.vote === 'a' || m.vote === 'b') && revealed && d === lastCompareTurn() && m.answers[m.vote] && m.answers[m.vote].status === 'done') {
+      h += '<button type="button" class="fork" data-act="fork" data-side="' + m.vote + '" title="Start a Direct chat with this model, keeping the conversation">' + I.fork + ' Continue with ' + esc(m.answers[m.vote].label || 'winner') + '</button>';
+    }
+    if (chatMode === 'battle' && d === lastCompareTurn()) { h += '<button type="button" class="alt" data-act="newbattle">' + I.swordsS + ' New battle</button>'; }
     r.innerHTML = h;
     r.classList.add('show');
   } else { r.classList.remove('show'); r.innerHTML = ''; }
@@ -2985,6 +3264,7 @@ function retryCompareSide(d, side) {
   runCompareSides(d, [side], flags);
 }
 function sendCompare() {
+  closePop();
   var text = inp.value.trim();
   if (!text || busy) { return; }
   if (pendingFiles && pendingFiles.length) { toast('Battle and Side by Side are text-only — use AI Mode for files', 'warning'); return; }
@@ -3058,6 +3338,8 @@ function openLeaderboard() {
   $('#lbModal').classList.remove('hidden');
   body.innerHTML = '<div class="lbempty">Loading leaderboard…</div>';
   api('battle_leaderboard').then(function (j) {
+    lbData = j && j.ok ? j : null;
+    if (j.ok && lbTab === 'mine') { renderMyVotes(); return; }
     if (!j.ok) { body.innerHTML = '<div class="lbempty"></div>'; body.firstChild.textContent = j.error || 'Could not load the leaderboard.'; return; }
     var total = j.total || 0;
     $('#lbNote').textContent = total ? ('Based on ' + total + ' anonymous Battle Mode vote' + (total > 1 ? 's' : '') + ' · Elo score (every model starts at 1000)') : 'No battle votes yet — start a battle and vote to build the leaderboard.';
@@ -3070,6 +3352,16 @@ function openLeaderboard() {
     body.innerHTML = '<table class="lbtable"><thead><tr><th>Rank</th><th>Model</th><th>Score</th><th>Votes</th><th>Win rate</th></tr></thead><tbody>' + rows + '</tbody></table>';
   });
 }
+(function () {
+  var tabs = $('#lbTabs'); if (!tabs) { return; }
+  tabs.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-lbt]'); if (!b) { return; }
+    lbTab = b.dataset.lbt;
+    $$('#lbTabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    if (!lbData) { openLeaderboard(); return; }
+    if (lbTab === 'mine') { renderMyVotes(); } else { openLeaderboard(); }
+  });
+})();
 ['sbBoard', 'railBoard'].forEach(function (id) { var el = document.getElementById(id); if (el) { el.addEventListener('click', openLeaderboard); } });
 (function () { var lb = $('#lbBattle'); if (lb) { lb.addEventListener('click', function () { window.location.href = 'battle'; }); } })();
 
@@ -3300,6 +3592,7 @@ document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { $$
   var wb = $('#wsBtn'), wc = $('#wsClose');
   if (wb) { wb.addEventListener('click', function () { setWorkspace(!$('#wsPanel').classList.contains('open')); }); }
   if (wc) { wc.addEventListener('click', function () { setWorkspace(false); }); }
+  window.__devilOpenWorkspace = function () { setWorkspace(true); };
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setWorkspace(false); } });
   var on = function (id, fn) { var el = document.getElementById(id); if (el) { el.addEventListener('click', fn); } };
   on('railOpen', function () { setSb(true); });
@@ -3315,6 +3608,461 @@ document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { $$
   syncEmptyState();
 })();
 
+/* ═══ Extra features: popup menus, export, shortcuts, follow-ups, retry-with, SBS hand-off, battle extras ═══ */
+var popEl = null;
+function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
+function popMenu(anchor, items, opts) {
+  opts = opts || {};
+  if (popEl && popEl._anchor === anchor) { closePop(); return; }
+  closePop();
+  var m = document.createElement('div');
+  m.className = 'popmenu' + (opts.cls ? ' ' + opts.cls : '');
+  m.setAttribute('role', 'menu');
+  items.forEach(function (it) {
+    if (it.head) { var h = document.createElement('div'); h.className = 'pmhead'; h.textContent = it.head; m.appendChild(h); return; }
+    if (it.sep) { m.appendChild(document.createElement('hr')); return; }
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'pmi' + (it.on ? ' on' : ''); b.setAttribute('role', 'menuitem');
+    b.innerHTML = '<span class="pmic">' + (it.icon || '') + '</span><span class="pmtx"><b></b>' + (it.sub ? '<small></small>' : '') + '</span>' + (it.on ? '<span class="pmck">' + I.check + '</span>' : '');
+    b.querySelector('b').textContent = it.label;
+    if (it.sub) { b.querySelector('small').textContent = it.sub; }
+    b.addEventListener('click', function (e) { e.stopPropagation(); closePop(); if (it.fn) { it.fn(); } });
+    m.appendChild(b);
+  });
+  m._anchor = anchor;
+  document.body.appendChild(m);
+  popEl = m;
+  var r = anchor.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+  var below = vh - r.bottom - 14, above = r.top - 14;
+  var up = m.offsetHeight > below && above > below;
+  m.style.maxHeight = Math.max(150, up ? above : below) + 'px';
+  var w = m.offsetWidth, h = m.offsetHeight;
+  var left = opts.alignRight ? r.right - w : r.left;
+  left = Math.max(8, Math.min(left, vw - w - 8));
+  m.style.left = left + 'px';
+  m.style.top = Math.max(8, up ? r.top - 6 - h : r.bottom + 6) + 'px';
+}
+document.addEventListener('click', function (e) {
+  if (!popEl) { return; }
+  if (popEl.contains(e.target) || (popEl._anchor && popEl._anchor.contains(e.target))) { return; }
+  closePop();
+}, true);
+window.addEventListener('resize', closePop);
+if (scroller) { scroller.addEventListener('scroll', closePop, { passive: true }); }
+
+/* ── response stats helpers ── */
+function wordCount(t) { var m = String(t || '').replace(/```[\s\S]*?```/g, ' ').match(/\S+/g); return m ? m.length : 0; }
+function fmtSecs(ms) { if (!ms) { return ''; } return ms < 10000 ? (Math.round(ms / 100) / 10) + 's' : fmtDur(ms); }
+
+/* ── Retry with another model (AI Mode) ── */
+function retryWith(id, custom) {
+  if (busy) { return; }
+  currentModel = id;
+  store('devil_model', id);
+  if (id === 'custom' && custom) { currentCustom = custom; store('devil_custom_model', custom); }
+  setModelBtn();
+  retryLast();
+}
+function openRetryWith(anchor) {
+  var items = [{ head: 'Retry with' }];
+  models.forEach(function (m) {
+    if (m.id === 'custom') { return; }
+    items.push({ icon: I[m.icon] || I.sparkles, label: m.label, sub: m.tagline, on: currentModel === m.id, fn: function () { retryWith(m.id); } });
+  });
+  if (customModels.length) {
+    items.push({ sep: 1 }, { head: 'Custom engines' });
+    customModels.forEach(function (m) {
+      items.push({ icon: providerIcon(m.icon), label: m.label, sub: m.scope, on: currentModel === 'custom' && currentCustom === m.id, fn: function () { retryWith('custom', m.id); } });
+    });
+  }
+  popMenu(anchor, items, { cls: 'pm-models' });
+}
+
+/* ── Open an AI Mode prompt in Side by Side ── */
+function promptBefore(index) {
+  var arr = (currentChat && currentChat.messages) || [];
+  for (var i = Math.min(index === undefined ? arr.length : index, arr.length) - 1; i >= 0; i--) {
+    if (arr[i] && arr[i].role === 'user') { return String(arr[i].content || ''); }
+  }
+  return '';
+}
+function battleIdForMessage(m) {
+  var id = (m && m.model_id) || currentModel, cu = (m && m.custom_model) || currentCustom;
+  var aid = id === 'custom' ? 'custom:' + cu : id;
+  return battleById[aid] ? aid : (battleById[id] ? id : '');
+}
+function openInSideBySide(index) {
+  var text = promptBefore(index).trim();
+  if (!text) { toast('No text prompt to compare', 'warning'); return; }
+  var m = currentChat && currentChat.messages ? currentChat.messages[index] : null;
+  var a = battleIdForMessage(m) || cmpA, b = cmpB;
+  if (b === a) { b = (BATTLE_POOL.filter(function (x) { return x.id !== a; })[0] || {}).id || b; }
+  try { sessionStorage.setItem('devil_prefill', JSON.stringify({ text: text.slice(0, 4000), a: a, b: b, t: Date.now() })); } catch (e) {}
+  window.location.href = MODE_INFO.sbs.path;
+}
+function applySbsPrefill() {
+  var raw = null;
+  try { raw = sessionStorage.getItem('devil_prefill'); sessionStorage.removeItem('devil_prefill'); } catch (e) {}
+  if (!raw || chatMode !== 'sbs' || INITIAL_CHAT_ID) { return; }
+  var p = null; try { p = JSON.parse(raw); } catch (e) {}
+  if (!p || !p.text || Date.now() - (p.t || 0) > 120000) { return; }
+  if (p.a && battleById[p.a]) { cmpA = p.a; }
+  if (p.b && battleById[p.b] && p.b !== cmpA) { cmpB = p.b; }
+  renderCmpPickers();
+  inp.value = p.text; resize();
+  setTimeout(function () { if (!busy && inp.value === p.text) { send(); } }, 250);
+}
+function applyForcedModel() {
+  var raw = null;
+  try { raw = sessionStorage.getItem('devil_force_model'); sessionStorage.removeItem('devil_force_model'); } catch (e) {}
+  if (!raw) { return; }
+  var p = null; try { p = JSON.parse(raw); } catch (e) {}
+  if (!p || !p.id || !modelById[p.id]) { return; }
+  currentModel = p.id;
+  if (p.id === 'custom' && p.custom && customById[p.custom]) { currentCustom = p.custom; }
+}
+
+/* ── follow-up suggestion chips (latest AI / Agent answer only) ── */
+var fupSeq = 0;
+function clearFollowups() { fupSeq++; $$('.fups').forEach(function (x) { x.remove(); }); }
+function loadFollowups(el, question, answer) {
+  if (voiceMode || !answer || answer.length < 40) { return; }
+  var my = ++fupSeq;
+  api('followups', { question: question || '', answer: answer }).then(function (j) {
+    if (my !== fupSeq || busy || !j || !j.ok || !j.items || !j.items.length) { return; }
+    if (!el.isConnected || msgs.lastElementChild !== el) { return; }
+    var box = document.createElement('div');
+    box.className = 'fups';
+    j.items.slice(0, 3).forEach(function (q) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'fup';
+      b.innerHTML = '<span class="fi">' + I.arrowR + '</span><span class="ft"></span>';
+      b.querySelector('.ft').textContent = q;
+      b.addEventListener('click', function () { if (busy) { return; } inp.value = q; resize(); send(); });
+      box.appendChild(b);
+    });
+    var body = el.querySelector('.body') || el;
+    body.appendChild(box);
+    if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 260) { scrollDown(); }
+  }).catch(function () {});
+}
+
+/* ── agent: sources cards + summary chips + per-step copy ── */
+function sourcesFromSteps(steps) {
+  var seen = {}, out = [];
+  function add(url, title, read) {
+    url = String(url || '').trim().replace(/[.,;:]+$/, '');
+    var p; try { p = new URL(url); } catch (e) { return; }
+    if (!/^https?:$/.test(p.protocol)) { return; }
+    var key = p.hostname + p.pathname;
+    if (seen[key]) { if (read) { seen[key].read = true; } if (title && !seen[key].title) { seen[key].title = title; } return; }
+    var o = { url: url, host: p.hostname.replace(/^www\./, ''), title: title || '', read: !!read };
+    seen[key] = o; out.push(o);
+  }
+  (steps || []).forEach(function (s) {
+    if (!s || !s.ok) { return; }
+    if (s.tool === 'fetch_url') { add(s.input, '', true); }
+    if (s.tool === 'web_search') {
+      String(s.output || '').split('\n').forEach(function (line) {
+        var mm = line.match(/^\s*\d+\.\s+(.*)\s+\((https?:\/\/\S+)\)\s*$/);
+        if (!mm) { return; }
+        var t = mm[1], dash = t.indexOf(' — ');
+        t = dash > 0 ? t.slice(0, dash) : t;
+        if (t.length > 90) { t = t.slice(0, 87) + '…'; }
+        add(mm[2], t, false);
+      });
+    }
+  });
+  out.sort(function (x, y) { return (y.read ? 1 : 0) - (x.read ? 1 : 0); });
+  return out;
+}
+function faviconUrl(host) { return 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(host) + '&sz=32'; }
+function renderSourceCards(el, steps) {
+  var src = sourcesFromSteps(steps);
+  var body = el && el.querySelector('.body');
+  if (!body || !src.length) { return; }
+  var old = body.querySelector('.agx-src'); if (old) { old.remove(); }
+  var cols = window.innerWidth <= 600 ? 2 : 4;
+  var max = src.length > cols ? (cols === 2 ? 3 : cols - 1) : cols;
+  var box = document.createElement('div');
+  box.className = 'agx-src';
+  box.innerHTML = '<div class="srchead">' + I.globeS + ' Sources <span>' + src.length + '</span></div><div class="srcrow"></div>';
+  var row = box.querySelector('.srcrow');
+  src.slice(0, max).forEach(function (s, i) {
+    var a = document.createElement('a');
+    a.className = 'srccard'; a.href = s.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.title = s.url;
+    a.innerHTML = '<span class="st"></span><span class="sh"><span class="fav"><img alt="" loading="lazy"><i></i></span><span class="hn"></span>' + (s.read ? '<span class="rd">read</span>' : '') + '</span>';
+    a.querySelector('.st').textContent = s.title || (s.host + (function () { try { var p = new URL(s.url).pathname; return p !== '/' ? p : ''; } catch (e) { return ''; } })());
+    a.querySelector('.hn').textContent = s.host;
+    a.querySelector('i').textContent = (s.host[0] || '?').toUpperCase();
+    var im = a.querySelector('img');
+    im.addEventListener('error', function () { im.remove(); });
+    im.src = faviconUrl(s.host);
+    row.appendChild(a);
+  });
+  if (src.length > max) {
+    var more = document.createElement('button');
+    more.type = 'button'; more.className = 'srccard more';
+    more.innerHTML = '<span class="st">+' + (src.length - max) + ' more</span><span class="sh"><span class="hn">Open workspace</span></span>';
+    more.addEventListener('click', function () { if (window.__devilOpenWorkspace) { window.__devilOpenWorkspace(); } });
+    row.appendChild(more);
+  }
+  var acts = el.querySelector('.acts');
+  body.insertBefore(box, acts || null);
+}
+function agentSummaryHtml(steps) {
+  var c = { web_search: 0, fetch_url: 0, calculator: 0, datetime: 0 };
+  (steps || []).forEach(function (s) { if (s && c[s.tool] !== undefined) { c[s.tool]++; } });
+  var src = sourcesFromSteps(steps).length;
+  var chips = [];
+  if (c.web_search) { chips.push(I.globeS + ' ' + c.web_search + ' search' + (c.web_search > 1 ? 'es' : '')); }
+  if (c.fetch_url) { chips.push(I.fileS + ' ' + c.fetch_url + ' page' + (c.fetch_url > 1 ? 's' : '') + ' read'); }
+  if (c.calculator) { chips.push(I.calcS + ' ' + c.calculator + ' calculation' + (c.calculator > 1 ? 's' : '')); }
+  if (c.datetime) { chips.push(I.clockS + ' clock'); }
+  if (src) { chips.push(I.linkS + ' ' + src + ' source' + (src > 1 ? 's' : '')); }
+  return chips.length ? '<div class="agx-sum">' + chips.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>' : '';
+}
+
+/* ── chat export: Markdown / PDF ── */
+function voteText(v) { return { a: 'A is better', b: 'B is better', tie: 'It’s a tie', bad: 'Both are bad' }[v] || ''; }
+function exportBaseName() {
+  var t = ((currentChat && currentChat.title) || 'devil-ai-chat').toLowerCase().replace(/[^a-z0-9\u0900-\u097f]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  return t || 'devil-ai-chat';
+}
+function chatToMarkdown() {
+  var c = currentChat; if (!c || !c.messages || !c.messages.length) { return ''; }
+  var mode = (MODE_INFO[c.mode || chatMode] || MODE_INFO.ai).label;
+  var revealed = cmpRevealed();
+  var out = ['# ' + (c.title || 'Devil AI chat'), '', '*' + mode + ' · exported from Devil AI · ' + new Date().toLocaleString() + '*', ''];
+  c.messages.forEach(function (m) {
+    if (!m || !m.role) { return; }
+    if (m.role === 'user') {
+      out.push('---', '', '**You**', '', m.content || (m.img ? '*(image)*' : ''));
+      (m.attachments || []).forEach(function (a) { if (a && a.name) { out.push('', '📎 ' + a.name); } });
+      out.push('');
+      return;
+    }
+    if (m.compare && m.answers) {
+      ['a', 'b'].forEach(function (s) {
+        var a = m.answers[s] || {};
+        out.push('**Assistant ' + s.toUpperCase() + (revealed && a.label ? ' — ' + a.label : '') + '**' + (a.ms ? ' *(' + fmtSecs(a.ms) + ')*' : ''), '', a.status === 'done' ? (a.content || '') : '*(no answer)*', '');
+      });
+      if (m.vote) { out.push('> 🗳 Vote: ' + voteText(m.vote), ''); }
+      return;
+    }
+    var st = [];
+    if (m.model_label) { st.push(m.model_label); }
+    if (m.ms || m.agent_ms) { st.push(fmtSecs(m.ms || m.agent_ms)); }
+    out.push('**Devil AI**' + (st.length ? ' *(' + st.join(' · ') + ')*' : ''), '');
+    if (m.agent_steps && m.agent_steps.length) {
+      out.push('<details><summary>Agent steps (' + m.agent_steps.length + ')</summary>', '');
+      m.agent_steps.forEach(function (s) { var t = AGX_TOOLS[s.tool] || { verb: s.tool }; out.push('- ' + t.verb + ': ' + agxArg(s) + (s.ok ? '' : ' (failed)')); });
+      out.push('', '</details>', '');
+    }
+    out.push(m.content || '', '');
+    var src = m.agent_steps ? sourcesFromSteps(m.agent_steps) : [];
+    if (src.length) { out.push('**Sources**', ''); src.slice(0, 10).forEach(function (s, i) { out.push((i + 1) + '. [' + (s.title || s.host).replace(/[\[\]]/g, '') + '](' + s.url + ')'); }); out.push(''); }
+  });
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+function downloadText(name, text, mime) {
+  var blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 20000);
+}
+function exportMarkdown() {
+  var t = chatToMarkdown(); if (!t) { toast('Nothing to export yet', 'warning'); return; }
+  downloadText(exportBaseName() + '.md', t, 'text/markdown');
+  toast('Markdown downloaded', 'check');
+}
+function copyMarkdown() { var t = chatToMarkdown(); if (!t) { toast('Nothing to copy yet', 'warning'); return; } copyText(t); }
+function exportPdf() {
+  var c = currentChat; if (!c || !c.messages || !c.messages.length) { toast('Nothing to export yet', 'warning'); return; }
+  var revealed = cmpRevealed();
+  var mode = (MODE_INFO[c.mode || chatMode] || MODE_INFO.ai).label;
+  var parts = [];
+  c.messages.forEach(function (m) {
+    if (!m || !m.role) { return; }
+    if (m.role === 'user') { parts.push('<div class="u"><div class="who">You</div><div class="b">' + esc(m.content || (m.img ? '(image)' : '')).replace(/\n/g, '<br>') + '</div></div>'); return; }
+    if (m.compare && m.answers) {
+      parts.push('<div class="cmp">' + ['a', 'b'].map(function (s) {
+        var a = m.answers[s] || {};
+        return '<div class="col"><div class="who">Assistant ' + s.toUpperCase() + (revealed && a.label ? ' — ' + esc(a.label) : '') + (a.ms ? ' <small>' + fmtSecs(a.ms) + '</small>' : '') + '</div><div class="md">' + (a.status === 'done' ? md(a.content || '') : '<i>(no answer)</i>') + '</div></div>';
+      }).join('') + '</div>' + (m.vote ? '<div class="vote">Vote: ' + esc(voteText(m.vote)) + '</div>' : ''));
+      return;
+    }
+    var src = m.agent_steps ? sourcesFromSteps(m.agent_steps) : [];
+    parts.push('<div class="a"><div class="who">Devil AI' + (m.model_label ? ' <small>' + esc(m.model_label) + (m.ms || m.agent_ms ? ' · ' + fmtSecs(m.ms || m.agent_ms) : '') + '</small>' : '') + '</div><div class="md">' + md(m.content || '') + '</div>' +
+      (src.length ? '<div class="src"><b>Sources</b><ol>' + src.slice(0, 10).map(function (s) { return '<li><a href="' + esc(s.url) + '">' + esc(s.title || s.host) + '</a> <span>' + esc(s.host) + '</span></li>'; }).join('') + '</ol></div>' : '') + '</div>');
+  });
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(c.title || 'Devil AI chat') + '</title><style>' +
+    'body{font:14px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1d1b1a;max-width:820px;margin:0 auto;padding:28px 22px}' +
+    'h1{font:600 24px/1.3 Georgia,serif;margin:0 0 4px}.meta{color:#77706b;font-size:12px;margin-bottom:22px;border-bottom:1px solid #e7e2dc;padding-bottom:14px}' +
+    '.who{font-weight:700;font-size:12px;letter-spacing:.3px;text-transform:uppercase;color:#77706b;margin-bottom:4px}.who small{text-transform:none;font-weight:500;letter-spacing:0}' +
+    '.u{margin:18px 0 10px;padding:10px 14px;background:#f3f0ec;border-radius:12px}.a{margin:10px 0 18px}' +
+    '.cmp{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0}.col{border:1px solid #e7e2dc;border-radius:12px;padding:10px 12px;min-width:0}' +
+    '.vote{font-size:12px;color:#77706b;margin:-4px 0 16px}' +
+    'pre{background:#f6f4f1;border:1px solid #e7e2dc;border-radius:8px;padding:10px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:12px}code{font-family:ui-monospace,Consolas,monospace;font-size:.92em}' +
+    'table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:4px 8px}blockquote{border-left:3px solid #ddd;margin:0;padding-left:12px;color:#555}' +
+    '.src{font-size:12px;margin-top:6px}.src span{color:#999}.src a{color:#1d4ed8}a{color:#1d4ed8}img{max-width:100%}' +
+    '.pvbar,.copybtn,button{display:none!important}.foot{margin-top:30px;color:#a39c96;font-size:11px;text-align:center}' +
+    '@media print{body{padding:0}.u,.col,pre{break-inside:avoid}}' +
+    '</style></head><body><h1>' + esc(c.title || 'Devil AI chat') + '</h1><div class="meta">' + esc(mode) + ' · ' + esc(new Date().toLocaleString()) + '</div>' + parts.join('') +
+    '<div class="foot">Exported from Devil AI</div></body></html>';
+  var w = null;
+  try { w = window.open('', '_blank'); } catch (e) { w = null; }
+  if (w && w.document) {
+    w.document.open(); w.document.write(html); w.document.close();
+    setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 400);
+    return;
+  }
+  var f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';
+  document.body.appendChild(f);
+  var d = f.contentWindow.document; d.open(); d.write(html); d.close();
+  setTimeout(function () { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Could not open the print dialog', 'warning'); } setTimeout(function () { f.remove(); }, 60000); }, 400);
+}
+(function () {
+  var eb = $('#exportBtn'); if (!eb) { return; }
+  eb.addEventListener('click', function (e) {
+    e.stopPropagation();
+    popMenu(eb, [
+      { head: 'Export chat' },
+      { icon: I.fileText, label: 'Markdown (.md)', sub: 'Download the whole conversation', fn: exportMarkdown },
+      { icon: I.download, label: 'PDF', sub: 'Opens the print dialog — choose “Save as PDF”', fn: exportPdf },
+      { icon: I.copy, label: 'Copy as Markdown', sub: 'Paste it into notes or docs', fn: copyMarkdown }
+    ], { alignRight: true });
+  });
+})();
+
+/* ── keyboard shortcuts ── */
+function openShortcuts() { closePop(); $('#kbdModal').classList.remove('hidden'); }
+function focusSearch() {
+  if (sb.classList.contains('closed')) { setSb(true); }
+  setTimeout(function () { var s = $('#searchInp'); s.focus(); s.select(); }, 60);
+}
+function kbdVote(key) {
+  if (!isCmp() || busy) { return false; }
+  var d = lastCompareTurn(); if (!d) { return false; }
+  var v = d.querySelector('.cmp-vote'); if (!v || v.hidden) { return false; }
+  var map = { '1': 'a', '2': 'b', '3': 'tie', '4': 'bad' };
+  var btn = v.querySelector('[data-vote="' + map[key] + '"]'); if (!btn || btn.disabled) { return false; }
+  btn.classList.add('kbd-hit');
+  voteCompare(d, map[key]);
+  return true;
+}
+document.addEventListener('keydown', function (e) {
+  var k = (e.key || '').toLowerCase(), mod = e.ctrlKey || e.metaKey;
+  var tg = e.target || {}, tag = (tg.tagName || '').toLowerCase();
+  var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || tg.isContentEditable;
+  if (mod && !e.shiftKey && !e.altKey && k === 'k') { e.preventDefault(); focusSearch(); return; }
+  if (mod && e.shiftKey && !e.altKey && k === 'o') { e.preventDefault(); window.location.href = newChatPath(); return; }
+  if (mod && !e.altKey && (k === '/' || e.code === 'Slash')) { e.preventDefault(); openShortcuts(); return; }
+  if (mod && e.shiftKey && !e.altKey && k === 's') { e.preventDefault(); if (sb.classList.contains('closed')) { setSb(true); } else { setSb(false); } return; }
+  if (e.shiftKey && k === 'escape') { e.preventDefault(); inp.focus(); return; }
+  if (k === 'escape') { closePop(); return; }
+  if (!mod && !e.altKey && !e.shiftKey && /^[1-4]$/.test(e.key) && (!typing || (tg === inp && !inp.value))) {
+    if (document.querySelector('.modal:not(.hidden)')) { return; }
+    if (kbdVote(e.key)) { e.preventDefault(); }
+    return;
+  }
+  if (!typing && !mod && !e.altKey && e.key === '/') { e.preventDefault(); inp.focus(); }
+});
+(function () { var b = $('#mKbd'); if (b) { b.addEventListener('click', function () { var um = $('#userMenu'); if (um) { um.classList.remove('open'); } openShortcuts(); }); } })();
+
+/* ── Battle / Side by Side extras ── */
+function cmpSyncOn() { return read('devil_cmp_sync') !== '0'; }
+function wireScrollSync(d) {
+  var bodies = d.querySelectorAll('.cmp-body');
+  if (bodies.length !== 2) { return; }
+  Array.prototype.forEach.call(bodies, function (b, i) {
+    b.addEventListener('scroll', function () {
+      if (b._syncing) { b._syncing = false; return; }
+      if (!cmpSyncOn() || window.innerWidth <= 760) { return; }
+      var o = bodies[1 - i];
+      var max = b.scrollHeight - b.clientHeight, omax = o.scrollHeight - o.clientHeight;
+      if (max <= 0 || omax <= 0) { return; }
+      var target = Math.round(b.scrollTop / max * omax);
+      if (Math.abs(o.scrollTop - target) < 1) { return; }
+      o._syncing = true;
+      o.scrollTop = target;
+    }, { passive: true });
+  });
+}
+function toggleCmpSync() {
+  var on = !cmpSyncOn();
+  try { localStorage.setItem('devil_cmp_sync', on ? '1' : '0'); } catch (e) {}
+  $$('.cmp-ibtn[data-act=sync]').forEach(function (x) { x.classList.toggle('on', on); x.title = on ? 'Scroll sync on — click to turn off' : 'Scroll sync off — click to turn on'; });
+  toast(on ? 'Scroll sync on' : 'Scroll sync off', on ? 'check' : undefined);
+}
+function regenBoth(d) {
+  if (busy) { toast('Wait for the current answers first', 'warning'); return; }
+  if (!currentChat || !currentChat.id || d.dataset.turn === undefined || d._m.vote) { return; }
+  runCompareSides(d, ['a', 'b'], { a: d._m.answers.a.status === 'done', b: d._m.answers.b.status === 'done' });
+}
+function continueWithWinner(d, side, btn) {
+  if (!currentChat || !currentChat.id) { return; }
+  if (btn) { btn.disabled = true; }
+  api('compare_fork', { id: currentChat.id, side: side }).then(function (j) {
+    if (btn) { btn.disabled = false; }
+    if (!j.ok) { toast(j.error || 'Could not continue with that model', 'warning'); return; }
+    var mdl = j.model || {};
+    if (mdl.id) {
+      store('devil_model', mdl.id);
+      if (mdl.custom) { store('devil_custom_model', mdl.custom); }
+      try { sessionStorage.setItem('devil_force_model', JSON.stringify({ id: mdl.id, custom: mdl.custom || '' })); } catch (e) {}
+    }
+    window.location.href = chatUrlForItem({ id: j.id, slug: j.slug, url_model: j.url_model, url_type: j.url_type, mode: 'ai' });
+  }).catch(function () { if (btn) { btn.disabled = false; } toast('Network error', 'warning'); });
+}
+function swapCmpModels() {
+  if (busy) { return; }
+  var t = cmpA; cmpA = cmpB; cmpB = t;
+  store('devil_sbs_a', cmpA); store('devil_sbs_b', cmpB);
+  renderCmpPickers();
+  var sw = $('#cmpSwap'); if (sw) { sw.classList.remove('spin'); void sw.offsetWidth; sw.classList.add('spin'); }
+  toast('Swapped: A is ' + battleLabel(cmpA) + ', B is ' + battleLabel(cmpB));
+}
+(function () { var sw = $('#cmpSwap'); if (sw) { sw.addEventListener('click', function (e) { e.stopPropagation(); swapCmpModels(); }); } })();
+
+/* ── leaderboard: My votes tab ── */
+var lbData = null, lbTab = 'board';
+function renderMyVotes() {
+  var body = $('#lbBody'), mine = (lbData && lbData.mine) || { votes: 0, picks: [] };
+  var battles = chats.filter(function (c) { return c.mode === 'battle'; });
+  var sbsN = chats.filter(function (c) { return c.mode === 'sbs'; }).length;
+  $('#lbNote').textContent = 'Your own Battle Mode votes (counted since this feature launched) and your recent battles.';
+  var h = '<div class="mystats">' +
+    '<div class="mst"><b>' + (mine.votes || 0) + '</b><span>votes cast</span></div>' +
+    '<div class="mst"><b>' + battles.length + '</b><span>battles</span></div>' +
+    '<div class="mst"><b>' + ((mine.a || 0) + (mine.b || 0)) + '</b><span>winners picked</span></div>' +
+    '<div class="mst"><b>' + ((mine.tie || 0) + (mine.bad || 0)) + '</b><span>ties / both bad</span></div></div>';
+  if (mine.picks && mine.picks.length) {
+    var top = mine.picks[0].count || 1;
+    h += '<div class="lbsec">Your favourite models</div><div class="mypicks">' + mine.picks.map(function (p) {
+      return '<div class="mpk"><span class="oi">' + battleIcon(p.id) + '</span><span class="nm"></span><span class="bar"><i style="width:' + Math.max(6, Math.round(p.count / top * 100)) + '%"></i></span><span class="ct">' + p.count + '</span></div>';
+    }).join('') + '</div>';
+  } else {
+    h += '<div class="lbempty">No votes recorded for you yet — vote in a battle to see your picks here.</div>';
+  }
+  if (battles.length) {
+    h += '<div class="lbsec">Recent battles</div><div class="myrecent">' + battles.slice(0, 8).map(function (c, i) {
+      return '<a class="mrc" data-i="' + i + '" href="#">' + I.swordsS + '<span class="t"></span><span class="d"></span></a>';
+    }).join('') + '</div>';
+  }
+  if (sbsN) { h += '<div class="lbfoot">' + sbsN + ' Side by Side comparison' + (sbsN > 1 ? 's' : '') + ' — those votes are not counted in the public leaderboard.</div>'; }
+  body.innerHTML = '<div class="myv">' + h + '</div>';
+  if (mine.picks) { Array.prototype.forEach.call(body.querySelectorAll('.mpk .nm'), function (el, i) { el.textContent = mine.picks[i].label; }); }
+  Array.prototype.forEach.call(body.querySelectorAll('.mrc'), function (a) {
+    var c = battles[Number(a.dataset.i)];
+    a.querySelector('.t').textContent = c.title || 'Battle';
+    a.querySelector('.d').textContent = c.updated ? new Date(c.updated * 1000).toLocaleDateString() : '';
+    a.href = chatUrlForItem(c);
+  });
+}
+
 /* ── boot ── */
 api('bootstrap').then(function (j) {
   if (!j.ok) { return; }
@@ -3329,6 +4077,7 @@ api('bootstrap').then(function (j) {
   else if (j.default && modelById[j.default]) { currentModel = j.default; }
   if (savedCustom && customById[savedCustom]) { currentCustom = savedCustom; }
   else if (customModels[0]) { currentCustom = customModels[0].id; }
+  applyForcedModel();
   setModelBtn();
   renderModelMenu();
   renderCustomModelMenu('');
@@ -3343,6 +4092,7 @@ api('bootstrap').then(function (j) {
   }
   renderCmpPickers();
   syncModeUI();
+  applySbsPrefill();
 });
 syncModeUI();
 if (INITIAL_CHAT_ID) {
