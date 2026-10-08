@@ -490,6 +490,7 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
     } else {
         $L[] = 'You are Devil Agent — Devil AI with tools. You MUST use tools instead of guessing.';
     }
+    $L[] = 'Current date and time: ' . date('l, j F Y, H:i T') . '. Your built-in knowledge is older than this, so events before today may already have happened — trust fresh search results over memory, and never claim something "has not happened yet" when its date is in the past.';
     $L[] = '- web_search: ALWAYS use for current facts (versions, news, prices, "latest"). Never answer current facts from memory.';
     $L[] = '- datetime: use for the current date/time. calculator: for non-trivial arithmetic. fetch_url: read a specific page.';
     $L[] = '';

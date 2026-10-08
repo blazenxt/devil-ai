@@ -81,6 +81,14 @@ Answer the user's message below directly and concisely, in character as Devil AI
 PERSONA
 );
 
+/* persona + today's date (engines otherwise think it is still their training year) */
+function devil_persona(): string {
+    $d = 'Current date: ' . date('l, j F Y') . '. Trust fresh information over your older built-in knowledge.';
+    $p = PREXZY_PERSONA;
+    $k = strrpos($p, "\n\nAnswer the user");
+    return $k === false ? $p . "\n\n" . $d : substr($p, 0, $k) . "\n" . $d . substr($p, $k);
+}
+
 /* ══════════════ helpers ══════════════ */
 
 function json_out(array $data, int $code = 200): void {
@@ -1574,7 +1582,7 @@ function call_engine(array $cfg, array $engine, array $messages, string $image =
         if ($q === '') { return [false, 'Message is empty.', null, null]; }
 
         /* Keep the Devil AI persona even when the public UI exposes a custom provider name. */
-        $prompt = PREXZY_PERSONA . "\n\n" . $q;
+        $prompt = devil_persona() . "\n\n" . $q;
         $param = (string)($engine['param'] ?? 'prompt');
         $body = isset($engine['defaults']) && is_array($engine['defaults']) ? $engine['defaults'] : [];
         $body[$param] = $prompt;
@@ -2349,7 +2357,7 @@ try {
             // Usage is still counted on each authenticated request for the dashboard.
             $tz = (string)($cfgAll['timezone'] ?? '');
             if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) { date_default_timezone_set($tz); }
-            $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $messages);
+            $providerMsgs = array_merge([['role' => 'system', 'content' => devil_persona()]], $messages);
             list($ok, $reply, $used) = ai_respond($cfgAll, $model, $providerMsgs, $image);
             if (!$ok) { dev_api_error($reply, 502, 'api_error', 'engine_error'); }
             $created = time();
@@ -2646,7 +2654,7 @@ try {
         }
         $cfg = load_config();
         list($ok, $txt, $hint, $used) = ai_respond($cfg, 'flash', [
-            ['role' => 'system', 'content' => PREXZY_PERSONA],
+            ['role' => 'system', 'content' => devil_persona()],
             ['role' => 'user',   'content' => 'Reply with exactly: Hello from hell!'],
         ]);
         if (!$ok) { json_out(['ok' => false, 'error' => $txt, 'hint' => $hint]); }
@@ -2843,7 +2851,7 @@ try {
         $messages = [];
         if ($system !== '') { $messages[] = ['role' => 'user', 'content' => 'Developer instruction: ' . $system]; }
         $messages[] = ['role' => 'user', 'content' => $message];
-        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $messages);
+        $providerMsgs = array_merge([['role' => 'system', 'content' => devil_persona()]], $messages);
         list($ok, $reply, $used) = ai_respond($cfgAll, $rawModel, $providerMsgs, '');
         if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }
         json_out(['ok' => true, 'reply' => $reply, 'model' => ['id' => dev_public_model_id($rawModel), 'label' => model_label($rawModel)], 'usage' => dev_usage($messages, $reply)]);
@@ -3104,7 +3112,7 @@ try {
         $branchMsgs[] = $edited;
 
         $hist = array_slice($branchMsgs, -20);
-        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
+        $providerMsgs = array_merge([['role' => 'system', 'content' => devil_persona()]], $hist);
         $img = (string)($edited['img'] ?? '');
         $aiModel = ($model === 'custom') ? ('custom:' . $customModel) : $model;
         $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
@@ -3231,7 +3239,7 @@ try {
 
         /* build provider messages (history cap) */
         $hist = array_slice($chat['messages'], -20);
-        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
+        $providerMsgs = array_merge([['role' => 'system', 'content' => devil_persona()]], $hist);
 
         /* If the user sends a short follow-up after uploading an image ("yes", "what is this?",
            "decode it"), carry the most recent image into the AI call so the chat keeps context. */
@@ -3293,6 +3301,8 @@ try {
     if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         $cfgAll = load_config();
         $sbxOn = sbx_enabled($cfgAll);
+        $tzA = (string)($cfgAll['timezone'] ?? '');
+        if ($tzA !== '' && in_array($tzA, timezone_identifiers_list(), true)) { date_default_timezone_set($tzA); }
 
         /* resolve the sandbox id of one of the user's chats (never trust a client sid) */
         $sbxSidFor = static function (string $chatId, bool $temp) use ($cfgAll, $uid): string {
@@ -3482,7 +3492,7 @@ try {
             } else {
                 $history[] = ['role' => 'user', 'content' => $userContent];
             }
-            array_unshift($history, ['role' => 'system', 'content' => PREXZY_PERSONA]);
+            array_unshift($history, ['role' => 'system', 'content' => devil_persona()]);
 
             $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
             $job = [
@@ -3712,7 +3722,7 @@ try {
 
         /* run the agent loop (tools: web search, fetch URL, calculator, datetime) */
         $hist = array_slice($chat['messages'], -20);
-        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
+        $providerMsgs = array_merge([['role' => 'system', 'content' => devil_persona()]], $hist);
         $aiModel = ($model === 'custom') ? ('custom:' . $customModel) : $model;
         $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
         $agentT0 = microtime(true);
@@ -3854,7 +3864,7 @@ try {
         $tz = (string)($cfgAll['timezone'] ?? '');
         if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) { date_default_timezone_set($tz); }
         $hist = compare_history(array_slice($msgs, 0, $turn), $side);
-        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
+        $providerMsgs = array_merge([['role' => 'system', 'content' => devil_persona()]], $hist);
         $t0 = microtime(true);
         list($ok, $reply, $used) = ai_respond($cfgAll, $modelId, $providerMsgs, '');
         $ms = (int)round((microtime(true) - $t0) * 1000);
