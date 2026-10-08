@@ -78,7 +78,7 @@ $JS_ICONS = [
 (function(){function ck(n){var m=document.cookie.match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}var t=ck('devil_theme');try{t=t||localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();</script>
-<title>Devil AI — Chat</title>
+<title><?= htmlspecialchars($MODE_DEFS[$ROUTE_MODE]['label'] ?? 'AI Mode') ?> — Devil AI</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="mobile-web-app-capable" content="yes">
@@ -629,15 +629,16 @@ body.devil-ui #editChip,body.devil-ui #voiceChip{background:var(--panel2);border
 
 /* mode chip inside the composer (AI Mode, like Battle's "Direct ⌄") */
 .modechipwrap{display:none;position:relative}
-body.devil-ui:not(.agent-mode) .modechipwrap{display:block}
+body.devil-ui .modechipwrap{display:block}
+body.agent-mode #modeChip .mcc:first-child{color:var(--ag-accent)}
 #modeChip{height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border-radius:8px;color:var(--text);font-size:.82rem;font-weight:500;white-space:nowrap}
 #modeChip:hover,.modechipwrap.open #modeChip{background:var(--ag-hover)}
 #modeChip .mcc{display:inline-flex;color:var(--dim)}
 .modemenu2{display:none;position:absolute;bottom:calc(100% + 8px);left:0;width:290px;max-width:calc(100vw - 40px);padding:6px;z-index:80}
 .modechipwrap.open .modemenu2{display:block;animation:rise .16s ease}
 .modemenu2 .mhead{padding:8px 10px 6px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
-body.devil-ui.agent-empty:not(.agent-mode) .modemenu2{bottom:auto;top:calc(100% + 8px)}
-@media (max-width:600px){ body.devil-ui.agent-empty:not(.agent-mode) .modemenu2{top:auto;bottom:calc(100% + 8px)} #modeChip .mcl{display:none} }
+body.devil-ui.agent-empty .modemenu2{bottom:auto;top:calc(100% + 8px)}
+@media (max-width:600px){ body.devil-ui.agent-empty .modemenu2{top:auto;bottom:calc(100% + 8px)} #modeChip .mcl{display:none} }
 
 /* messages */
 body.devil-ui #thread{max-width:740px}
@@ -1680,7 +1681,7 @@ function renderList(filter) {
 
 function loadChats() {
   return api('chats').then(function (j) {
-    if (j.ok) { chats = j.chats || []; renderList($('#searchInp').value); }
+    if (j.ok) { chats = j.chats || []; renderList($('#searchInp').value); updateDocTitle(); }
   });
 }
 $('#searchInp').addEventListener('input', function () { renderList(this.value); });
@@ -2449,7 +2450,18 @@ if (voiceMute) { voiceMute.addEventListener('click', toggleVoiceMute); }
 if (voiceInterrupt) { voiceInterrupt.addEventListener('click', interruptVoice); }
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && voicePanelOpen) { endVoiceLive(); } });
 
+function updateDocTitle() {
+  var t = '';
+  if (isTempChat) { t = 'Temporary chat'; }
+  else if (currentChat && currentChat.messages && currentChat.messages.length) {
+    var c = currentChat.id ? chats.filter(function (x) { return x.id === currentChat.id; })[0] : null;
+    t = (c && c.title) || currentChat.title || '';
+  }
+  var label = (MODE_INFO[chatMode] || MODE_INFO.ai).label;
+  document.title = t ? (t + ' · ' + label + ' — Devil AI') : (label + ' — Devil AI');
+}
 function updateChatActions() {
+  updateDocTitle();
   document.body.classList.toggle('temp-chat', isTempChat);
   var tb = $('#tempChatBtn');
   var showTemp = !busy && (!currentChat || isTempChat) && !isCmp();
@@ -3068,6 +3080,7 @@ $('#renameSave').addEventListener('click', function () {
       if (c) { c.title = t; }
       if (currentChat && currentChat.id === renameId) { currentChat.title = t; }
       renderList($('#searchInp').value);
+      updateChatActions();
       $('#renameModal').classList.add('hidden');
       toast('Chat renamed');
     }
