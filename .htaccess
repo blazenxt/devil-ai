@@ -15,9 +15,10 @@ Options -Indexes -MultiViews
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  # Redirect direct old-host access to the new temporary canonical domain.
-  # Cloudflare Worker origin fetches send X-Devil-AI-Proxy to bypass this.
-  RewriteCond %{HTTP:X-Devil-AI-Proxy} !^cloudflare$ [NC]
+  # Redirect direct old-host access to the canonical domain. Only our Cloudflare Worker may use the
+  # old host directly: it sends a secret X-Devil-Origin-Key (filled in by the deploy workflow from a
+  # GitHub secret). Anyone hitting the server directly gets a cheap redirect and never reaches PHP.
+  RewriteCond %{HTTP:X-Devil-Origin-Key} !^__DEVIL_ORIGIN_KEY__$
   RewriteCond %{HTTP_HOST} ^(?:www\.)?blazepanel\.mywp\.info$ [NC]
   RewriteRule ^(.*)$ https://ai.devil.blazenxt.com/$1 [R=302,L,NE]
 

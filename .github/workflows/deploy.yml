@@ -29,6 +29,23 @@ jobs:
             -path './.git' -prune -o \
             -type f -name '*.php' -print0 | xargs -0 -n1 php -l
 
+      - name: Inject origin shared secret
+        env:
+          DEVIL_ORIGIN_KEY: ${{ secrets.DEVIL_ORIGIN_KEY }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "${DEVIL_ORIGIN_KEY:-}" | grep -Eq '^[A-Za-z0-9]{32,128}$'; then
+            sed -i "s/__DEVIL_ORIGIN_KEY__/${DEVIL_ORIGIN_KEY}/" .htaccess
+            printf "<?php return '%s';\n" "$DEVIL_ORIGIN_KEY" > inc/origin_key.php
+            echo "Origin key injected."
+          else
+            # No secret configured: keep the old (header-only) check so the site never redirect-loops.
+            sed -i 's/^\(\s*\)RewriteCond %{HTTP:X-Devil-Origin-Key} .*/\1RewriteCond %{HTTP:X-Devil-AI-Proxy} !^cloudflare$ [NC]/' .htaccess
+            rm -f inc/origin_key.php
+            echo "DEVIL_ORIGIN_KEY not set; using legacy proxy header check."
+          fi
+          grep -q '__DEVIL_ORIGIN_KEY__' .htaccess && { echo 'placeholder left in .htaccess'; exit 1; } || true
+
       - name: Deploy via SFTP
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}

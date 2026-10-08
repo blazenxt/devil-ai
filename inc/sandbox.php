@@ -136,7 +136,7 @@ function sbx_rel(string $p): string {
 
 function sbx_agent_tools(): array {
     return [
-        'bash'           => 'Run a shell command in your Linux sandbox (cwd /home/user/work). Output and exit code come back. A command that is still running after ~55s keeps running in the background and you get its pid and log file — check it later with tail. Use start_server (not bash) for servers. INPUT: the command(s); several lines are fine.',
+        'bash'           => 'Run a shell command in your Linux sandbox (cwd /home/user/work). Output and exit code come back. A command that is still running after ~25s keeps running in the background and you get its pid and log file — check it later with tail. Use start_server (not bash) for servers. INPUT: the command(s); several lines are fine.',
         'write_file'     => 'Create or overwrite a file. INPUT: first line = path (relative to /home/user/work), then the full file content on the following lines.',
         'read_file'      => 'Read a text file from the sandbox. INPUT: path.',
         'list_files'     => 'List files in the workspace. INPUT: a folder path, or "." for everything.',
@@ -178,11 +178,12 @@ function sbx_run_tool(array $ctx, string $name, string $input): array {
         case 'bash': {
             $cmd = sbx_unfence($input);
             if (trim($cmd) === '') { return ['ok' => false, 'text' => 'Empty command.']; }
-            /* The command runs as a detached job. We wait up to ~55s for it; if it is still going
+            /* The command runs as a detached job. We wait up to ~25s for it (short, so one agent step does not
+               hold a PHP worker on the shared server for a minute); if it is still going
                (npm install, a dev server in the foreground, a long build…) it keeps running in the
                background and the agent gets the pid + log path instead of a timeout. This keeps every
                agent step well under Cloudflare's 100s request limit. */
-            $wait = max(10, min(55, (int)($cfg['agent_bash_wait'] ?? 55)));
+            $wait = max(10, min(55, (int)($cfg['agent_bash_wait'] ?? 25)));
             $job = '/home/user/.bg/cmd-' . bin2hex(random_bytes(4));
             $wrapper = 'mkdir -p /home/user/.bg; J=' . $job . '; echo ' . base64_encode($cmd) . ' | base64 -d > "$J.sh"; '
                 . 'nohup setsid bash -c \'bash -l "$1" > "$1.log" 2>&1; echo $? > "$1.rc"\' _ "$J.sh" > /dev/null 2>&1 < /dev/null & P=$!; '

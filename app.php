@@ -40,6 +40,23 @@ if (!$me) { header('Location: ' . ($APP_BASE_PATH ?: '') . '/login.php'); exit; 
 /* /agent and /agent/{slug} are rewritten to app.php?mode=agent */
 /* cache-busting version for the static app bundle (changes whenever a file is redeployed) */
 $ASSET_V = substr(md5(implode('|', array_map(static function ($f) { return @filemtime($f) . ':' . @filesize($f); }, [__DIR__ . '/assets/app.css', __DIR__ . '/assets/app.js']))), 0, 10);
+/* First-screen data travels inside this page: the browser does not have to make a second trip to the
+   server (bootstrap + chat list + the open chat) before it can show anything. Any problem → empty, and the
+   app simply loads it the normal way. */
+$BOOT = [];
+try {
+    if (!defined('DEVIL_API_AS_LIB')) { define('DEVIL_API_AS_LIB', true); }
+    require_once __DIR__ . '/api.php';
+    $BOOT['bootstrap'] = bootstrap_payload();
+    $BOOT['chats'] = ['ok' => true, 'chats' => list_chats((string)$me['id'])];
+    $bootChat = (string)($_GET['chat'] ?? '');
+    $bootVar = (string)($_GET['variant'] ?? '');
+    if (!preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $bootVar) && $bootVar !== 'original') { $bootVar = ''; }
+    if (preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $bootChat)) {
+        $pl = chat_load_payload((string)$me['id'], $bootChat, $bootVar);
+        if ($pl !== null && strlen((string)json_encode($pl)) < 700000) { $BOOT['chat_load&id=' . $bootChat . ($bootVar !== '' ? '&variant=' . $bootVar : '')] = $pl; }
+    }
+} catch (Throwable $e) { $BOOT = []; }
 $ROUTE_MODE = in_array((string)($_GET['mode'] ?? ''), ['agent', 'battle', 'sbs'], true) ? (string)$_GET['mode'] : 'ai';
 /* Pro-style modes (order matches the reference site): Battle, Agent, Side by Side, Direct (AI Mode) */
 $MODE_DEFS = [
@@ -356,6 +373,7 @@ const I = <?= json_encode($JS_ICONS, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ME = <?= json_encode(['name' => $me['name'], 'email' => $me['email']], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const APP_BASE_PATH = <?= json_encode($APP_BASE_PATH, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ROUTE_MODE = <?= json_encode($ROUTE_MODE) ?>;
+window.__BOOT = <?= json_encode($BOOT ?: new stdClass(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
 const INITIAL_CHAT_ID = <?= json_encode(preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? (string)$_GET['chat'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const INITIAL_VARIANT = <?= json_encode((preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['variant'] ?? '')) || (string)($_GET['variant'] ?? '') === 'original') ? (string)$_GET['variant'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 </script>

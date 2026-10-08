@@ -436,6 +436,7 @@ function rate_ok(string $file, string $key, int $max, int $windowSec): bool {
 }
 
 function client_ip(): string {
+    if (function_exists('devil_sec_ip')) { return devil_sec_ip(); }
     foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP'] as $k) {
         if (!empty($_SERVER[$k])) {
             $first = trim(explode(',', (string)$_SERVER[$k])[0]);
@@ -1984,7 +1985,9 @@ function chat_file_by_id_or_slug(string $uid, string $id): ?string {
     }
     if (preg_match('/^[a-f0-9]{128}$/', $id)) {
         foreach (glob(chats_dir($uid) . '/*.json') ?: [] as $f) {
-            $j = json_decode((string)file_get_contents($f), true);
+            $raw = (string)@file_get_contents($f);
+            if (strpos($raw, $id) === false) { continue; }   /* plain text search first — decoding every chat was the slow part */
+            $j = json_decode($raw, true);
             if (is_array($j) && (string)($j['slug'] ?? '') === $id) { return $f; }
         }
     }
@@ -2065,16 +2068,41 @@ function migrate_branch_files(string $uid): void {
     @file_put_contents($marker, (string)time(), LOCK_EX);
 }
 
+/* The sidebar only needs a few top-level fields. Chat files are pretty-printed JSON, where a line that
+   starts with exactly 4 spaces + "key": is always a top-level key (JSON strings never contain raw newlines),
+   so we can read those lines instead of decoding every message, image and agent step. Returns null when the
+   file does not look like that, or when ensure_chat_meta() would have to fix something — the caller then
+   decodes the whole file as before. */
+function chat_list_fields(string $raw): ?array {
+    if ($raw === '' || $raw[0] !== '{') { return null; }
+    if (!preg_match_all('/^    "(id|slug|title|updated|pinned|mode|url_model|url_type|branch_hidden|edited_message_index|branched_from)": (.*?),?$/m', $raw, $mm, PREG_SET_ORDER)) { return null; }
+    $j = [];
+    foreach ($mm as $m) {
+        if (array_key_exists($m[1], $j)) { continue; }
+        $v = json_decode($m[2], true);
+        if ($v === null && trim($m[2]) !== 'null') { return null; }
+        $j[$m[1]] = $v;
+    }
+    if (empty($j['id']) || !preg_match('/^c[a-f0-9]{6,32}$/', (string)$j['id'])) { return null; }
+    if (empty($j['slug']) || !preg_match('/^[a-f0-9]{128}$/', (string)$j['slug'])) { return null; }
+    if (!in_array(strtolower((string)($j['mode'] ?? '')), ['ai', 'agent', 'battle', 'sbs'], true) || empty($j['url_model']) || empty($j['url_type'])) { return null; }
+    $j['_fast'] = true;
+    return $j;
+}
+
 function list_chats(string $uid): array {
     migrate_branch_files($uid);
     $dir = chats_dir($uid);
     if (!is_dir($dir)) { return []; }
     $out = [];
     foreach (glob($dir . '/*.json') ?: [] as $f) {
-        $j = json_decode((string)file_get_contents($f), true);
+        $raw = (string)@file_get_contents($f);
+        $j = chat_list_fields($raw);
+        if ($j === null) { $j = json_decode($raw, true); }
+        unset($raw);
         if (!is_array($j) || !isset($j['id'])) { continue; }
         if (!empty($j['branch_hidden']) || isset($j['edited_message_index']) || !empty($j['branched_from'])) { continue; }
-        if (ensure_chat_meta($j)) { save_json_atomic($f, $j); }
+        if (empty($j['_fast']) && ensure_chat_meta($j)) { save_json_atomic($f, $j); }
         $out[] = [
             'id'      => (string)$j['id'],
             'slug'    => (string)($j['slug'] ?? ''),
@@ -2307,6 +2335,29 @@ function security_alert_email(array $user, ?array $loginRec): void {
     @devil_mail($email, 'New sign-in to your Devil AI account', $html, $text);
 }
 
+/* data the app needs on start (also embedded straight into the page by app.php) */
+function bootstrap_payload(): array {
+    $cfg = load_config();
+    return ['ok' => true, 'models' => public_models(), 'custom_models' => public_custom_models(), 'default' => 'flash', 'version' => DEVIL_VERSION, 'agent_enabled' => !empty($cfg['agent_enabled']), 'sandbox_enabled' => sbx_enabled($cfg), 'battle_models' => battle_pool()];
+}
+
+/* one chat, ready for the browser (null = not found) */
+function chat_load_payload(string $uid, string $id, string $variant): ?array {
+    $chat = load_chat($uid, $id);
+    if (!$chat) { return null; }
+    if ($variant !== '' && $variant !== 'original' && !preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $variant)) { $variant = ''; }
+    list($displayChat, $branchGroups, $rootForLoad) = display_chat_variant($uid, $chat, $variant);
+    $pendingJob = (string)($rootForLoad['pending_job'] ?? '');
+    if ($pendingJob !== '') {
+        $jf = data_dir() . '/agent_jobs/' . preg_replace('/[^A-Za-z0-9_-]/', '', $uid) . '/' . preg_replace('/[^a-z0-9]/', '', $pendingJob) . '.json';
+        if (!is_file($jf) || @filemtime($jf) < time() - 1800) { $pendingJob = ''; }
+    }
+    return ['ok' => true, 'chat' => compare_public_chat($displayChat), 'branch_groups' => $branchGroups, 'agent_job' => $pendingJob];
+}
+
+/* app.php includes this file only for its functions */
+if (defined('DEVIL_API_AS_LIB')) { return; }
+
 /* ══════════════ MAIN ══════════════ */
 
 try {
@@ -2320,7 +2371,7 @@ try {
     /* ─────────── PUBLIC ─────────── */
 
     if ($action === 'bootstrap' && $method === 'GET') {
-        json_out(['ok' => true, 'models' => public_models(), 'custom_models' => public_custom_models(), 'default' => 'flash', 'version' => DEVIL_VERSION, 'agent_enabled' => !empty(load_config()['agent_enabled']), 'sandbox_enabled' => sbx_enabled(load_config()), 'battle_models' => battle_pool()]);
+        json_out(bootstrap_payload());
     }
 
     if ($action === 'settings' && $method === 'GET') {
@@ -2900,17 +2951,9 @@ try {
     }
 
     if ($action === 'chat_load' && $method === 'GET') {
-        $chat = load_chat($uid, (string)($_GET['id'] ?? ''));
-        if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
-        $variant = (string)($_GET['variant'] ?? '');
-        if ($variant !== '' && $variant !== 'original' && !preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $variant)) { $variant = ''; }
-        list($displayChat, $branchGroups, $rootForLoad) = display_chat_variant($uid, $chat, $variant);
-        $pendingJob = (string)($rootForLoad['pending_job'] ?? '');
-        if ($pendingJob !== '') {
-            $jf = data_dir() . '/agent_jobs/' . preg_replace('/[^A-Za-z0-9_-]/', '', $uid) . '/' . preg_replace('/[^a-z0-9]/', '', $pendingJob) . '.json';
-            if (!is_file($jf) || @filemtime($jf) < time() - 1800) { $pendingJob = ''; }
-        }
-        json_out(['ok' => true, 'chat' => compare_public_chat($displayChat), 'branch_groups' => $branchGroups, 'agent_job' => $pendingJob]);
+        $payload = chat_load_payload($uid, (string)($_GET['id'] ?? ''), (string)($_GET['variant'] ?? ''));
+        if ($payload === null) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+        json_out($payload);
     }
 
     if ($action === 'chat_delete' && $method === 'POST') {

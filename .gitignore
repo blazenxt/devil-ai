@@ -16,3 +16,4 @@ data/security_rl.json
 data/security_bans.json
 data/security_datacenter_cidrs.json
 data/mail.log
+inc/origin_key.php

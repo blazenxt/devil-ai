@@ -13,8 +13,25 @@ function devil_sec_first_ip(string $value): string {
     $first = trim(explode(',', $value)[0]);
     return filter_var($first, FILTER_VALIDATE_IP) ? $first : '';
 }
+function devil_sec_origin_key(): string {
+    static $key = null;
+    if ($key === null) {
+        $f = __DIR__ . '/origin_key.php';
+        $key = is_file($f) ? trim((string)(include $f)) : '';
+    }
+    return $key;
+}
+/* True only for requests forwarded by our Cloudflare Worker. When the deploy step has written
+   inc/origin_key.php, the Worker must also present the matching secret X-Devil-Origin-Key header,
+   so nobody can bypass Cloudflare and spoof the client-IP headers by hitting the server directly. */
+function devil_sec_from_worker(): bool {
+    if (strtolower((string)($_SERVER['HTTP_X_DEVIL_AI_PROXY'] ?? '')) !== 'cloudflare') { return false; }
+    $key = devil_sec_origin_key();
+    if ($key === '') { return true; }
+    return hash_equals($key, (string)($_SERVER['HTTP_X_DEVIL_ORIGIN_KEY'] ?? ''));
+}
 function devil_sec_ip(): string {
-    if (strtolower((string)($_SERVER['HTTP_X_DEVIL_AI_PROXY'] ?? '')) === 'cloudflare') {
+    if (devil_sec_from_worker()) {
         $proxiedIp = devil_sec_first_ip((string)($_SERVER['HTTP_X_DEVIL_CLIENT_IP'] ?? ''));
         if ($proxiedIp !== '') { return $proxiedIp; }
     }
@@ -71,24 +88,26 @@ function devil_sec_block(string $message = 'Request blocked for security reasons
     exit;
 }
 function devil_sec_rate(string $bucket, string $key, int $max, int $window): bool {
+    /* One tiny file per visitor instead of one shared file holding every visitor: each request now
+       reads/writes a few bytes instead of decoding and rewriting the whole map (that got slow as it grew). */
     if ($max <= 0) { return true; }
-    $file = 'security_rl.json';
-    $map = devil_sec_json($file);
+    $dir = devil_sec_data_dir() . '/security_rl';
+    if (!is_dir($dir)) { @mkdir($dir, 0755, true); }
     $now = time();
-    $full = $bucket . ':' . $key;
+    $fh = @fopen($dir . '/' . sha1($bucket . ':' . $key) . '.txt', 'c+');
+    if (!$fh) { return true; }
+    flock($fh, LOCK_EX);
     $hits = [];
-    foreach (($map[$full] ?? []) as $t) { if (is_int($t) && $t > $now - $window) { $hits[] = $t; } }
-    if (count($hits) >= $max) { $map[$full] = $hits; devil_sec_save($file, $map); return false; }
-    $hits[] = $now;
-    $map[$full] = $hits;
-    if (count($map) > 5000) {
-        foreach ($map as $k => $v) {
-            $fresh = array_values(array_filter((array)$v, function ($t) use ($now, $window) { return is_int($t) && $t > $now - max(3600, $window); }));
-            if ($fresh) { $map[$k] = $fresh; } else { unset($map[$k]); }
-        }
+    foreach (explode(',', (string)stream_get_contents($fh)) as $t) { $t = (int)$t; if ($t > $now - $window) { $hits[] = $t; } }
+    $ok = count($hits) < $max;
+    if ($ok) { $hits[] = $now; }
+    ftruncate($fh, 0); rewind($fh); fwrite($fh, implode(',', $hits));
+    flock($fh, LOCK_UN); fclose($fh);
+    if (mt_rand(1, 400) === 1) {   /* now and then: drop visitors not seen for an hour */
+        foreach (glob($dir . '/*.txt') ?: [] as $f) { if (@filemtime($f) < $now - max(3600, $window)) { @unlink($f); } }
+        @unlink(devil_sec_data_dir() . '/security_rl.json');   /* the old shared file */
     }
-    devil_sec_save($file, $map);
-    return true;
+    return $ok;
 }
 function devil_sec_ban_ip(string $ip, int $seconds, string $reason): void {
     $bans = devil_sec_json('security_bans.json');
@@ -130,7 +149,7 @@ function devil_sec_proxy_vpn_asn(int $asn): bool {
     return $asn > 0 && in_array($asn, $blocked, true);
 }
 function devil_sec_proxy_header_present(): string {
-    if (strtolower((string)($_SERVER['HTTP_X_DEVIL_AI_PROXY'] ?? '')) === 'cloudflare') { return ''; }
+    if (devil_sec_from_worker()) { return ''; }
     $headers = ['HTTP_X_PROXY_ID','HTTP_X_PROXY_AUTHORIZATION','HTTP_PROXY_AUTHORIZATION','HTTP_PROXY_CONNECTION'];
     foreach ($headers as $h) {
         if (!empty($_SERVER[$h])) { return $h; }
@@ -142,23 +161,23 @@ function devil_sec_proxy_vpn_reason(string $ip, bool $trustedDeveloperApi): stri
     $proxyHeader = devil_sec_proxy_header_present();
     if ($proxyHeader !== '') { return 'proxy header'; }
 
-    $country = strtoupper(trim((string)($_SERVER['HTTP_X_DEVIL_CLIENT_COUNTRY'] ?? ($_SERVER['HTTP_CF_IPCOUNTRY'] ?? ''))));
+    $country = strtoupper(trim((string)((devil_sec_from_worker() ? ($_SERVER['HTTP_X_DEVIL_CLIENT_COUNTRY'] ?? '') : ($_SERVER['HTTP_CF_IPCOUNTRY'] ?? '')))));
     if ($country === 'T1') { return 'tor/proxy network'; }
 
-    $org = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_ASO'] ?? ($_SERVER['HTTP_CF_ASORGANIZATION'] ?? ''));
+    $org = (string)((devil_sec_from_worker() ? ($_SERVER['HTTP_X_DEVIL_CLIENT_ASO'] ?? '') : ($_SERVER['HTTP_CF_ASORGANIZATION'] ?? '')));
     if (devil_sec_residential_org($org)) { return ''; }
 
-    $threatRaw = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_THREAT'] ?? ($_SERVER['HTTP_CF_THREAT_SCORE'] ?? ''));
+    $threatRaw = (string)((devil_sec_from_worker() ? ($_SERVER['HTTP_X_DEVIL_CLIENT_THREAT'] ?? '') : ($_SERVER['HTTP_CF_THREAT_SCORE'] ?? '')));
     if ($threatRaw !== '' && is_numeric($threatRaw) && (float)$threatRaw >= 80) { return 'high risk IP reputation'; }
 
-    $asnRaw = (string)($_SERVER['HTTP_X_DEVIL_CLIENT_ASN'] ?? ($_SERVER['HTTP_CF_ASN'] ?? ''));
+    $asnRaw = (string)((devil_sec_from_worker() ? ($_SERVER['HTTP_X_DEVIL_CLIENT_ASN'] ?? '') : ($_SERVER['HTTP_CF_ASN'] ?? '')));
     $asn = ctype_digit($asnRaw) ? (int)$asnRaw : 0;
     if (devil_sec_proxy_vpn_asn($asn)) { return 'blocked ASN'; }
 
     if (devil_sec_proxy_vpn_org($org)) { return 'blocked network'; }
 
     if (devil_sec_datacenter_like($ip, false)) { return 'blocked datacenter range'; }
-    $fromCloudflareWorker = strtolower((string)($_SERVER['HTTP_X_DEVIL_AI_PROXY'] ?? '')) === 'cloudflare';
+    $fromCloudflareWorker = devil_sec_from_worker();
     if (!$fromCloudflareWorker && devil_sec_datacenter_like($ip, true)) { return 'datacenter network'; }
     return '';
 }

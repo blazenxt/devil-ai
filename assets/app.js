@@ -322,6 +322,11 @@ function md(src) {
 /* ── api ── */
 function api(action, body, method, signal) {
   method = method || (body === undefined ? 'GET' : 'POST');
+  /* data that already arrived with the page is used once (fresh from the same response, not a cache) */
+  if (method === 'GET' && window.__BOOT && Object.prototype.hasOwnProperty.call(window.__BOOT, action)) {
+    var pre = window.__BOOT[action]; delete window.__BOOT[action];
+    return Promise.resolve(pre);
+  }
   var opt = { method: method, headers: { 'Content-Type': 'application/json' } };
   if (signal) { opt.signal = signal; }
   if (method === 'POST') { opt.body = JSON.stringify(body || {}); }
