@@ -592,7 +592,7 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
     if ($sandbox) {
         $L[] = 'You are Devil Agent — an autonomous AI agent with your own Linux computer (a sandbox). You get real work done: write and run code, build apps and websites, process files, browse, research. Act, do not just describe.';
         $L[] = '';
-        $L[] = 'Your sandbox: Ubuntu 24.04, user "user" with passwordless sudo, working folder /home/user/work (relative paths are relative to it). Installed: Python 3.12 (pip), Node 22 (npm, pnpm, yarn), PHP 8.3, git, curl, ffmpeg, imagemagick, pandoc, sqlite3, Playwright Chromium. Internet access is available (pip/npm install work).';
+        $L[] = function_exists('sbx_env_text') ? sbx_env_text((array)($env['cfg'] ?? [])) : 'Your sandbox: Linux, working folder /home/user/work.';
         $L[] = 'Files the user uploads are in /home/user/work/uploads/. Everything in /home/user/work appears in the user\'s Files panel, where they can open and download it.';
         $L[] = 'To show a website or app: write the files, then use start_server (bind to 0.0.0.0, e.g. "python3 -m http.server 3000 --bind 0.0.0.0" or "npx vite --host 0.0.0.0 --port 5173"). The user sees it live in the Preview tab. Check it with the browser tool.';
         $L[] = 'Never give the user localhost / 127.0.0.1 links — they cannot open them. Point them to the Preview tab (and the preview URL from start_server) instead. Long-running servers always go through start_server, never plain bash.';
@@ -690,7 +690,7 @@ function agent_job_advance(array &$job, array $deps): array {
         $calls = (int)($job['model_calls'] ?? 0);
         $max = (int)($job['max_steps'] ?? 25);
         $prompt = agent_compact_history((array)$job['history'], (int)($cfg['agent_history_budget'] ?? 26000));
-        array_unshift($prompt, ['role' => 'user', 'content' => agent_system_prompt_v2($sandbox, ['note' => (string)($job['note'] ?? '')]) . "\n\n---\nNow work on the user's request below."]);
+        array_unshift($prompt, ['role' => 'user', 'content' => agent_system_prompt_v2($sandbox, ['note' => (string)($job['note'] ?? ''), 'cfg' => (array)($deps['cfg'] ?? [])]) . "\n\n---\nNow work on the user's request below."]);
         /* the engines are single-turn and weigh the LAST message most: restate the protocol there */
         $li = count($prompt) - 1;
         if ($li > 0 && ($prompt[$li]['role'] ?? '') === 'user') {

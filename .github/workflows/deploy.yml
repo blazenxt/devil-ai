@@ -164,10 +164,11 @@ jobs:
           SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
           SFTP_TARGET: ${{ secrets.SFTP_TARGET }}
           DEVIL_SANDBOX_SECRET: ${{ secrets.DEVIL_SANDBOX_SECRET }}
+          DEVIL_DAYTONA_API_KEY: ${{ secrets.DEVIL_DAYTONA_API_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ]; then
-            echo "No sandbox secret set; skipping sandbox config patch."
+          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ]; then
+            echo "No sandbox secrets set; skipping sandbox config patch."
             exit 0
           fi
           mkdir -p .deploy_runtime
@@ -188,14 +189,24 @@ jobs:
           cfg = json.loads(text)
           if not isinstance(cfg, dict) or len(cfg) < 3:
               sys.exit('Live config.json looks wrong; refusing to overwrite it.')
-          cfg.update({
-              'sandbox_enabled': True,
-              'sandbox_url': 'https://api.sandbox.devil.blazenxt.qzz.io',
-              'sandbox_secret': os.environ['DEVIL_SANDBOX_SECRET'],
-          })
+          cfg['sandbox_enabled'] = True
+          if os.environ.get('DEVIL_SANDBOX_SECRET'):
+              # also used to derive the per-chat sandbox ids, so keep it stable
+              cfg['sandbox_secret'] = os.environ['DEVIL_SANDBOX_SECRET']
+          if os.environ.get('DEVIL_DAYTONA_API_KEY'):
+              cfg.update({
+                  'sandbox_provider': 'daytona',
+                  'daytona_api_key': os.environ['DEVIL_DAYTONA_API_KEY'],
+                  'daytona_target': 'us',
+              })
+          else:
+              cfg.update({
+                  'sandbox_provider': 'devil',
+                  'sandbox_url': 'https://api.sandbox.devil.blazenxt.qzz.io',
+              })
           cfg.setdefault('agent_sandbox_max_steps', 30)
           path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
-          print('sandbox config patched; keys:', len(cfg))
+          print('sandbox config patched; provider:', cfg.get('sandbox_provider'), '| keys:', len(cfg))
           PY
           lftp -u "$SFTP_USERNAME","$SFTP_PASSWORD" -p "$SFTP_PORT" "sftp://$SFTP_HOST" <<EOF
           set sftp:auto-confirm yes

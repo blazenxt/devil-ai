@@ -3,9 +3,9 @@
  * Devil AI — Agent sandbox (inc/sandbox.php)
  *
  * Provider-neutral client for the per-chat Linux sandbox used by Agent Mode
- * (bash, files, previews, headless browser). Provider today: "devil" — the
- * GitHub-Actions-hosted Devil Sandbox (github.com/devilsandbox/Sandbox).
- * An E2B provider can be added behind the same sbx_* functions.
+ * (bash, files, previews, headless browser). Providers behind the same sbx_* functions:
+ *   "daytona" — Daytona cloud sandboxes (inc/sandbox_daytona.php), config sandbox_provider=daytona
+ *   "devil"   — the old self-hosted Devil Sandbox gateway (sandbox_url + sandbox_secret)
  *
  * Every call is signed with HMAC-SHA256(sandbox_secret). The sandbox id is
  * derived server-side from (user id, chat id), so a user can only ever reach
@@ -14,14 +14,23 @@
 declare(strict_types=1);
 
 const SBX_WORKDIR = '/home/user/work';
+require_once __DIR__ . '/sandbox_daytona.php';
+
+function sbx_provider(array $cfg): string {
+    return strtolower(trim((string)($cfg['sandbox_provider'] ?? ''))) === 'daytona' ? 'daytona' : 'devil';
+}
+function sbx_is_daytona(array $cfg): bool { return sbx_provider($cfg) === 'daytona'; }
 
 function sbx_enabled(array $cfg): bool {
-    return !empty($cfg['sandbox_enabled']) && trim((string)($cfg['sandbox_url'] ?? '')) !== '' && trim((string)($cfg['sandbox_secret'] ?? '')) !== '';
+    if (empty($cfg['sandbox_enabled'])) { return false; }
+    if (sbx_is_daytona($cfg)) { return trim((string)($cfg['daytona_api_key'] ?? '')) !== ''; }
+    return trim((string)($cfg['sandbox_url'] ?? '')) !== '' && trim((string)($cfg['sandbox_secret'] ?? '')) !== '';
 }
 
 /** stable, unguessable sandbox id for (user, chat) */
 function sbx_sid(array $cfg, string $uid, string $chatId): string {
     $key = (string)($cfg['sandbox_secret'] ?? '');
+    if ($key === '') { $key = hash('sha256', 'devil-sbx|' . (string)($cfg['daytona_api_key'] ?? '')); }
     return 's' . substr(hash_hmac('sha256', $uid . '|' . ($chatId !== '' ? $chatId : 'temp'), $key), 0, 31);
 }
 
@@ -84,42 +93,103 @@ function sbx_request(array $cfg, string $method, string $path, string $body = ''
 function sbx_q(array $params): string { return http_build_query($params, '', '&', PHP_QUERY_RFC3986); }
 
 function sbx_health(array $cfg): array {
+    if (sbx_is_daytona($cfg)) { return dyt_health($cfg); }
     $r = sbx_request($cfg, 'GET', '/v1/health', '', 10);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'offline'];
 }
 function sbx_open(array $cfg, string $sid): array {
+    if (sbx_is_daytona($cfg)) { return dyt_open($cfg, $sid); }
     $r = sbx_request($cfg, 'POST', '/v1/s/' . $sid, '', 60);
     return $r['ok'] ? (array)$r['json'] : ['ok' => false, 'error' => $r['error']];
 }
 function sbx_exec(array $cfg, string $sid, string $cmd, int $timeout = 80, bool $background = false, float $wait = 3.0, string $cwd = ''): array {
+    if (sbx_is_daytona($cfg)) { return dyt_exec($cfg, $sid, $cmd, $timeout, $background, $wait, $cwd); }
     $payload = ['cmd' => $cmd, 'timeout' => $timeout, 'background' => $background, 'wait' => $wait];
     if ($cwd !== '') { $payload['cwd'] = $cwd; }
     $r = sbx_request($cfg, 'POST', '/v1/s/' . $sid . '/exec', (string)json_encode($payload), $timeout + 12);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'exec failed'];
 }
 function sbx_files(array $cfg, string $sid, string $path = '.', int $depth = 4): array {
+    if (sbx_is_daytona($cfg)) { return dyt_files($cfg, $sid, $path, $depth); }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/files?' . sbx_q(['path' => $path, 'depth' => $depth]), '', 30);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'list failed', 'entries' => []];
 }
 function sbx_read(array $cfg, string $sid, string $path): array {
+    if (sbx_is_daytona($cfg)) { return dyt_read($cfg, $sid, $path); }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/file?' . sbx_q(['path' => $path]), '', 60);
     return $r['ok'] ? ['ok' => true, 'data' => $r['body'], 'type' => (string)($r['headers']['content-type'] ?? 'application/octet-stream')] : ['ok' => false, 'error' => $r['error'] ?: 'read failed', 'status' => $r['status']];
 }
 function sbx_write(array $cfg, string $sid, string $path, string $data): array {
+    if (sbx_is_daytona($cfg)) { return dyt_write($cfg, $sid, $path, $data); }
     $r = sbx_request($cfg, 'PUT', '/v1/s/' . $sid . '/file?' . sbx_q(['path' => $path]), $data, 120, ['Content-Type: application/octet-stream']);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'write failed'];
 }
 function sbx_delete(array $cfg, string $sid, string $path): array {
+    if (sbx_is_daytona($cfg)) { return dyt_delete($cfg, $sid, $path); }
     $r = sbx_request($cfg, 'DELETE', '/v1/s/' . $sid . '/file?' . sbx_q(['path' => $path]), '', 30);
     return $r['ok'] ? ['ok' => true] : ['ok' => false, 'error' => $r['error']];
 }
 function sbx_ports(array $cfg, string $sid): array {
+    if (sbx_is_daytona($cfg)) { return dyt_ports($cfg, $sid); }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/ports', '', 20);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'], 'ports' => []];
 }
 function sbx_zip(array $cfg, string $sid): array {
+    if (sbx_is_daytona($cfg)) { return dyt_zip($cfg, $sid); }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/zip', '', 120);
     return $r['ok'] ? ['ok' => true, 'data' => $r['body']] : ['ok' => false, 'error' => $r['error']];
+}
+
+/** delete a chat's sandbox for good (chat deleted) */
+function sbx_purge(array $cfg, string $sid): array {
+    if (sbx_is_daytona($cfg)) { return dyt_purge($cfg, $sid); }
+    $r = sbx_request($cfg, 'DELETE', '/v1/s/' . $sid . '?purge=1', '', 8);
+    return $r['ok'] ? ['ok' => true] : ['ok' => false, 'error' => $r['error']];
+}
+
+/** one line for the agent prompt describing the sandbox computer */
+function sbx_env_text(array $cfg): string {
+    if (sbx_is_daytona($cfg)) {
+        return 'Your sandbox: Debian Linux, user "daytona" with passwordless sudo, working folder /home/user/work (relative paths are relative to it). Installed: Python 3 (pip), Node.js (npm), git, curl, jq, zip, Chromium. '
+             . 'Internet is LIMITED to package registries and code hosts (npm, pip/PyPI, GitHub and similar) — npm/pip install and git clone work, but other websites cannot be opened from the sandbox (use web_search / read_url for the web; generate_image works). '
+             . 'The machine is small (1 CPU, 1 GB RAM, 3 GB disk): prefer light tools (Vite, plain HTML/JS, Flask/FastAPI) over heavy builds. The sandbox sleeps when idle and keeps its files, but running servers stop — restart them with start_server when needed.';
+    }
+    return 'Your sandbox: Ubuntu 24.04, user "user" with passwordless sudo, working folder /home/user/work (relative paths are relative to it). Installed: Python 3.12 (pip), Node 22 (npm, pnpm, yarn), PHP 8.3, git, curl, ffmpeg, imagemagick, pandoc, sqlite3, Playwright Chromium. Internet access is available (pip/npm install work).';
+}
+
+/** fetch an image over HTTP on the web server (used when the sandbox has no open internet) */
+function sbx_fetch_image(string $prompt): array {
+    $deadline = microtime(true) + (function_exists('devil_time_left') ? max(10, devil_time_left(60) - 8) : 60);
+    $get = static function (string $url, ?string $post, int $t) {
+        $ch = curl_init($url);
+        $o = [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => max(3, $t), CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_USERAGENT => 'DevilAI/1.0'];
+        if ($post !== null) { $o[CURLOPT_POST] = true; $o[CURLOPT_POSTFIELDS] = $post; $o[CURLOPT_HTTPHEADER] = ['Content-Type: application/json']; }
+        curl_setopt_array($ch, $o);
+        $b = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        return [$code, is_string($b) ? $b : ''];
+    };
+    $isImg = static function (string $b): bool {
+        return strncmp($b, "\x89PNG", 4) === 0 || strncmp($b, "\xFF\xD8\xFF", 3) === 0 || (strncmp($b, 'RIFF', 4) === 0 && substr($b, 8, 4) === 'WEBP') || strncmp($b, 'GIF8', 4) === 0;
+    };
+    $left = static function () use ($deadline): int { return (int)floor($deadline - microtime(true)); };
+    $body = (string)json_encode(['prompt' => mb_substr($prompt, 0, 1500), 'width' => '1024', 'height' => '1024']);
+    $root = 'https://prexzyapis.com/ai/';
+    if ($left() > 12) {
+        [$c, $b] = $get($root . 'genimage', $body, min(28, $left() - 4));
+        $j = json_decode($b, true);
+        $u = is_array($j) ? (string)($j['image_url'] ?? ($j['url'] ?? '')) : '';
+        if ($u !== '' && $left() > 4) { [$c2, $img] = $get($u, null, min(15, $left() - 2)); if ($c2 === 200 && $isImg($img)) { return ['ok' => true, 'data' => $img]; } }
+    }
+    if ($left() > 10) {
+        [$c, $img] = $get($root . 'aiappgen', $body, min(25, $left() - 4));
+        if ($c === 200 && $isImg($img)) { return ['ok' => true, 'data' => $img]; }
+    }
+    if ($left() > 5) {
+        $fb = 'https://image.pollinations.ai/prompt/' . rawurlencode(mb_substr($prompt, 0, 800)) . '?width=1024&height=1024&nologo=true&seed=' . random_int(1, 999999);
+        [$c, $img] = $get($fb, null, $left() - 2);
+        if ($c === 200 && $isImg($img)) { return ['ok' => true, 'data' => $img]; }
+    }
+    return ['ok' => false, 'error' => 'all image services failed or timed out'];
 }
 
 /** normalise a user/agent path to a workspace-relative path */
@@ -295,7 +365,10 @@ from playwright.async_api import async_playwright
 async def main(url, shot):
     out = {"url": url, "console": [], "errors": []}
     async with async_playwright() as p:
-        b = await p.chromium.launch(args=["--no-sandbox"])
+        try:
+            b = await p.chromium.launch(args=["--no-sandbox"])
+        except Exception:
+            b = await p.chromium.launch(executable_path="/usr/bin/chromium", args=["--no-sandbox"])
         pg = await b.new_page(viewport={"width": 1280, "height": 800})
         pg.on("console", lambda m: out["console"].append(f"{m.type}: {m.text}"[:300]) if m.type in ("error", "warning") else None)
         pg.on("pageerror", lambda e: out["errors"].append(str(e)[:300]))
@@ -319,7 +392,7 @@ async def main(url, shot):
     print(json.dumps(out))
 asyncio.run(main(sys.argv[1], sys.argv[2]))
 PY;
-            $cmd = "mkdir -p .devil && cat > .devil/browse.py <<'DEVILPY'\n" . $py . "\nDEVILPY\npython3 .devil/browse.py " . escapeshellarg($url) . ' ' . escapeshellarg($shot) . ' 2>&1 | tail -c 12000';
+            $cmd = "python3 -c 'import playwright' 2>/dev/null || pip install -q playwright >/dev/null 2>&1; mkdir -p .devil && cat > .devil/browse.py <<'DEVILPY'\n" . $py . "\nDEVILPY\npython3 .devil/browse.py " . escapeshellarg($url) . ' ' . escapeshellarg($shot) . ' 2>&1 | tail -c 12000';
             $r = sbx_exec($cfg, $sid, $cmd, 70);
             if (empty($r['ok'])) { return ['ok' => false, 'text' => 'Browser error: ' . (string)($r['error'] ?? '')]; }
             $raw = trim((string)($r['stdout'] ?? ''));
@@ -340,6 +413,14 @@ PY;
             if ($prompt === '' && !preg_match('/\.(png|jpe?g|webp)$/i', $path)) { $prompt = trim($input); $path = 'images/image-' . date('His') . '.png'; }
             if (!preg_match('/\.(png|jpe?g|webp)$/i', $path)) { $path = rtrim($path === '.' ? 'images' : $path, '/') . '/image-' . date('His') . '.png'; }
             if ($prompt === '') { return ['ok' => false, 'text' => 'generate_image: second line must be the prompt.']; }
+            if (sbx_is_daytona($cfg)) {
+                $img = sbx_fetch_image($prompt);
+                if (empty($img['ok'])) { return ['ok' => false, 'text' => 'Image generation failed: ' . (string)($img['error'] ?? '')]; }
+                if (preg_match('/\.png$/i', $path) && strncmp($img['data'], "\xFF\xD8\xFF", 3) === 0) { $path = (string)preg_replace('/\.png$/i', '.jpg', $path); }
+                $w = sbx_write($cfg, $sid, $path, $img['data']);
+                if (empty($w['ok'])) { return ['ok' => false, 'text' => 'Could not save the image: ' . (string)($w['error'] ?? '')]; }
+                return ['ok' => true, 'text' => 'Image saved to ' . $path . ' (' . strlen($img['data']) . ' bytes).', 'meta' => ['image' => $path]];
+            }
             $body = (string)json_encode(['prompt' => mb_substr($prompt, 0, 1500), 'width' => '1024', 'height' => '1024']);
             $root = 'https://prexzyapis.com/ai/';
             $fallback = 'https://image.pollinations.ai/prompt/' . rawurlencode(mb_substr($prompt, 0, 800)) . '?width=1024&height=1024&nologo=true&seed=' . random_int(1, 999999);

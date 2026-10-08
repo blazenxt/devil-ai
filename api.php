@@ -2963,7 +2963,7 @@ try {
         if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
         $rootId = chat_branch_root_id($chat);
         $cfgDel = load_config();
-        if (sbx_enabled($cfgDel)) { sbx_request($cfgDel, 'DELETE', '/v1/s/' . sbx_sid($cfgDel, $uid, $rootId) . '?purge=1', '', 8); }
+        if (sbx_enabled($cfgDel)) { sbx_purge($cfgDel, sbx_sid($cfgDel, $uid, $rootId)); }
         foreach (glob(chats_dir($uid) . '/*.json') ?: [] as $f) {
             $j = json_decode((string)file_get_contents($f), true);
             if (!is_array($j) || empty($j['id'])) { continue; }
