@@ -272,7 +272,17 @@ function sbx_run_tool(array $ctx, string $name, string $input): array {
             if (!$listening) {
                 return ['ok' => false, 'text' => "Nothing is listening on port {$port} yet. It may still be starting, or it crashed.\n\nLog (" . (string)($r['log'] ?? '') . "):\n" . mb_substr($log, -2500)];
             }
-            return ['ok' => true, 'text' => "Server is running on port {$port}. Preview URL: {$url}\n(The user sees it in the Preview tab.)\n\nLog:\n" . mb_substr($log, -1500), 'meta' => ['port' => $port, 'url' => $url]];
+            /* verify the page really loads — a server started in the wrong folder answers 404 and the preview stays blank */
+            $chk = sbx_exec($cfg, $sid, 'c=$(curl -s -o /dev/null -m 8 -w "%{http_code}" http://127.0.0.1:' . $port . '/); echo "HTTP=$c"; if [ "${c:-0}" -ge 400 ] 2>/dev/null || [ "$c" = "000" ]; then echo "--- project folders:"; ls -d */ 2>/dev/null | head -20; ls */package.json */index.html */*/package.json 2>/dev/null | head -10; fi', 20);
+            $co = (string)($chk['stdout'] ?? '');
+            $code = preg_match('/HTTP=(\d{3})/', $co, $hm) ? (int)$hm[1] : 0;
+            if ($code >= 400 || $code === 0 && strpos($co, 'HTTP=000') !== false) {
+                $hint = trim((string)preg_replace('/^HTTP=\d+\s*/', '', $co));
+                return ['ok' => false, 'text' => "The server is listening on port {$port}, but its home page answers HTTP " . ($code ?: 'no response') . ", so the user's preview is blank."
+                    . " Every command starts in /home/user/work — a dev server must be started inside the project folder, e.g. \"cd my-app && npx vite --host 0.0.0.0 --port {$port}\". Fix it and call start_server again.\n"
+                    . ($hint !== '' ? $hint . "\n" : '') . "\nLog:\n" . mb_substr($log, -1200), 'meta' => ['port' => $port, 'http' => $code]];
+            }
+            return ['ok' => true, 'text' => "Server is running on port {$port} (home page HTTP {$code}). Preview URL: {$url}\n(The user sees it in the Preview tab.)\n\nLog:\n" . mb_substr($log, -1500), 'meta' => ['port' => $port, 'url' => $url]];
         }
         case 'browser': {
             $url = trim(strtok(trim($input), "\n") ?: '');

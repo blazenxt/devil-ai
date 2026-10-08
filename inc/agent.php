@@ -596,6 +596,7 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
         $L[] = 'Files the user uploads are in /home/user/work/uploads/. Everything in /home/user/work appears in the user\'s Files panel, where they can open and download it.';
         $L[] = 'To show a website or app: write the files, then use start_server (bind to 0.0.0.0, e.g. "python3 -m http.server 3000 --bind 0.0.0.0" or "npx vite --host 0.0.0.0 --port 5173"). The user sees it live in the Preview tab. Check it with the browser tool.';
         $L[] = 'Never give the user localhost / 127.0.0.1 links — they cannot open them. Point them to the Preview tab (and the preview URL from start_server) instead. Long-running servers always go through start_server, never plain bash.';
+        $L[] = 'Each bash / start_server call starts fresh in /home/user/work (a previous cd does not carry over) — always prefix with cd <folder> && … when working inside a project.';
         $L[] = 'Work in small verified steps: write a file, run it, read errors, fix. Prefer write_file over shell heredocs for creating files. Never ask the user to run commands — run them yourself.';
         $L[] = 'Use ask_user only when a decision truly blocks you (e.g. which of two very different directions). Otherwise make sensible choices and proceed.';
     } else {
