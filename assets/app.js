@@ -2944,7 +2944,7 @@ function agtRow(s, running) {
     }
     case 'read_file': verb = running ? 'Reading' : 'Read'; openPath = running ? '' : first;
       if (out) { var rl = out.split('\n').length; info = rl + ' line' + (rl === 1 ? '' : 's'); body = agtCode(out); } break;
-    case 'list_files': verb = running ? 'Listing' : 'List'; arg = first || '.'; body = out ? agtPre(out) : ''; break;
+    case 'list_files': verb = running ? 'Exploring' : 'Explore'; arg = (first && first !== '.' && first !== './') ? first : 'files'; body = out ? agtPre(out) : ''; break;
     case 'browser': verb = running ? 'Browsing' : 'Browse'; body = out ? agtPre(out) : '';
       if (m.screenshot && SBX.on) { extra = agtImg(m.screenshot); } break;
     case 'generate_image': verb = running ? 'Generating image' : 'Generate image'; arg = (m.image || first);
@@ -3146,14 +3146,65 @@ function agentLiveEl() {
   el.classList.add('agent-live');
   var box = renderAgentTrace(el, [], 0, true);
   /* one live status only, at the bottom of the turn (like the reference agent): a pulsing dot + "Thinking…"
-     while the model plans, "Working…" while a tool runs (the tool card itself shows which one). */
+     while the model plans; while a tool runs it says what is happening ("Bashing…", "Exploring files…"). */
   el.querySelector('.content').innerHTML = '';
   var t0 = Date.now(), tm = box.querySelector('.agt-tm');
   var iv = setInterval(function () { if (!document.body.contains(el) || !el.classList.contains('agent-live')) { clearInterval(iv); return; } tm.textContent = fmtDur(Date.now() - t0); }, 1000);
+  agentStatus(el, ['Orchestrating…', 'Thinking…']);
   refreshMessageActions(); scrollDown();
   return el;
 }
-function agentStatus(el, text) { var s = el && el.querySelector('.agt-live .agt-lt'); if (s) { s.textContent = text; } }
+/* Pro-style live status: one line whose words follow what the agent is doing right now
+   ("Thinking…", "Bashing…", "Running commands…", "Exploring files…", "Installing packages…" …).
+   text can be a string or a list of labels that rotate every few seconds. */
+function agentStatus(el, text) {
+  var s = el && el.querySelector('.agt-live .agt-lt');
+  if (!s) { return; }
+  var list = Array.isArray(text) ? text.filter(Boolean) : [text];
+  if (s._iv) { clearInterval(s._iv); s._iv = null; }
+  var i = 0;
+  s.textContent = list[0] || 'Thinking…';
+  if (list.length > 1) {
+    s._iv = setInterval(function () {
+      if (!document.body.contains(s)) { clearInterval(s._iv); return; }
+      i = (i + 1) % list.length; s.textContent = list[i];
+    }, 3200);
+  }
+}
+function agtBase(p) { p = String(p || '').trim().replace(/[`'"]/g, ''); return p.split('/').filter(Boolean).pop() || p; }
+/* which words to show for a tool that just started */
+function agtLiveLabel(tool, input) {
+  var inp = String(input || ''), first = inp.replace(/^\s*```[\w.+-]*\s*\n/, '').split('\n')[0].trim();
+  switch (tool) {
+    case 'bash': {
+      var c = inp.replace(/^\s*```[\w.+-]*\s*\n/, '').replace(/```\s*$/, '').trim();
+      var lead = c.replace(/^(cd\s+[^&;|]+(&&|;)\s*)+/, '').trim();
+      if (/\b(npm|pnpm|yarn|bun)\s+(i|install|add|ci)\b|\bpip3?\s+install\b|\bapt(-get)?\s+install\b|\bnpx\s+create-|\buv\s+(pip|add)\b/.test(c)) { return ['Installing packages…', 'Running commands…']; }
+      if (/\b(npm|pnpm|yarn|bun)\s+(run\s+)?build\b|\bvite\s+build\b|\btsc\b|\bnext\s+build\b|\bmake\b|\bcargo\s+build\b|\bgo\s+build\b/.test(c)) { return ['Building the project…', 'Running commands…']; }
+      if (/\b(pytest|jest|vitest|mocha|phpunit)\b|\b(npm|pnpm|yarn)\s+(run\s+)?test\b|\bgo\s+test\b|\bcargo\s+test\b/.test(c)) { return ['Running tests…', 'Running commands…']; }
+      if (/^git\b/.test(lead)) { return ['Running git…']; }
+      if (/^(curl|wget|http)\b/.test(lead)) { return ['Fetching…', 'Running commands…']; }
+      if (/^(ls|find|tree|cat|head|tail|less|grep|rg|ag|wc|du|df|stat|file|pwd|which|sed\s+-n|awk)\b/.test(lead)) { return ['Exploring files…', 'Bashing…']; }
+      if (/^(mkdir|cp|mv|rm|touch|chmod|ln|unzip|tar|zip)\b/.test(lead)) { return ['Organizing files…', 'Bashing…']; }
+      if (/^(python3?|node|php|ruby|deno|bun|go\s+run|java)\b/.test(lead)) { return ['Running code…', 'Bashing…']; }
+      return ['Bashing…', 'Running commands…'];
+    }
+    case 'start_server': return ['Starting the server…', 'Running commands…'];
+    case 'write_file': return [first ? 'Writing ' + agtBase(first) + '…' : 'Writing code…'];
+    case 'edit_file': return [first ? 'Editing ' + agtBase(first) + '…' : 'Editing code…'];
+    case 'read_file': return [first ? 'Reading ' + agtBase(first) + '…' : 'Reading files…', 'Exploring files…'];
+    case 'list_files': return ['Exploring files…'];
+    case 'browser': return ['Browsing…', 'Taking a screenshot…'];
+    case 'generate_image': return ['Generating image…'];
+    case 'web_search': return ['Searching the web…'];
+    case 'fetch_url': { var h = ''; try { h = new URL(first).hostname.replace(/^www\./, ''); } catch (e) {} return [h ? 'Reading ' + h + '…' : 'Reading the page…', 'Browsing…']; }
+    case 'calculator': return ['Calculating…'];
+    case 'datetime': return ['Checking the time…'];
+    case 'ask_user': return ['Waiting for your answer…'];
+    case 'full_internet': return ['Switching to full internet…'];
+    default: return ['Working…'];
+  }
+}
 
 function runAgent(payload) {
   busy = true;
@@ -3225,14 +3276,14 @@ function agentLoop() {
       var s = { tool: ev.tool, input: ev.input, thought: ev.thought };
       r.runEl = agxStepEl(s, r.steps.length, true);
       agtAppend(r.el, r.runEl);
-      agentStatus(r.el, 'Working…');
+      agentStatus(r.el, agtLiveLabel(ev.tool, ev.input));
       scrollDown();
     } else if (ev.type === 'tool_done' && ev.step) {
       r.steps.push(ev.step);
       var done = agxStepEl(ev.step, r.steps.length - 1, false);
       if (r.runEl && r.runEl.parentNode) { r.runEl.parentNode.replaceChild(done, r.runEl); } else { agtAppend(r.el, done); }
       r.runEl = null;
-      agentStatus(r.el, 'Thinking…');
+      agentStatus(r.el, ev.step.ok === false ? ['Looking at the error…', 'Thinking…'] : ['Reviewing the output…', 'Thinking…']);
       sbxAfterStep(ev.step);
       scrollDown();
     } else if (ev.type === 'retry') {
