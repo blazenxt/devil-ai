@@ -46,6 +46,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/inc/session.php';
 require_once __DIR__ . '/inc/agent.php';
+require_once __DIR__ . '/inc/sandbox.php';
 devil_session_boot();
 
 define('DEVIL_VERSION', '1.0.0.0');
@@ -1536,6 +1537,7 @@ function prexzy_error_message($j, int $status): string {
 }
 
 function ai_prompt_limits(array $cfg): array {
+    if (!empty($cfg['_prompt_limits']) && is_array($cfg['_prompt_limits'])) { return $cfg['_prompt_limits']; }
     if (!empty($cfg['_dev_api_unlimited_tokens'])) {
         return [
             'user_text' => 120000,
@@ -2293,7 +2295,7 @@ try {
     /* ─────────── PUBLIC ─────────── */
 
     if ($action === 'bootstrap' && $method === 'GET') {
-        json_out(['ok' => true, 'models' => public_models(), 'custom_models' => public_custom_models(), 'default' => 'flash', 'version' => DEVIL_VERSION, 'agent_enabled' => !empty(load_config()['agent_enabled']), 'battle_models' => battle_pool()]);
+        json_out(['ok' => true, 'models' => public_models(), 'custom_models' => public_custom_models(), 'default' => 'flash', 'version' => DEVIL_VERSION, 'agent_enabled' => !empty(load_config()['agent_enabled']), 'sandbox_enabled' => sbx_enabled(load_config()), 'battle_models' => battle_pool()]);
     }
 
     if ($action === 'settings' && $method === 'GET') {
@@ -2637,7 +2639,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat'], true)) {
+    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -2877,8 +2879,13 @@ try {
         if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
         $variant = (string)($_GET['variant'] ?? '');
         if ($variant !== '' && $variant !== 'original' && !preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $variant)) { $variant = ''; }
-        list($displayChat, $branchGroups) = display_chat_variant($uid, $chat, $variant);
-        json_out(['ok' => true, 'chat' => compare_public_chat($displayChat), 'branch_groups' => $branchGroups]);
+        list($displayChat, $branchGroups, $rootForLoad) = display_chat_variant($uid, $chat, $variant);
+        $pendingJob = (string)($rootForLoad['pending_job'] ?? '');
+        if ($pendingJob !== '') {
+            $jf = data_dir() . '/agent_jobs/' . preg_replace('/[^A-Za-z0-9_-]/', '', $uid) . '/' . preg_replace('/[^a-z0-9]/', '', $pendingJob) . '.json';
+            if (!is_file($jf) || @filemtime($jf) < time() - 1800) { $pendingJob = ''; }
+        }
+        json_out(['ok' => true, 'chat' => compare_public_chat($displayChat), 'branch_groups' => $branchGroups, 'agent_job' => $pendingJob]);
     }
 
     if ($action === 'chat_delete' && $method === 'POST') {
@@ -2887,6 +2894,8 @@ try {
         $chat = load_chat($uid, $id);
         if (!$chat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
         $rootId = chat_branch_root_id($chat);
+        $cfgDel = load_config();
+        if (sbx_enabled($cfgDel)) { sbx_request($cfgDel, 'DELETE', '/v1/s/' . sbx_sid($cfgDel, $uid, $rootId) . '?purge=1', '', 8); }
         foreach (glob(chats_dir($uid) . '/*.json') ?: [] as $f) {
             $j = json_decode((string)file_get_contents($f), true);
             if (!is_array($j) || empty($j['id'])) { continue; }
@@ -3260,6 +3269,340 @@ try {
             $outType = (string)($chat['url_type'] ?? 'chat');
         }
         json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'reply' => $reply, 'model' => $modelOut, 'ms' => $replyMs]);
+    }
+
+    /* ═════════ Agent Mode v2: step-driven jobs + per-chat sandbox ═════════ */
+
+    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+        $cfgAll = load_config();
+        $sbxOn = sbx_enabled($cfgAll);
+
+        /* resolve the sandbox id of one of the user's chats (never trust a client sid) */
+        $sbxSidFor = static function (string $chatId, bool $temp) use ($cfgAll, $uid): string {
+            if ($temp || $chatId === '') { return sbx_sid($cfgAll, $uid, 'temp'); }
+            $c = load_chat($uid, $chatId);
+            if (!$c) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+            return sbx_sid($cfgAll, $uid, chat_branch_root_id($c));
+        };
+        $jobDir = data_dir() . '/agent_jobs/' . preg_replace('/[^A-Za-z0-9_-]/', '', $uid);
+        $jobPath = static function (string $jid) use ($jobDir): string {
+            if (!preg_match('/^j[a-f0-9]{20}$/', $jid)) { json_out(['ok' => false, 'error' => 'Unknown agent job.'], 404); }
+            return $jobDir . '/' . $jid . '.json';
+        };
+        /* load the (display) chat, let $mutate change its messages, save it back the right way */
+        $saveTurn = static function (string $chatId, string $variantId, callable $mutate) use ($uid): array {
+            $base = load_chat($uid, $chatId);
+            if (!$base) { return ['ok' => false, 'error' => 'Chat not found.']; }
+            list($chat, $bg, $root, $activeVar) = display_chat_variant($uid, $base, $variantId);
+            $rootId = (string)($root['id'] ?? chat_branch_root_id($base));
+            $variantKey = ($activeVar !== '' && $activeVar !== $rootId && $activeVar !== 'original') ? $activeVar : '';
+            $chat['messages'] = array_values(array_filter($chat['messages'] ?? [], 'is_array'));
+            $mutate($chat, $root);
+            if (count($chat['messages']) > MAX_MSGS_PER_CHAT) { $chat['messages'] = array_slice($chat['messages'], -MAX_MSGS_PER_CHAT); }
+            $chat['updated'] = time();
+            update_root_variant_messages($root, $variantKey !== '' ? $variantKey : $rootId, $chat);
+            ensure_chat_meta($root);
+            if (!save_chat($uid, $root)) { return ['ok' => false, 'error' => 'Could not save the chat — check data/ permissions.']; }
+            return ['ok' => true, 'id' => (string)$root['id'], 'slug' => (string)($root['slug'] ?? ''), 'variant' => $variantKey, 'title' => (string)($root['title'] ?? $chat['title'] ?? ''), 'url_model' => (string)($root['url_model'] ?? 'flash'), 'url_type' => (string)($root['url_type'] ?? 'chat')];
+        };
+        $finishJob = static function (array &$job) use ($saveTurn): array {
+            $reply = (string)($job['reply'] ?? '');
+            if ($reply === '' && !empty($job['error'])) { $reply = ''; }
+            $ms = (int)round((microtime(true) - (float)($job['t0'] ?? microtime(true))) * 1000);
+            $steps = [];
+            foreach ((array)($job['trace'] ?? []) as $s) {
+                if (!is_array($s)) { continue; }
+                $s['input'] = mb_substr((string)($s['input'] ?? ''), 0, ($s['tool'] ?? '') === 'write_file' ? 2500 : 1200);
+                $s['output'] = mb_substr((string)($s['output'] ?? ''), 0, 2000);
+                $steps[] = $s;
+            }
+            $job['agent_ms'] = $ms;
+            $out = ['reply' => $reply, 'agent' => ['steps' => $steps, 'ms' => $ms], 'model' => (array)($job['model_out'] ?? [])];
+            if (!empty($job['ask'])) { $out['ask'] = $job['ask']; }
+            if (!empty($job['error'])) { $out['error'] = (string)$job['error']; }
+            if (!empty($job['temp']) || empty($job['chat_id'])) { return $out + ['temp' => true]; }
+            if (!empty($job['saved'])) { return $out + (array)($job['saved_out'] ?? []); }
+            $saved = $saveTurn((string)$job['chat_id'], (string)($job['variant'] ?? ''), static function (array &$chat, array &$root) use ($job, $reply, $steps, $ms) {
+                $content = $reply !== '' ? $reply : ('⚠️ ' . (string)($job['error'] ?? 'The agent stopped.'));
+                $m = ['role' => 'assistant', 'content' => $content, 'ts' => time(), 'model_id' => (string)($job['model'] ?? 'flash'), 'model_label' => (string)($job['model_label'] ?? ''), 'agent' => 1, 'agent_ms' => $ms];
+                if (!empty($job['custom_model'])) { $m['custom_model'] = (string)$job['custom_model']; }
+                if ($steps) { $m['agent_steps'] = $steps; }
+                if (!empty($job['ask'])) { $m['ask'] = $job['ask']; }
+                if (!empty($job['sandbox'])) { $m['sandbox'] = 1; }
+                $chat['messages'][] = $m;
+                unset($root['pending_job']);
+            });
+            $job['saved'] = !empty($saved['ok']);
+            unset($saved['ok']);
+            $job['saved_out'] = $saved;
+            return $out + $saved;
+        };
+
+        if ($action === 'agent_start' && $method === 'POST') {
+            if (empty($cfgAll['agent_enabled'])) { json_out(['ok' => false, 'error' => 'Agent mode is currently disabled.'], 403); }
+            $in = input_json();
+            $retry = !empty($in['retry']);
+            $temp = !empty($in['temp']);
+            $variantId = (string)($in['variant'] ?? '');
+            $msg = trim((string)($in['message'] ?? ''));
+            $model = (string)($in['model'] ?? 'flash');
+            $img = '';
+            if (isset($in['image']) && is_string($in['image']) && trim($in['image']) !== '') {
+                $img = validate_image($in['image']);
+                if ($img === null) { json_out(['ok' => false, 'error' => 'That image could not be read. Use a PNG, JPEG, GIF or WebP file under 2 MB.'], 400); }
+            }
+            $validModel = false;
+            foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
+            if (!$validModel) { $model = 'flash'; }
+            $customModel = '';
+            if ($model === 'custom') {
+                $customModel = strtolower(trim((string)($in['custom_model'] ?? 'askgpt5')));
+                if (!custom_model_by_id($customModel)) { $customModel = 'askgpt5'; }
+            }
+            $rl = (int)$cfgAll['rate_per_hour'];
+            if (!rate_ok('rl.json', 'u:' . $uid, $rl, 3600)) {
+                json_out(['ok' => false, 'error' => "Easy there, human! You're sending messages too fast.", 'hint' => 'Limit: ' . $rl . ' messages per hour. Please wait a bit.'], 429);
+            }
+            $tz = (string)($cfgAll['timezone'] ?? '');
+            if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) { date_default_timezone_set($tz); }
+
+            /* attachments: metadata for the chat, raw files go into the sandbox */
+            list($attachmentsMeta, $attachmentContext, $attachmentImage) = process_attachments($in['attachments'] ?? []);
+            if ($img === '' && $attachmentImage !== '') { $img = $attachmentImage; }
+
+            /* history + the chat this turn belongs to */
+            $chatId = ''; $history = [];
+            if ($temp) {
+                foreach (array_slice(is_array($in['history'] ?? null) ? $in['history'] : [], -20) as $hm) {
+                    if (!is_array($hm)) { continue; }
+                    $r = (string)($hm['role'] ?? '');
+                    $c = trim((string)($hm['content'] ?? ''));
+                    if (($r === 'user' || $r === 'assistant') && $c !== '') { $history[] = ['role' => $r, 'content' => mb_substr($c, 0, MAX_INPUT)]; }
+                }
+            } else {
+                if (!empty($in['id'])) {
+                    $baseChat = load_chat($uid, (string)$in['id']);
+                    if (!$baseChat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+                    $chatId = chat_branch_root_id($baseChat);
+                } else {
+                    if (count(list_chats($uid)) >= (int)$cfgAll['max_chats']) {
+                        json_out(['ok' => false, 'error' => 'You reached your chat limit (' . (int)$cfgAll['max_chats'] . ').', 'hint' => 'Delete some old chats to make room.'], 400);
+                    }
+                    $newChat = ['id' => 'c' . bin2hex(random_bytes(8)), 'title' => '', 'created' => time(), 'updated' => time(), 'mode' => 'agent', 'messages' => []];
+                    ensure_chat_meta($newChat);
+                    if (!save_chat($uid, $newChat)) { json_out(['ok' => false, 'error' => 'Could not save the chat — check data/ permissions.'], 500); }
+                    $chatId = (string)$newChat['id'];
+                }
+            }
+            $sid = $sbxOn ? sbx_sid($cfgAll, $uid, $temp ? 'temp' : $chatId) : '';
+
+            /* upload attachments into the sandbox (uploads/…) */
+            $uploaded = [];
+            if ($sbxOn && is_array($in['attachments'] ?? null)) {
+                foreach (array_slice($in['attachments'], 0, 6) as $a) {
+                    if (!is_array($a) || !preg_match('#^data:[^;,]*;base64,(.+)$#s', (string)($a['data'] ?? ''), $am)) { continue; }
+                    $raw = base64_decode(preg_replace('/\s+/', '', $am[1]), true);
+                    if ($raw === false || strlen($raw) > 20 * 1024 * 1024) { continue; }
+                    $fname = preg_replace('/[^\w.\- ()]+/u', '_', clean_filename((string)($a['name'] ?? 'file'))) ?: 'file';
+                    $w = sbx_write($cfgAll, $sid, 'uploads/' . $fname, $raw);
+                    if (!empty($w['ok'])) { $uploaded[] = ['path' => 'uploads/' . $fname, 'size' => strlen($raw)]; }
+                }
+            }
+
+            $userContent = $msg;
+            if ($retry && !$temp && $chatId !== '') {
+                /* retry: drop the last assistant reply, re-run the last user turn */
+                $lastUser = null;
+                $r = $saveTurn($chatId, $variantId, static function (array &$chat) use (&$lastUser) {
+                    if ($chat['messages'] && (($chat['messages'][count($chat['messages']) - 1]['role'] ?? '') === 'assistant')) { array_pop($chat['messages']); }
+                    foreach (array_reverse($chat['messages']) as $m) { if (($m['role'] ?? '') === 'user') { $lastUser = $m; break; } }
+                });
+                if (!$r['ok'] || !$lastUser) { json_out(['ok' => false, 'error' => 'Nothing to retry.'], 400); }
+                $msg = (string)($lastUser['content'] ?? '');
+                if ($img === '') { $img = (string)($lastUser['img'] ?? ''); }
+                $userContent = $msg;
+            } elseif (!$retry) {
+                if ($msg === '' && $img === '' && empty($attachmentsMeta) && !$uploaded) { json_out(['ok' => false, 'error' => 'Message is empty.'], 400); }
+                if (mb_strlen($msg) > MAX_INPUT) { json_out(['ok' => false, 'error' => 'Message is too long (max ' . MAX_INPUT . ' characters).'], 400); }
+            }
+            if ($uploaded) {
+                $userContent .= "\n\n[Files uploaded to the sandbox: " . implode(', ', array_map(static function ($u) { return '/home/user/work/' . $u['path'] . ' (' . $u['size'] . ' bytes)'; }, $uploaded)) . ']';
+            } elseif ($attachmentContext !== '') {
+                $userContent .= "\n\n[Attached files]\n" . $attachmentContext;
+            }
+
+            $jid = 'j' . bin2hex(random_bytes(10));
+            $saved = ['id' => null, 'slug' => '', 'variant' => '', 'title' => 'Temporary chat', 'url_model' => 'flash', 'url_type' => 'chat'];
+            if (!$temp) {
+                $r = $saveTurn($chatId, $variantId, static function (array &$chat, array &$root) use ($retry, $msg, $img, $attachmentsMeta, $uploaded, $jid) {
+                    if (!$retry) {
+                        $nm = ['role' => 'user', 'content' => $msg, 'ts' => time()];
+                        if ($img !== '') { $nm['img'] = $img; }
+                        if ($attachmentsMeta) { $nm['attachments'] = $attachmentsMeta; }
+                        if ($uploaded) { $nm['uploads'] = $uploaded; }
+                        $chat['messages'][] = $nm;
+                    }
+                    if (($chat['title'] ?? '') === '' || ($chat['title'] ?? '') === 'New chat') {
+                        $title = trim(preg_replace('/\s+/u', ' ', $msg));
+                        if ($title === '' && $attachmentsMeta) { $title = 'Attachment: ' . (string)($attachmentsMeta[0]['name'] ?? 'file'); }
+                        if ($title === '' && $img !== '') { $title = 'Image'; }
+                        $chat['title'] = mb_strlen($title) > 60 ? mb_substr($title, 0, 57) . '…' : ($title !== '' ? $title : 'New chat');
+                    }
+                    $root['mode'] = $root['mode'] ?? 'agent';
+                    $root['pending_job'] = $jid;
+                });
+                if (!$r['ok']) { json_out(['ok' => false, 'error' => $r['error']], 500); }
+                $saved = $r; unset($saved['ok']);
+                /* history = the saved conversation (last 20 turns) */
+                $bc = load_chat($uid, $chatId);
+                list($dc) = display_chat_variant($uid, $bc ?: [], (string)$r['variant']);
+                foreach (array_slice((array)($dc['messages'] ?? []), -20) as $m) {
+                    $role = (string)($m['role'] ?? '');
+                    if ($role !== 'user' && $role !== 'assistant') { continue; }
+                    $history[] = ['role' => $role, 'content' => mb_substr((string)($m['content'] ?? ''), 0, 8000)];
+                }
+                if ($history && $userContent !== $msg) { $history[count($history) - 1]['content'] = $userContent; }
+            } else {
+                $history[] = ['role' => 'user', 'content' => $userContent];
+            }
+            array_unshift($history, ['role' => 'system', 'content' => PREXZY_PERSONA]);
+
+            $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
+            $job = [
+                'id' => $jid, 'uid' => $uid, 'chat_id' => $temp ? '' : $chatId, 'variant' => (string)($saved['variant'] ?? ''), 'temp' => $temp,
+                'model' => $model, 'custom_model' => $customModel, 'ai_model' => ($model === 'custom') ? ('custom:' . $customModel) : $model,
+                'model_label' => $displayLabel, 'model_out' => ['id' => $model, 'label' => $displayLabel] + ($customModel !== '' ? ['custom' => $customModel] : []),
+                'sandbox' => $sbxOn, 'sid' => $sid, 'image' => $img, 'history' => $history, 'trace' => [], 'state' => 'model',
+                'max_steps' => max(3, min(60, (int)($cfgAll['agent_sandbox_max_steps'] ?? 30))), 't0' => microtime(true), 'created' => time(), 'updated' => time(),
+            ];
+            if (!$sbxOn) { $job['max_steps'] = max(1, (int)($cfgAll['agent_max_steps'] ?? 6)); }
+            if (!save_json_atomic($jobPath($jid), $job)) { json_out(['ok' => false, 'error' => 'Could not create the agent job — check data/ permissions.'], 500); }
+            /* tidy: drop finished jobs older than a day */
+            foreach (glob($jobDir . '/j*.json') ?: [] as $f) { if (@filemtime($f) < time() - 86400) { @unlink($f); } }
+            json_out(['ok' => true, 'job' => $jid, 'sandbox' => $sbxOn, 'uploads' => $uploaded, 'mode' => 'agent', 'temp' => $temp, 'model' => $job['model_out']] + $saved);
+        }
+
+        if (($action === 'agent_step' || $action === 'agent_cancel') && $method === 'POST') {
+            $in = input_json();
+            $path = $jobPath((string)($in['job'] ?? ''));
+            if (!is_file($path)) { json_out(['ok' => false, 'error' => 'This agent run has expired.'], 404); }
+            $fh = @fopen($path . '.lock', 'c');
+            $locked = $fh ? flock($fh, LOCK_EX | LOCK_NB) : true;
+            /* a step that is still running holds the lock — cancel must not wait for it: flag it and finish now */
+            if (!$locked && $action !== 'agent_cancel') { json_out(['ok' => true, 'busy' => true, 'event' => ['type' => 'busy']]); }
+            $job = load_json($path);
+            if (($job['uid'] ?? '') !== $uid) { json_out(['ok' => false, 'error' => 'Unknown agent job.'], 404); }
+            @set_time_limit(300);
+            ignore_user_abort(true);
+            if ($action === 'agent_cancel') {
+                @touch($path . '.cancel');
+                if (($job['state'] ?? '') !== 'done') {
+                    $job['state'] = 'done';
+                    $job['reply'] = trim((string)($job['reply'] ?? '')) !== '' ? (string)$job['reply'] : 'Stopped. ' . (count((array)$job['trace']) ? 'I completed ' . count((array)$job['trace']) . ' step(s) before you stopped me — ask me to continue any time.' : '');
+                    $job['stopped'] = true;
+                }
+                $out = $finishJob($job);
+                save_json_atomic($path, $job);
+                json_out(['ok' => true, 'done' => true, 'event' => ['type' => 'final', 'reply' => $out['reply']]] + $out);
+            }
+            if (($job['state'] ?? '') === 'done') {
+                $out = $finishJob($job);
+                save_json_atomic($path, $job);
+                json_out(['ok' => true, 'done' => true, 'event' => ['type' => 'final', 'reply' => $out['reply']]] + $out);
+            }
+            $sbxCtx = null;
+            if (!empty($job['sandbox']) && $sbxOn) {
+                $sbxCtx = ['cfg' => $cfgAll, 'sid' => (string)$job['sid']];
+            }
+            /* agent prompts carry tool instructions + tool output: allow a much larger prompt than chat */
+            $cfgAgent = $cfgAll;
+            $cfgAgent['_prompt_limits'] = ['user_text' => 16000, 'assistant_text' => 9000, 'attachment_text' => 6000, 'latest_text' => 16000, 'latest_attachment' => 6000, 'turns' => 120, 'budget' => (int)($cfgAll['agent_prompt_budget'] ?? 42000)];
+            $event = agent_job_advance($job, [
+                'cfg' => $cfgAgent,
+                'responder' => static function ($c, $m, $msgs, $im) { return ai_respond($c, $m, $msgs, $im); },
+                'sbx' => $sbxCtx,
+            ]);
+            clearstatcache(true, $path . '.cancel');
+            if (is_file($path . '.cancel')) {
+                /* the user pressed Stop while this step was running: the cancel request already finished the job */
+                $stopped = load_json($path);
+                if ($fh) { flock($fh, LOCK_UN); fclose($fh); @unlink($path . '.lock'); }
+                json_out(['ok' => true, 'done' => true, 'stopped' => true, 'event' => ['type' => 'final', 'reply' => (string)($stopped['reply'] ?? 'Stopped.')]]);
+            }
+            $resp = ['ok' => true, 'done' => ($job['state'] ?? '') === 'done', 'event' => $event, 'steps_used' => count((array)$job['trace']), 'max_steps' => (int)$job['max_steps']];
+            if ($resp['done']) { $resp += $finishJob($job); }
+            save_json_atomic($path, $job);
+            if ($fh) { flock($fh, LOCK_UN); fclose($fh); @unlink($path . '.lock'); }
+            json_out($resp);
+        }
+
+        /* ── workspace panel ── */
+        if (!$sbxOn) { json_out(['ok' => false, 'error' => 'The sandbox is not enabled.', 'disabled' => true], 503); }
+        $q = $method === 'GET' ? $_GET : input_json();
+        $sid = $sbxSidFor((string)($q['id'] ?? ''), !empty($q['temp']));
+
+        if ($action === 'sbx_info') {
+            $h = sbx_health($cfgAll);
+            $p = !empty($h['ok']) ? sbx_ports($cfgAll, $sid) : ['ports' => []];
+            json_out(['ok' => true, 'online' => !empty($h['ok']), 'ends_at' => (int)($h['ends_at'] ?? 0), 'now' => time(), 'ports' => (array)($p['ports'] ?? []), 'error' => empty($h['ok']) ? 'The sandbox host is restarting — try again in a minute.' : '']);
+        }
+        if ($action === 'sbx_ports') {
+            $p = sbx_ports($cfgAll, $sid);
+            json_out(['ok' => !empty($p['ok']), 'ports' => (array)($p['ports'] ?? []), 'error' => (string)($p['error'] ?? '')]);
+        }
+        if ($action === 'sbx_files') {
+            $r = sbx_files($cfgAll, $sid, sbx_rel((string)($q['path'] ?? '.')), 6);
+            $entries = array_values(array_filter((array)($r['entries'] ?? []), static function ($e) { return is_array($e) && strpos((string)$e['path'], '.devil/browse.py') === false; }));
+            json_out(['ok' => !empty($r['ok']), 'entries' => $entries, 'truncated' => !empty($r['truncated']), 'error' => (string)($r['error'] ?? '')]);
+        }
+        if ($action === 'sbx_file') {
+            $rel = sbx_rel((string)($q['path'] ?? ''));
+            $r = sbx_read($cfgAll, $sid, $rel);
+            if (empty($r['ok'])) { json_out(['ok' => false, 'error' => (string)$r['error']], (int)($r['status'] ?? 0) === 404 ? 404 : 502); }
+            $name = basename($rel);
+            $ct = strtolower((string)$r['type']);
+            header('X-Content-Type-Options: nosniff');
+            header("Content-Security-Policy: sandbox; default-src 'none'");
+            header('Cache-Control: private, no-store');
+            if (!empty($q['dl'])) {
+                header('Content-Type: application/octet-stream');
+                header('Content-Disposition: attachment; filename="' . str_replace(['"', "\r", "\n"], '', $name) . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+            } elseif (preg_match('#^image/(png|jpe?g|gif|webp)$#', $ct)) {
+                header('Content-Type: ' . $ct);   /* raster images only — never HTML/SVG inline on our origin */
+            } else {
+                header('Content-Type: text/plain; charset=utf-8');
+            }
+            header('Content-Length: ' . strlen((string)$r['data']));
+            echo $r['data'];
+            exit;
+        }
+        if ($action === 'sbx_zip') {
+            $r = sbx_zip($cfgAll, $sid);
+            if (empty($r['ok'])) { json_out(['ok' => false, 'error' => (string)$r['error']], 502); }
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="devil-workspace.zip"');
+            header('Cache-Control: private, no-store');
+            header('Content-Length: ' . strlen((string)$r['data']));
+            echo $r['data'];
+            exit;
+        }
+        if ($action === 'sbx_upload' && $method === 'POST') {
+            if (!preg_match('#^data:[^;,]*;base64,(.+)$#s', (string)($q['data'] ?? ''), $am)) { json_out(['ok' => false, 'error' => 'No file data.'], 400); }
+            $raw = base64_decode(preg_replace('/\s+/', '', $am[1]), true);
+            if ($raw === false) { json_out(['ok' => false, 'error' => 'Could not read the file.'], 400); }
+            if (strlen($raw) > 25 * 1024 * 1024) { json_out(['ok' => false, 'error' => 'Files can be up to 25 MB.'], 413); }
+            $fname = preg_replace('/[^\w.\- ()]+/u', '_', clean_filename((string)($q['name'] ?? 'file'))) ?: 'file';
+            $dir = trim(sbx_rel((string)($q['dir'] ?? 'uploads')), '/');
+            $w = sbx_write($cfgAll, $sid, ($dir === '.' || $dir === '' ? '' : $dir . '/') . $fname, $raw);
+            json_out(['ok' => !empty($w['ok']), 'path' => (string)($w['path'] ?? ''), 'size' => strlen($raw), 'error' => (string)($w['error'] ?? '')]);
+        }
+        if ($action === 'sbx_delete' && $method === 'POST') {
+            $rel = sbx_rel((string)($q['path'] ?? ''));
+            if ($rel === '.' || $rel === '') { json_out(['ok' => false, 'error' => 'Pick a file.'], 400); }
+            $d = sbx_delete($cfgAll, $sid, $rel);
+            json_out(['ok' => !empty($d['ok']), 'error' => (string)($d['error'] ?? '')]);
+        }
+        json_out(['ok' => false, 'error' => 'Bad request.'], 400);
     }
 
     /* ── Agent mode: chat_send with a tool-use loop (web search / fetch / calc / time) ── */

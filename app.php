@@ -79,6 +79,7 @@ $JS_ICONS = [
     'swordsS' => icon('swords', 13), 'columnsS' => icon('columns', 13), 'sparkS' => icon('spark', 13), 'msgS' => icon('message', 13), 'chevS' => icon('chevron-down', 13),
     'pin' => icon('pin', 14), 'pinS' => icon('pin', 12), 'download' => icon('download', 16), 'keyboard' => icon('keyboard', 16), 'swap' => icon('swap', 15),
     'fork' => icon('fork', 14), 'external' => icon('external', 13), 'listS' => icon('list', 13), 'clockS' => icon('clock', 12), 'globeS' => icon('globe', 12),
+    'terminal' => icon('terminal', 14), 'monitor' => icon('monitor', 14), 'upload' => icon('upload', 15), 'help' => icon('help-circle', 14), 'folderS' => icon('folder', 13), 'imageS' => icon('image', 13), 'codeS' => icon('code', 13),
     'fileS' => icon('file-text', 12), 'calcS' => icon('calculator', 12), 'linkS' => icon('link', 12), 'retryS' => icon('retry', 13), 'sparklesS' => icon('sparkles', 13),
 ];
 ?><!DOCTYPE html>
@@ -1113,6 +1114,59 @@ body.sbs-mode .cmpswap{display:inline-flex}
 @media (max-height:500px) and (orientation:landscape){
   body.agent-mode.agent-empty #agentTasks{display:none}
 }
+/* ═══════════ Agent sandbox: live steps, workspace Files / Preview ═══════════ */
+.agx-thought{margin:2px 0 4px;color:var(--text);font-size:.86rem;line-height:1.5;white-space:pre-wrap}
+.agx-ms{color:var(--dim2);font-size:.72rem;font-variant-numeric:tabular-nums;flex-shrink:0}
+.agx-cmd{color:var(--text);margin-bottom:6px;white-space:pre-wrap;word-break:break-word}
+.agx-code{margin-top:8px;padding-top:8px;border-top:1px dashed var(--ag-line,var(--border));color:var(--text);white-space:pre;overflow:auto;max-height:260px}
+.agx-shot{display:block;margin-top:8px;max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:zoom-in}
+.agx-pv{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:6px 10px;border:1px solid var(--border-hi);border-radius:8px;color:var(--text);font:500 .78rem var(--sans)}
+.agx-pv:hover{background:var(--ag-hover)}
+.agx-pv svg{width:13px;height:13px}
+.agx-spin{display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid var(--dim2);border-top-color:var(--text);animation:agspin .8s linear infinite;vertical-align:middle}
+.agx-step.running .agx-verb{color:var(--dim)}
+.agx.live .agx-head .agx-spark svg{animation:agspin 2.4s linear infinite}
+.agx .agx-head .agx-time{color:var(--dim2);font-variant-numeric:tabular-nums;font-weight:400}
+.agx.live .agx-list{display:block}
+.agent-live .acts{display:none}
+.agx-resume{margin-left:10px}
+.ask-chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
+.ask-chip{padding:7px 13px;border:1px solid var(--border-hi);border-radius:999px;color:var(--text);font-size:.85rem;background:var(--panel2);transition:.12s}
+.ask-chip:hover{background:var(--ag-hover);border-color:var(--text)}
+.ws-tabs{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--border)}
+.ws-tabs[hidden]{display:none}
+.ws-tabs button{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:8px;color:var(--dim);font-size:.8rem;font-weight:500}
+.ws-tabs button svg{width:14px;height:14px}
+.ws-tabs button:hover{color:var(--text);background:var(--ag-hover)}
+.ws-tabs button.on{color:var(--text);background:var(--panel2);box-shadow:inset 0 0 0 1px var(--border)}
+#wsPanel.wide{width:min(760px,52vw)}
+#wsPanel.wide .ws-body{display:flex;flex-direction:column}
+.ws-tb{display:flex;align-items:center;gap:6px;margin:-4px 0 10px;min-height:32px}
+.ws-tb .sp{flex:1}
+.ws-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--border);border-radius:8px;color:var(--dim);font-size:.78rem;font-weight:500;flex-shrink:0}
+.ws-btn.ic{width:30px;padding:0;justify-content:center}
+.ws-btn svg{width:14px;height:14px}
+.ws-btn:hover{color:var(--text);background:var(--ag-hover)}
+.ws-path{min-width:0;flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font:500 .8rem ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ws-url{color:var(--dim)}
+.ws-sel{height:30px;border:1px solid var(--border);border-radius:8px;background:var(--panel2);color:var(--text);padding:0 6px;font-size:.78rem}
+.ws-tree{display:flex;flex-direction:column}
+.ws-f{display:flex;align-items:center;gap:7px;width:100%;padding:5px 8px;border-radius:7px;color:var(--text);font-size:.82rem;text-align:left;min-width:0}
+.ws-f:hover{background:var(--ag-hover)}
+.ws-f .fi{display:inline-flex;align-items:center;gap:2px;color:var(--dim);flex-shrink:0}
+.ws-f .fi svg{width:13px;height:13px}
+.ws-f .fchev{display:inline-flex;transform:rotate(90deg);transition:transform .12s;color:var(--dim2)}
+.ws-f.closed .fchev{transform:none}
+.ws-f .fn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-f .fn small,.ws-f .fs{color:var(--dim2);font-size:.7rem}
+.ws-f .fs{flex-shrink:0;font-variant-numeric:tabular-nums}
+.ws-f.dir .fn{font-weight:500}
+.ws-view.code{flex:1;margin:0;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--panel2);font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text);white-space:pre;overflow:auto;min-height:200px}
+.ws-view.img{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:10px;border:1px solid var(--border);border-radius:10px;background:repeating-conic-gradient(rgba(128,128,128,.12) 0 25%,transparent 0 50%) 0 0/16px 16px}
+.ws-view.img img{max-width:100%;height:auto;border-radius:6px}
+.ws-frame{flex:1;width:100%;min-height:420px;border:1px solid var(--border);border-radius:10px;background:#fff}
+@media (max-width:900px){ #wsPanel.wide{width:100%} .ws-btn span{display:none} .ws-btn{padding:0 8px} }
+@media (min-width:1180px){ body.ws-docked #scroller,body.ws-docked #composer{margin-right:var(--wsw,340px);transition:margin .22s ease} body.ws-docked .chattitle{max-width:calc(100% - var(--wsw,340px) - 260px)} }
 </style>
 </head>
 <body class="devil-ui<?= $ROUTE_MODE === 'agent' ? ' agent-mode' : '' ?><?= $ROUTE_MODE !== 'ai' ? ' alt-mode' : '' ?><?= $IS_CMP ? ' cmp-mode ' . $ROUTE_MODE . '-mode' : '' ?><?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? ' loading-chat' : '' ?>">
@@ -1191,7 +1245,7 @@ body.sbs-mode .cmpswap{display:inline-flex}
       <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
       <button class="ctbtn" id="exportBtn" type="button" title="Export chat (Markdown / PDF)" aria-haspopup="menu"><?= icon('download', 17) ?><span class="txt">Export</span></button>
       <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
-      <button class="ctbtn" id="wsBtn" type="button" title="Workspace — sources and tool activity" aria-expanded="false"><?= icon('folder', 18) ?><span class="txt">Workspace</span></button>
+      <button class="ctbtn" id="wsBtn" type="button" title="Workspace — files, app preview and activity" aria-expanded="false"><?= icon('folder', 18) ?><span class="txt">Workspace</span></button>
     </div>
 
     <aside id="wsPanel" aria-label="Agent workspace" aria-hidden="true">
@@ -1439,6 +1493,7 @@ function setWorkspace(open) {
   var p = document.getElementById('wsPanel'), b = document.getElementById('wsBtn');
   if (!p) { return; }
   p.classList.toggle('open', open);
+  document.body.classList.toggle('ws-docked', !!open);
   p.setAttribute('aria-hidden', open ? 'false' : 'true');
   if (b) { b.classList.toggle('on', open); b.setAttribute('aria-expanded', open ? 'true' : 'false'); }
   if (open) { renderWorkspace(); }
@@ -2276,7 +2331,7 @@ function renderCurrentMessages() {
     if (!m || !m.role) { return; }
     if (m.compare) { renderCompareTurn(m, idx); return; }
     if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited, branchGroup: branchGroupFor(idx), attachments: m.attachments || [] }); }
-    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx, ms: m.ms || m.agent_ms }); if ((m.agent_steps && m.agent_steps.length) || m.agent_ms) { renderAgentTrace(el, m.agent_steps || [], m.agent_ms); } }
+    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx, ms: m.ms || m.agent_ms }); if ((m.agent_steps && m.agent_steps.length) || m.agent_ms) { renderAgentTrace(el, m.agent_steps || [], m.agent_ms); } if (m.ask && idx === arr.length - 1) { renderAskChips(el, m.ask); } }
   });
   refreshMessageActions();
   scrollDown();
@@ -2847,6 +2902,7 @@ function stopTempChat() {
 }
 function pauseSend() {
   if (!busy) { return; }
+  if (agentRun) { agentStop(); return; }
   sendSeq++;
   if (activeController) { try { activeController.abort(); } catch (e) {} }
   busy = false;
@@ -2893,9 +2949,10 @@ function addPendingFile(file, dataUrl) {
 function handleFile(file) {
   if (!file || busy) { return; }
   if (pendingFiles.length >= MAX_ATTACH) { toast('Maximum ' + MAX_ATTACH + ' files per message', 'warning'); return; }
-  if (file.size > MAX_FILE) { toast((file.name || 'File') + ' is too large (max 4 MB)', 'warning'); return; }
+  var sbxUp = agentMode && SBX.on, maxF = sbxUp ? 20 * 1024 * 1024 : MAX_FILE, maxT = sbxUp ? 25 * 1024 * 1024 : MAX_TOTAL_ATTACH;
+  if (file.size > maxF) { toast((file.name || 'File') + ' is too large (max ' + fmtBytes(maxF) + ')', 'warning'); return; }
   var total = pendingFiles.reduce(function (sum, f) { return sum + (f.size || 0); }, 0);
-  if (total + file.size > MAX_TOTAL_ATTACH) { toast('Attachments are too large together (max 7 MB)', 'warning'); return; }
+  if (total + file.size > maxT) { toast('Attachments are too large together (max ' + fmtBytes(maxT) + ')', 'warning'); return; }
   if (isImgFile(file)) {
     fileToDataURL(file, function (raw) {
       downscale(raw, file.type || 'image/jpeg', function (dataUrl) { addPendingFile(file, dataUrl); });
@@ -3048,6 +3105,7 @@ function retryLast() {
 }
 
 function runSend(payload) {
+  if (agentMode) { runAgent(payload); return; }
   busy = true;
   clearFollowups(); closePop();
   if (voiceMode) { stopVoiceListening(); setVoiceStatus('Thinking…'); }
@@ -3403,6 +3461,9 @@ function openChat(id, variant) {
     renderList($('#searchInp').value);
     updateChatActions();
     scrollDown();
+    SBX.lastList = 0; SBX.view = null; SBX.files = [];
+    if (wsIsOpen()) { renderWorkspace(); }
+    if (j.agent_job && chatMode === 'agent') { continueAgent(j.agent_job); }
   });
 }
 
@@ -4064,6 +4125,444 @@ function renderMyVotes() {
 }
 
 /* ── boot ── */
+/* ═══════════ Agent sandbox: live step loop, workspace Files / Preview, ask-user ═══════════ */
+var SBX = { on: false, tab: 'files', files: [], open: {}, view: null, ports: [], port: 0, info: null, loading: false, lastList: 0 };
+var agentRun = null;   /* { job, el, seq, steps:[], t0, stopped } */
+
+Object.assign(AGX_TOOLS, {
+  bash:           { verb: 'Ran command', icon: 'terminal' },
+  write_file:     { verb: 'Wrote file', icon: 'pencil' },
+  read_file:      { verb: 'Read file', icon: 'fileText' },
+  list_files:     { verb: 'Listed files', icon: 'folderS' },
+  start_server:   { verb: 'Started app', icon: 'play' },
+  browser:        { verb: 'Opened in browser', icon: 'monitor' },
+  generate_image: { verb: 'Generated image', icon: 'imageS' },
+  ask_user:       { verb: 'Asked you', icon: 'help' }
+});
+var agxArgBase = agxArg;
+agxArg = function (s) {
+  var inp = String(s.input || '');
+  var first = inp.replace(/^\s*```[\w.+-]*\s*\n/, '').split('\n')[0].trim();
+  if (s.tool === 'bash') { return first + (inp.trim().split('\n').length > 1 ? ' …' : ''); }
+  if (s.tool === 'write_file' || s.tool === 'read_file' || s.tool === 'generate_image') { return first; }
+  if (s.tool === 'list_files') { return first || '.'; }
+  if (s.tool === 'start_server') { var l = inp.trim().split('\n'); return 'port ' + (l[0] || '').trim() + (l[1] ? ' — ' + l[1].trim() : ''); }
+  return agxArgBase(s);
+};
+function sbxChatQuery() {
+  if (isTempChat || !currentChat || !currentChat.id) { return 'temp=1'; }
+  return 'id=' + encodeURIComponent(rootChatId());
+}
+function sbxFileUrl(path, dl) { return 'api.php?action=sbx_file&' + sbxChatQuery() + '&path=' + encodeURIComponent(path) + (dl ? '&dl=1' : ''); }
+function agxOutHtml(s) {
+  var out = String(s.output || '').trim(), meta = s.meta || {}, h = '';
+  if (s.tool === 'bash') { h = '<div class="agx-cmd">$ ' + esc(String(s.input || '').trim()) + '</div>' + esc(out); }
+  else if (s.tool === 'write_file') { var body = String(s.input || '').split('\n').slice(1).join('\n'); h = esc(out) + (body.trim() ? '<div class="agx-code">' + esc(body.replace(/^\s*```[\w.+-]*\s*\n|\n?```\s*$/g, '')) + '</div>' : ''); }
+  else { h = esc(out); }
+  var img = meta.screenshot || meta.image;
+  if (img && SBX.on) { h += '<img class="agx-shot" loading="lazy" alt="" src="' + esc(sbxFileUrl(img)) + '">'; }
+  if (meta.url && s.tool === 'start_server') { h += '<button type="button" class="agx-pv" data-port="' + (meta.port || '') + '">' + (I.monitor || '') + ' Open preview</button>'; }
+  return h;
+}
+
+/* render a whole trace (used for saved messages and when a run finishes) */
+renderAgentTrace = function (el, steps, ms, live) {
+  steps = steps || [];
+  if (!el || (!steps.length && !ms && !live)) { return null; }
+  var old = el.querySelector('.agx'); if (old) { old.remove(); }
+  var box = document.createElement('div');
+  box.className = 'agx' + (steps.length || live ? ' open' : '') + (live ? ' live' : '');
+  var label = live ? 'Working…' : ((ms ? 'Worked for ' + fmtDur(ms) : 'Worked') + (steps.length ? ' · ' + steps.length + ' step' + (steps.length > 1 ? 's' : '') : ''));
+  box.innerHTML = '<button type="button" class="agx-head"><span class="agx-spark">' + (I.spark || '') + '</span><span class="agx-lbl">' + esc(label) + '</span>' +
+    '<span class="agx-time"></span><span class="agx-chev">' + (I.chevR || '') + '</span></button>' + (live ? '' : agentSummaryHtml(steps)) +
+    '<div class="agx-list"></div>';
+  var list = box.querySelector('.agx-list');
+  steps.forEach(function (s, i) { list.appendChild(agxStepEl(s, i)); });
+  if (!live && steps.length) { var dn = document.createElement('div'); dn.className = 'agx-done'; dn.innerHTML = (I.check || '') + ' Done'; list.appendChild(dn); }
+  box.querySelector('.agx-head').addEventListener('click', function () { box.classList.toggle('open'); });
+  var body = el.querySelector('.body');
+  if (body) { body.insertBefore(box, el.querySelector('.content')); }
+  if (!live) { renderSourceCards(el, steps); }
+  return box;
+};
+function agxStepEl(s, i, running) {
+  var t = AGX_TOOLS[s.tool] || { verb: 'Used ' + (s.tool || 'tool'), icon: 'brainS' };
+  var st = document.createElement('div');
+  st.className = 'agx-step' + (running ? ' running' : (s.ok ? '' : ' fail'));
+  st.dataset.i = i;
+  var hasOut = !running && (String(s.output || '').trim() || (s.meta && (s.meta.screenshot || s.meta.image)));
+  st.innerHTML = (s.thought ? '<div class="agx-thought">' + esc(s.thought) + '</div>' : '') +
+    '<span class="agx-ic">' + (running ? '<span class="agx-spin"></span>' : (I[t.icon] || '')) + '</span>' +
+    '<button type="button" class="agx-row"><span class="agx-verb">' + esc(running ? t.verb.replace(/^Ran/, 'Running').replace(/^Wrote/, 'Writing').replace(/^Read /, 'Reading ').replace(/^Listed/, 'Listing').replace(/^Started/, 'Starting').replace(/^Opened/, 'Opening').replace(/^Generated/, 'Generating').replace(/^Searched/, 'Searching').replace(/^Calculated/, 'Calculating') : (s.ok ? t.verb : t.verb + ' — failed')) + '</span>' +
+    '<span class="agx-arg">' + esc(agxArg(s)) + '</span>' + (s.ms && !running ? '<span class="agx-ms">' + fmtDur(s.ms) + '</span>' : '') + (hasOut ? '<span class="agx-chev">' + (I.chevR || '') + '</span>' : '') + '</button>' +
+    (hasOut ? '<div class="agx-out"><button type="button" class="agx-copy" title="Copy output">' + I.copy + '</button><div class="agx-otx">' + agxOutHtml(s) + '</div></div>' : '');
+  if (hasOut) {
+    st.querySelector('.agx-row').addEventListener('click', function () { st.classList.toggle('open'); });
+    st.querySelector('.agx-copy').addEventListener('click', function (e) { e.stopPropagation(); copyText(String(s.output || '')); });
+    var pv = st.querySelector('.agx-pv');
+    if (pv) { pv.addEventListener('click', function () { SBX.port = Number(pv.dataset.port) || 0; openWsTab('preview'); }); }
+    var im = st.querySelector('.agx-shot');
+    if (im) { im.addEventListener('click', function () { window.open(im.src, '_blank', 'noopener'); }); }
+  }
+  return st;
+}
+
+/* ask_user: clickable answer chips under the question */
+function renderAskChips(el, ask) {
+  if (!el || !ask || !ask.options || !ask.options.length) { return; }
+  var w = document.createElement('div');
+  w.className = 'ask-chips';
+  ask.options.forEach(function (o) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'ask-chip'; b.textContent = o;
+    b.addEventListener('click', function () { if (busy) { return; } inp.value = o; resize(); send(); });
+    w.appendChild(b);
+  });
+  var c = el.querySelector('.content');
+  c.parentNode.insertBefore(w, c.nextSibling);
+}
+
+/* ── the live loop ── */
+function agentLiveEl() {
+  var el = addAiMsg({ modelTag: activeModelLabel() });
+  el.classList.add('agent-live');
+  var box = renderAgentTrace(el, [], 0, true);
+  el.querySelector('.content').innerHTML = '<span class="agx-live"><span class="agx-spark">' + (I.spark || '') + '</span><span class="agx-shimmer">Thinking…</span></span>';
+  var t0 = Date.now(), tm = box.querySelector('.agx-time');
+  var iv = setInterval(function () { if (!document.body.contains(el) || !el.classList.contains('agent-live')) { clearInterval(iv); return; } tm.textContent = fmtDur(Date.now() - t0); }, 1000);
+  refreshMessageActions(); scrollDown();
+  return el;
+}
+function agentStatus(el, text) { var s = el && el.querySelector('.agx-shimmer'); if (s) { s.textContent = text; } }
+
+function runAgent(payload) {
+  busy = true;
+  clearFollowups(); closePop();
+  var seq = ++sendSeq;
+  resize();
+  var el = agentLiveEl();
+  agentRun = { job: null, el: el, seq: seq, steps: [], fails: 0 };
+  api('agent_start', payload).then(function (j) {
+    if (seq !== sendSeq) { return; }
+    if (!j.ok) { el.remove(); addErr((j.error || 'Agent failed to start') + (j.hint ? '\nHint: ' + j.hint : '')); agentEnd(); return; }
+    agentRun.job = j.job;
+    if (!currentChat) { currentChat = { id: j.id || null, title: j.title || 'New chat', temp: !!payload.temp, messages: [], branch_groups: {} }; }
+    if (!currentChat.branch_groups) { currentChat.branch_groups = {}; }
+    isTempChat = !!(payload.temp || j.temp || currentChat.temp);
+    currentChat.temp = isTempChat;
+    if (!isTempChat) {
+      currentChat.id = j.id; currentChat.root_id = j.id;
+      currentChat.slug = j.slug || currentChat.slug || j.id;
+      currentChat.url_model = j.url_model || currentChat.url_model || routeModel();
+      currentChat.url_type = j.url_type || currentChat.url_type || routeType();
+      currentChat.mode = 'agent';
+      currentChat.active_variant = j.variant || currentChat.active_variant || j.id;
+      currentChat.variant_chat_id = j.variant || '';
+      currentChat.title = j.title || currentChat.title;
+      replaceChatUrl();
+      loadChats();
+    }
+    if (!payload.retry) {
+      var um = { role: 'user', content: payload.message };
+      if (payload.image) { um.img = payload.image; }
+      if (payload.attachments) { um.attachments = payload.attachments.map(function (a) { return { name: a.name, type: a.type, size: a.size, is_image: /^data:image\//.test(a.data || '') }; }); }
+      currentChat.messages.push(um);
+    }
+    updateChatActions();
+    if (j.uploads && j.uploads.length) { SBX.lastList = 0; if (wsIsOpen()) { renderWorkspace(); } }
+    agentLoop();
+  });
+}
+function continueAgent(job) {
+  if (busy) { return; }
+  busy = true;
+  var seq = ++sendSeq;
+  var el = agentLiveEl();
+  agentStatus(el, 'Resuming…');
+  agentRun = { job: job, el: el, seq: seq, steps: [], fails: 0 };
+  resize();
+  agentLoop();
+}
+function agentLoop() {
+  var r = agentRun;
+  if (!r || r.seq !== sendSeq) { return; }
+  activeController = window.AbortController ? new AbortController() : null;
+  api('agent_step', { job: r.job }, undefined, activeController ? activeController.signal : null).then(function (j) {
+    if (!agentRun || r !== agentRun || r.seq !== sendSeq) { return; }
+    if (j.aborted) { return; }
+    if (!j.ok) {
+      if (/expired|Unknown agent job/i.test(j.error || '')) { r.el.remove(); addErr(j.error); agentEnd(); return; }
+      r.fails++;
+      if (r.fails <= 4) { agentStatus(r.el, 'Connection hiccup — retrying…'); setTimeout(agentLoop, 1500 * r.fails); return; }
+      agentStatus(r.el, 'Lost connection');
+      agentResumeBtn(r);
+      return;
+    }
+    r.fails = 0;
+    var ev = j.event || {};
+    var list = r.el.querySelector('.agx-list');
+    if (ev.type === 'tool_start') {
+      var s = { tool: ev.tool, input: ev.input, thought: ev.thought };
+      r.runEl = agxStepEl(s, r.steps.length, true);
+      list.appendChild(r.runEl);
+      agentStatus(r.el, (AGX_TOOLS[ev.tool] || { verb: ev.tool }).verb.replace(/^Ran command/, 'Running a command').replace(/^Wrote file/, 'Writing a file') + '…');
+      scrollDown();
+    } else if (ev.type === 'tool_done' && ev.step) {
+      r.steps.push(ev.step);
+      var done = agxStepEl(ev.step, r.steps.length - 1, false);
+      if (r.runEl && r.runEl.parentNode) { r.runEl.parentNode.replaceChild(done, r.runEl); } else { list.appendChild(done); }
+      r.runEl = null;
+      agentStatus(r.el, 'Thinking…');
+      sbxAfterStep(ev.step);
+      scrollDown();
+    } else if (ev.type === 'retry') {
+      agentStatus(r.el, ev.note || 'Retrying…');
+    } else if (ev.type === 'busy') {
+      setTimeout(agentLoop, 1500); return;
+    }
+    if (j.done) { agentFinish(j); return; }
+    agentLoop();
+  });
+}
+function agentResumeBtn(r) {
+  var b = document.createElement('button');
+  b.type = 'button'; b.className = 'ask-chip agx-resume'; b.textContent = 'Resume';
+  b.addEventListener('click', function () { b.remove(); r.fails = 0; agentStatus(r.el, 'Resuming…'); agentLoop(); });
+  r.el.querySelector('.content').appendChild(b);
+}
+function agentFinish(j) {
+  var r = agentRun;
+  var el = r.el;
+  el.classList.remove('agent-live', 'thinking');
+  var reply = j.reply || (j.error ? '⚠️ ' + j.error : '');
+  var steps = (j.agent && j.agent.steps) || r.steps;
+  var ms = (j.agent && j.agent.ms) || 0;
+  var am = { role: 'assistant', content: reply, model_label: (j.model && j.model.label) || activeModelLabel(), agent: 1, agent_ms: ms };
+  if (steps.length) { am.agent_steps = steps; }
+  if (j.ask) { am.ask = j.ask; }
+  if (j.model && j.model.id) { am.model_id = j.model.id; }
+  if (currentChat) {
+    currentChat.messages.push(am);
+    if (j.title && !isTempChat) { currentChat.title = j.title; }
+  }
+  var idx = currentChat ? currentChat.messages.length - 1 : 0;
+  aiContent(el, reply, { index: idx, ms: ms });
+  renderAgentTrace(el, steps, ms);
+  if (j.ask) { renderAskChips(el, j.ask); }
+  renderWorkspace();
+  agentEnd();
+  if (!isTempChat) { loadChats(); }
+}
+function agentEnd() {
+  agentRun = null;
+  busy = false;
+  activeController = null;
+  resize();
+  updateChatActions();
+}
+function agentStop() {
+  var r = agentRun;
+  if (!r) { return false; }
+  sendSeq++;
+  if (activeController) { try { activeController.abort(); } catch (e) {} }
+  if (!r.job) { r.el.remove(); agentEnd(); return true; }
+  agentStatus(r.el, 'Stopping…');
+  var job = r.job;
+  api('agent_cancel', { job: job }).then(function (j) {
+    agentRun = r; r.seq = sendSeq;
+    if (j.ok) { agentFinish(j); } else { r.el.remove(); agentEnd(); }
+    toast('Agent stopped', 'stop');
+  });
+  return true;
+}
+
+/* refresh panel bits after a tool ran */
+function sbxAfterStep(s) {
+  if (!SBX.on) { return; }
+  SBX.lastList = 0;
+  if (s.tool === 'start_server' && s.ok && s.meta && s.meta.port) {
+    SBX.port = Number(s.meta.port);
+    openWsTab('preview');
+    return;
+  }
+  if (wsIsOpen()) { renderWorkspace(); }
+}
+
+/* ── workspace panel: Files / Preview / Activity ── */
+function wsIsOpen() { var p = document.getElementById('wsPanel'); return !!(p && p.classList.contains('open')); }
+function openWsTab(tab) { SBX.tab = tab; SBX.view = tab === 'files' ? SBX.view : null; if (!wsIsOpen()) { setWorkspace(true); } else { renderWorkspace(); } }
+var renderWorkspaceBase = renderWorkspace;
+renderWorkspace = function () {
+  var box = document.getElementById('wsBody');
+  var tabs = document.getElementById('wsTabs');
+  var panel = document.getElementById('wsPanel');
+  if (!box) { return; }
+  if (!SBX.on || !agentMode) {
+    if (tabs) { tabs.hidden = true; }
+    if (panel) { panel.classList.remove('wide'); }
+    document.body.style.setProperty('--wsw', '340px');
+    renderWorkspaceBase();
+    return;
+  }
+  tabs.hidden = false;
+  Array.prototype.forEach.call(tabs.querySelectorAll('button[data-tab]'), function (b) { b.classList.toggle('on', b.dataset.tab === SBX.tab); });
+  panel.classList.toggle('wide', SBX.tab === 'preview' || (SBX.tab === 'files' && !!SBX.view));
+  document.body.style.setProperty('--wsw', panel.classList.contains('wide') ? 'min(760px,52vw)' : '340px');
+  if (SBX.tab === 'activity') { renderWorkspaceBase(); return; }
+  if (!currentChat || (!currentChat.id && !isTempChat)) {
+    box.innerHTML = '<div class="ws-empty"><div class="wi">' + (I.terminal || '') + '</div>Every agent chat gets its own Linux computer.<br>Files the agent creates and apps it runs will show up here.</div>';
+    return;
+  }
+  if (SBX.tab === 'files') { renderWsFiles(box); } else { renderWsPreview(box); }
+};
+
+function wsToolbar(html) { return '<div class="ws-tb">' + html + '</div>'; }
+function renderWsFiles(box) {
+  if (SBX.view) { renderWsViewer(box); return; }
+  var fresh = Date.now() - SBX.lastList < 4000 && SBX.listFor === sbxChatQuery();
+  if (!fresh) {
+    if (!SBX.loading) {
+      SBX.loading = true;
+      if (!SBX.files.length || SBX.listFor !== sbxChatQuery()) { box.innerHTML = wsToolbar('') + '<div class="ws-empty"><span class="agx-spin"></span><br>Loading files…</div>'; }
+      var q = sbxChatQuery();
+      api('sbx_files&' + q + '&path=.').then(function (j) {
+        SBX.loading = false; SBX.lastList = Date.now(); SBX.listFor = q;
+        SBX.files = j.ok ? (j.entries || []) : [];
+        SBX.err = j.ok ? '' : (j.error || 'Could not load files');
+        if (wsIsOpen() && SBX.tab === 'files' && !SBX.view) { drawWsFiles(box); }
+      });
+    }
+    if (SBX.files.length && SBX.listFor === sbxChatQuery()) { drawWsFiles(box); }
+    return;
+  }
+  drawWsFiles(box);
+}
+function drawWsFiles(box) {
+  var files = SBX.files.filter(function (e) { return !/^\.devil(\/|$)/.test(e.path) || /^\.devil\/screens(\/|$)/.test(e.path); });
+  var tb = wsToolbar('<button type="button" class="ws-btn" data-act="up" title="Upload files">' + (I.upload || '') + '<span>Upload</span></button>' +
+    '<button type="button" class="ws-btn" data-act="zip" title="Download everything as .zip">' + (I.download || '') + '<span>Zip</span></button>' +
+    '<span class="sp"></span><button type="button" class="ws-btn ic" data-act="ref" title="Refresh">' + (I.retry || '') + '</button>');
+  if (SBX.err) { box.innerHTML = tb + '<div class="ws-empty"><div class="wi">' + (I.warning || '') + '</div>' + esc(SBX.err) + '</div>'; wsBindTb(box); return; }
+  if (!files.length) { box.innerHTML = tb + '<div class="ws-empty"><div class="wi">' + (I.folderS || '') + '</div>No files yet.<br>Ask the agent to build something, or upload files.</div>'; wsBindTb(box); return; }
+  var html = '<div class="ws-tree">';
+  files.forEach(function (e) {
+    var parts = e.path.split('/'), depth = parts.length - 1, name = parts[parts.length - 1];
+    var hidden = false;
+    for (var k = 1; k < parts.length; k++) { if (SBX.open[parts.slice(0, k).join('/')] === false) { hidden = true; break; } }
+    if (hidden) { return; }
+    var isDir = e.type === 'dir';
+    var collapsed = isDir && SBX.open[e.path] === false;
+    html += '<button type="button" class="ws-f' + (isDir ? ' dir' : '') + (collapsed ? ' closed' : '') + '" data-path="' + esc(e.path) + '" data-dir="' + (isDir ? 1 : 0) + '" style="padding-left:' + (8 + depth * 14) + 'px" title="' + esc(e.path) + '">' +
+      '<span class="fi">' + (isDir ? '<span class="fchev">' + (I.chevR || '') + '</span>' + (I.folderS || '') : (I[fileIcon(name)] || I.fileS)) + '</span>' +
+      '<span class="fn">' + esc(name) + (e.skipped ? ' <small>(not expanded)</small>' : '') + '</span>' + (!isDir ? '<small class="fs">' + fmtBytes(e.size || 0) + '</small>' : '') + '</button>';
+  });
+  html += '</div>';
+  box.innerHTML = tb + html;
+  wsBindTb(box);
+  Array.prototype.forEach.call(box.querySelectorAll('.ws-f'), function (b) {
+    b.addEventListener('click', function () {
+      var p = b.dataset.path;
+      if (b.dataset.dir === '1') { SBX.open[p] = SBX.open[p] === false ? true : false; drawWsFiles(box); return; }
+      SBX.view = { path: p };
+      renderWorkspace();
+    });
+  });
+}
+function fileIcon(name) {
+  if (/\.(png|jpe?g|gif|webp|svg|ico|bmp)$/i.test(name)) { return 'imageS'; }
+  if (/\.(js|ts|jsx|tsx|py|php|sh|css|html?|json|go|rs|java|c|cpp|rb|vue|svelte|sql|ya?ml|toml)$/i.test(name)) { return 'codeS'; }
+  return 'fileS';
+}
+function wsBindTb(box) {
+  Array.prototype.forEach.call(box.querySelectorAll('.ws-tb [data-act]'), function (b) {
+    b.addEventListener('click', function () {
+      var a = b.dataset.act;
+      if (a === 'ref') { SBX.lastList = 0; renderWorkspace(); }
+      else if (a === 'zip') { wsDownload('api.php?action=sbx_zip&' + sbxChatQuery()); }
+      else if (a === 'up') { wsPickUpload(); }
+      else if (a === 'back') { SBX.view = null; renderWorkspace(); }
+      else if (a === 'dl' && SBX.view) { wsDownload(sbxFileUrl(SBX.view.path, true)); }
+      else if (a === 'pvref') { var f = box.querySelector('iframe'); if (f) { f.src = f.src; } }
+      else if (a === 'pvopen') { var u = (SBX.ports.filter(function (p) { return p.port === SBX.port; })[0] || {}).url; if (u) { window.open(u, '_blank', 'noopener'); } }
+    });
+  });
+}
+function wsDownload(url) { var a = document.createElement('a'); a.href = url; a.rel = 'noopener'; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
+function wsPickUpload() {
+  var fi = document.createElement('input');
+  fi.type = 'file'; fi.multiple = true;
+  fi.addEventListener('change', function () {
+    var list = Array.prototype.slice.call(fi.files || []);
+    if (!list.length) { return; }
+    var left = list.length;
+    toast('Uploading ' + left + ' file' + (left > 1 ? 's' : '') + '…', 'loader');
+    list.forEach(function (f) {
+      if (f.size > 25 * 1024 * 1024) { toast(f.name + ' is larger than 25 MB', 'warning'); if (--left === 0) { SBX.lastList = 0; renderWorkspace(); } return; }
+      var fr = new FileReader();
+      fr.onload = function () {
+        api('sbx_upload', { id: isTempChat ? '' : rootChatId(), temp: isTempChat ? 1 : 0, name: f.name, data: fr.result, dir: 'uploads' }).then(function (j) {
+          if (!j.ok) { toast(j.error || ('Upload failed: ' + f.name), 'warning'); }
+          if (--left === 0) { toast('Uploaded to uploads/'); SBX.lastList = 0; SBX.open.uploads = true; renderWorkspace(); }
+        });
+      };
+      fr.readAsDataURL(f);
+    });
+  });
+  fi.click();
+}
+function renderWsViewer(box) {
+  var p = SBX.view.path, name = p.split('/').pop();
+  var tb = wsToolbar('<button type="button" class="ws-btn ic" data-act="back" title="Back to files">' + (I.arrowL || '') + '</button><span class="ws-path" title="' + esc(p) + '">' + esc(p) + '</span><span class="sp"></span>' +
+    '<button type="button" class="ws-btn" data-act="dl" title="Download">' + (I.download || '') + '<span>Download</span></button>');
+  if (/\.(png|jpe?g|gif|webp)$/i.test(name)) {
+    box.innerHTML = tb + '<div class="ws-view img"><img alt="" src="' + esc(sbxFileUrl(p)) + '"></div>';
+    wsBindTb(box); return;
+  }
+  if (/\.(zip|gz|tgz|tar|7z|rar|pdf|mp4|mp3|wav|woff2?|ttf|exe|bin|so|o|pyc|sqlite|db|xlsx?|docx?|pptx?)$/i.test(name)) {
+    box.innerHTML = tb + '<div class="ws-empty"><div class="wi">' + (I.fileS || '') + '</div>' + esc(name) + '<br>Preview isn\'t available for this file type.<br><br><button type="button" class="ws-btn" data-act="dl">' + (I.download || '') + '<span>Download</span></button></div>';
+    wsBindTb(box); return;
+  }
+  box.innerHTML = tb + '<div class="ws-empty"><span class="agx-spin"></span></div>';
+  wsBindTb(box);
+  fetch(sbxFileUrl(p), { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); }).then(function (t) {
+    if (!SBX.view || SBX.view.path !== p) { return; }
+    var big = t.length > 300000;
+    box.innerHTML = tb + '<pre class="ws-view code">' + esc(big ? t.slice(0, 300000) + '\n… (truncated — download to see everything)' : t) + '</pre>';
+    wsBindTb(box);
+  }).catch(function () { box.innerHTML = tb + '<div class="ws-empty">Could not open this file.</div>'; wsBindTb(box); });
+}
+function renderWsPreview(box) {
+  box.innerHTML = '<div class="ws-empty"><span class="agx-spin"></span><br>Looking for running apps…</div>';
+  api('sbx_info&' + sbxChatQuery()).then(function (j) {
+    if (!wsIsOpen() || SBX.tab !== 'preview') { return; }
+    if (!j.ok || !j.online) { box.innerHTML = '<div class="ws-empty"><div class="wi">' + (I.warning || '') + '</div>' + esc(j.error || 'Sandbox is offline right now.') + '</div>'; return; }
+    SBX.ports = (j.ports || []).filter(function (p) { return !p.localhost_only; });
+    if (!SBX.ports.length) {
+      box.innerHTML = wsToolbar('<span class="ws-path">No app running</span><span class="sp"></span><button type="button" class="ws-btn ic" data-act="ref2" title="Refresh">' + (I.retry || '') + '</button>') +
+        '<div class="ws-empty"><div class="wi">' + (I.monitor || '') + '</div>No app is running yet.<br>Ask the agent to build and start one — it will appear here live.</div>';
+      box.querySelector('[data-act="ref2"]').addEventListener('click', function () { renderWorkspace(); });
+      return;
+    }
+    if (!SBX.ports.some(function (p) { return p.port === SBX.port; })) { SBX.port = SBX.ports[0].port; }
+    var cur = SBX.ports.filter(function (p) { return p.port === SBX.port; })[0];
+    var sel = '<select class="ws-sel" title="Port">' + SBX.ports.map(function (p) { return '<option value="' + p.port + '"' + (p.port === SBX.port ? ' selected' : '') + '>:' + p.port + '</option>'; }).join('') + '</select>';
+    box.innerHTML = wsToolbar(sel + '<span class="ws-path ws-url" title="' + esc(cur.url) + '">' + esc(cur.url.replace(/^https:\/\//, '')) + '</span><span class="sp"></span>' +
+      '<button type="button" class="ws-btn ic" data-act="pvref" title="Reload">' + (I.retry || '') + '</button><button type="button" class="ws-btn ic" data-act="pvopen" title="Open in new tab">' + (I.external || '') + '</button>') +
+      '<iframe class="ws-frame" src="' + esc(cur.url) + '" sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals allow-downloads" referrerpolicy="no-referrer" allow="clipboard-write"></iframe>';
+    wsBindTb(box);
+    box.querySelector('.ws-sel').addEventListener('change', function (e) { SBX.port = Number(e.target.value); renderWorkspace(); });
+  });
+}
+(function initWsTabs() {
+  var head = document.querySelector('#wsPanel .ws-head');
+  if (!head || document.getElementById('wsTabs')) { return; }
+  var t = document.createElement('div');
+  t.id = 'wsTabs'; t.className = 'ws-tabs'; t.hidden = true;
+  t.innerHTML = '<button type="button" data-tab="files">' + (I.folderS || '') + 'Files</button><button type="button" data-tab="preview">' + (I.monitor || '') + 'Preview</button><button type="button" data-tab="activity">' + (I.listS || '') + 'Activity</button>';
+  head.parentNode.insertBefore(t, head.nextSibling);
+  t.addEventListener('click', function (e) { var b = e.target.closest('button[data-tab]'); if (!b) { return; } SBX.tab = b.dataset.tab; if (SBX.tab !== 'files') { SBX.view = null; } renderWorkspace(); });
+})();
+
 api('bootstrap').then(function (j) {
   if (!j.ok) { return; }
   models = j.models || [];
@@ -4082,6 +4581,8 @@ api('bootstrap').then(function (j) {
   renderModelMenu();
   renderCustomModelMenu('');
   agentEnabled = j.agent_enabled !== false;
+  SBX.on = !!j.sandbox_enabled;
+  if (wsIsOpen()) { renderWorkspace(); }
   BATTLE_POOL = j.battle_models || [];
   battleById = {};
   BATTLE_POOL.forEach(function (m) { battleById[m.id] = m; });
