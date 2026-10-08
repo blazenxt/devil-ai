@@ -72,7 +72,7 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
   --serif:Georgia,'Times New Roman',serif;
   --sans:'Segoe UI',system-ui,-apple-system,Roboto,'Noto Sans',sans-serif;
 }
-html,body{height:100%}
+html,body{height:100%;overflow-x:hidden}
 body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100dvh;overflow:hidden}
 button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 a{color:inherit;text-decoration:none}
@@ -127,7 +127,7 @@ img{-webkit-user-drag:none}
 #userMenu hr{border:none;border-top:1px solid var(--border)}
 
 /* ═══════════ MAIN ═══════════ */
-main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;background:radial-gradient(1000px 500px at 70% -10%,rgba(225,29,72,.07),transparent 55%),var(--bg)}
+main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;overflow:hidden;overflow:clip;background:radial-gradient(1000px 500px at 70% -10%,rgba(225,29,72,.07),transparent 55%),var(--bg)}
 .m-top{display:none;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(12,7,9,.85);backdrop-filter:blur(10px)}
 .m-top .brand{display:flex;align-items:center;gap:8px;font-weight:700;flex:1}
 .m-top .brand img{width:24px;height:24px}
@@ -476,63 +476,72 @@ body.voice-open{overflow:hidden}
 .pvFrame iframe{width:100%;height:100%;border:none;display:block;background:#fff}
 #previewModal .sheet{max-width:880px;width:94vw}
 
-/* ═══════════ AGENT MODE — Pro-style workspace UI ═══════════ */
-body.agent-mode{
-  --bg:#181715; --bg2:#1d1c19; --sb:#1b1a18; --panel:#22211e; --panel2:#282723; --panel3:#302e2a;
-  --border:rgba(255,255,255,.09); --border-hi:rgba(255,255,255,.2);
-  --text:#ece9e3; --dim:#a39e94; --dim2:#7f7a71; --soft:#e7e2d9; --pink:#e7e2d9;
-  --ag-accent:#f43f5e; --ag-head:#d9d4ca; --ag-line:rgba(255,255,255,.1); --ag-hover:rgba(255,255,255,.05); --ag-user:#2a2925;
+/* ═══════════ PRO-STYLE UI (AI Mode + Agent Mode) ═══════════ */
+body.devil-ui{
+  --bg:#262624; --bg2:#2a2a28; --sb:#262624; --panel:#30302e; --panel2:#2c2c2a; --panel3:#3a3a37;
+  --border:rgba(255,255,255,.1); --border-hi:rgba(255,255,255,.22);
+  --text:#ecebe7; --dim:#a8a59e; --dim2:#85827b; --soft:#e6e3dc; --pink:#e6e3dc;
+  --ag-accent:#f43f5e; --ag-head:#d6d2c9; --ag-line:rgba(255,255,255,.11); --ag-hover:rgba(255,255,255,.06); --ag-user:#353532;
+  --ag-mark:#f43f5e; --ag-mark-text:#1c1b1a;
   background:var(--bg)
 }
-[data-theme=light] body.agent-mode{
-  --bg:#faf9f6; --bg2:#f5f4f0; --sb:#f6f5f1; --panel:#ffffff; --panel2:#f3f1ec; --panel3:#ebe8e2;
+[data-theme=light] body.devil-ui{
+  --bg:#faf9f7; --bg2:#f5f4f0; --sb:#faf9f7; --panel:#ffffff; --panel2:#f3f1ec; --panel3:#ebe8e2;
   --border:#e6e3dc; --border-hi:#cfcac0;
   --text:#2f2d29; --dim:#77726a; --dim2:#9a958c; --soft:#3d3a35; --pink:#3d3a35;
   --ag-accent:#e11d48; --ag-head:#615c54; --ag-line:#e6e3dc; --ag-hover:rgba(0,0,0,.035); --ag-user:#f0eee9;
+  --ag-mark:#fb7185; --ag-mark-text:#1f1d1a;
   background:var(--bg)
 }
-body.agent-mode main{background:var(--bg)}
-body.agent-mode ::-webkit-scrollbar-thumb{background:var(--border-hi)}
-body.agent-mode #sidebar{background:var(--sb);border-right-color:var(--border)}
-body.agent-mode .newchat{background:var(--panel);border-color:var(--border);color:var(--text)}
-body.agent-mode .newchat:hover{background:var(--panel2);border-color:var(--border-hi)}
-body.agent-mode .chatitem:hover{background:var(--ag-hover)}
-body.agent-mode .chatitem.on{background:var(--panel3)}
+body.devil-ui main{background:var(--bg)}
+body.devil-ui ::-webkit-scrollbar-thumb{background:var(--border-hi)}
+body.devil-ui #sidebar{background:var(--sb);border-right-color:var(--border)}
+body.devil-ui .newchat{background:var(--panel);border-color:var(--border);color:var(--text)}
+body.devil-ui .newchat:hover{background:var(--panel2);border-color:var(--border-hi)}
+body.devil-ui .chatitem:hover{background:var(--ag-hover)}
+body.devil-ui .chatitem.on{background:var(--panel3)}
+body.devil-ui .sb-search{background:var(--panel);border-color:var(--border)}
+body.devil-ui .userbtn .av{background:var(--panel3);color:var(--text)}
 
 /* top bar */
-body.agent-mode .m-top{display:flex;height:52px;padding:0 14px;background:var(--bg)!important;border-bottom:1px solid var(--border);backdrop-filter:none}
-body.agent-mode .m-top .brand{visibility:hidden}
-@media (min-width:901px){ body.agent-mode #sbOpen,body.agent-mode #themeBtnM{display:none} }
-body.agent-mode .modesw{top:8px;left:14px}
-body.agent-mode .modebtn{height:36px;gap:7px;padding:0 10px;border-radius:9px;border:1px solid transparent;background:transparent!important;box-shadow:none!important;backdrop-filter:none;font-weight:500;font-size:.95rem;color:var(--text)}
-body.agent-mode .modebtn:hover,body.agent-mode .modesw.open .modebtn{background:var(--ag-hover)!important;border-color:transparent}
-body.agent-mode .modebtn img,body.agent-mode .modebtn .mname,body.agent-mode .modebtn .mtag{display:none}
+body.devil-ui .m-top{display:flex;height:52px;padding:0 14px;background:var(--bg)!important;border-bottom:1px solid var(--border);backdrop-filter:none}
+body.devil-ui:not(.agent-mode).agent-empty .m-top{border-bottom-color:transparent}
+body.devil-ui .m-top .brand{visibility:hidden}
+@media (min-width:901px){ body.devil-ui #sbOpen,body.devil-ui #themeBtnM{display:none} }
+body.devil-ui .modesw{top:8px;left:14px}
+body.devil-ui .modebtn{height:36px;gap:7px;padding:0 10px;border-radius:9px;border:1px solid transparent;background:transparent!important;box-shadow:none!important;backdrop-filter:none;font-weight:500;font-size:.95rem;color:var(--text)}
+body.devil-ui .modebtn:hover,body.devil-ui .modesw.open .modebtn{background:var(--ag-hover)!important;border-color:transparent}
+body.devil-ui .modebtn img{width:20px;height:20px;filter:none}
+body.devil-ui .modebtn .mtag{display:none}
+body.agent-mode .modebtn img,body.agent-mode .modebtn .mname{display:none}
 .modebtn .aglabel{display:none;align-items:center;gap:7px}
 body.agent-mode .modebtn .aglabel{display:inline-flex}
 .aglabel .agspark{display:inline-flex;color:var(--ag-accent)}
-body.agent-mode .modebtn .mchev{color:var(--dim)}
-@media (max-width:900px){ body.agent-mode .modesw{left:52px} }
-body.agent-mode .modemenu{background:var(--panel);border-color:var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.18)}
-body.agent-mode .modeopt:hover{background:var(--ag-hover)}
-body.agent-mode .modeopt.on{background:var(--panel2)}
-body.agent-mode .modeopt .mic{background:var(--panel2);color:var(--text)}
-body.agent-mode .modeopt.on .mic{background:var(--text);color:var(--bg)}
-body.agent-mode .modeopt .mck{color:var(--text)}
+body.devil-ui .modebtn .mchev{color:var(--dim)}
+@media (max-width:900px){ body.devil-ui .modesw{left:52px} }
+body.devil-ui .modemenu,body.devil-ui .modemenu2{background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.18)}
+body.devil-ui .modeopt:hover{background:var(--ag-hover)}
+body.devil-ui .modeopt.on{background:var(--panel2)}
+body.devil-ui .modeopt .mic{background:var(--panel2);color:var(--text)}
+body.devil-ui .modeopt.on .mic{background:var(--text);color:var(--bg)}
+body.devil-ui .modeopt .mck{color:var(--text)}
+body.devil-ui .modemenu .mhead,body.devil-ui .modemenu2 .mhead{color:var(--dim2)}
 
 /* right header tools */
-body.agent-mode .chattools{top:8px;right:12px;padding:0;gap:2px;border:none;background:transparent!important;box-shadow:none!important;backdrop-filter:none}
-body.agent-mode .ctbtn{height:36px;min-width:36px;padding:0 9px;border-radius:9px;color:var(--dim)!important;background:transparent!important;border-color:transparent!important;box-shadow:none!important}
-body.agent-mode .ctbtn:hover{background:var(--ag-hover)!important;color:var(--text)!important}
-body.agent-mode .ctbtn.on{background:var(--panel3)!important;color:var(--text)!important}
-body.agent-mode .ctbtn .txt{display:none}
+body.devil-ui .chattools{top:8px;right:12px;padding:0;gap:2px;border:none;background:transparent!important;box-shadow:none!important;backdrop-filter:none}
+body.devil-ui .ctbtn{height:36px;min-width:36px;padding:0 9px;border-radius:9px;color:var(--dim)!important;background:transparent!important;border-color:transparent!important;box-shadow:none!important}
+body.devil-ui .ctbtn:hover{background:var(--ag-hover)!important;color:var(--text)!important}
+body.devil-ui .ctbtn.on{background:var(--panel3)!important;color:var(--text)!important}
+body.devil-ui .ctbtn .txt{display:none}
 #wsBtn{display:none}
 body.agent-mode #wsBtn{display:inline-flex}
-@media (max-width:900px){ body.agent-mode .chattools{right:52px} }
+@media (max-width:900px){ body.devil-ui .chattools{right:52px} }
+body.devil-ui.temp-chat #thread:before{background:var(--panel2);border-color:var(--border);color:var(--dim)}
 
 /* icon rail (sidebar collapsed, desktop) */
 #agentRail{display:none}
 @media (min-width:901px){
-  body.agent-mode.sb-closed #agentRail{display:flex;flex-direction:column;align-items:center;gap:6px;width:56px;flex-shrink:0;padding:10px 0;border-right:1px solid var(--border);background:var(--bg)}
+  body.devil-ui.sb-closed #agentRail{display:flex;flex-direction:column;align-items:center;gap:6px;width:56px;flex-shrink:0;padding:10px 0;border-right:1px solid var(--border);background:var(--bg)}
 }
 #agentRail .rbtn{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.12s}
 #agentRail .rbtn:hover{background:var(--ag-hover);color:var(--text)}
@@ -540,44 +549,90 @@ body.agent-mode #wsBtn{display:inline-flex}
 #agentRail .rav{width:30px;height:30px;border-radius:50%;background:var(--panel3);color:var(--text);font-size:.78rem;font-weight:700;display:flex;align-items:center;justify-content:center}
 #agentRail .rtop{margin-bottom:10px}
 
-/* welcome / empty state: heading + centered composer */
-body.agent-mode #welcome img.big,body.agent-mode #welcome .cards,body.agent-mode #welcome .sub{display:none}
-body.agent-mode #welcome h2{text-wrap:balance;font-family:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;font-weight:400;font-size:clamp(2rem,4.6vw,3rem);letter-spacing:-.025em;color:var(--ag-head);line-height:1.15}
-body.agent-mode.agent-empty #scroller{flex:0 0 auto;margin-top:auto;overflow:visible}
-body.agent-mode.agent-empty #thread{padding-top:0;padding-bottom:0}
-body.agent-mode.agent-empty #welcome{padding:0 10px 22px}
-body.agent-mode.agent-empty #composer{margin-bottom:auto;padding-bottom:12vh;background:none}
-body.agent-mode.agent-empty .hint{visibility:hidden}
-body.agent-mode.agent-empty #inp{min-height:64px}
+/* welcome / empty state */
+#welcome .wmark{display:none}
+body.devil-ui #welcome img.big,body.devil-ui #welcome .cards,body.devil-ui #welcome .sub{display:none}
+body.devil-ui:not(.agent-mode) #welcome .wmark{display:inline-flex;align-items:center;gap:9px;margin-bottom:6px;font-family:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;font-size:1.9rem;letter-spacing:-.02em;color:var(--text)}
+#welcome .wmark img{width:34px;height:34px}
+body.devil-ui #welcome h2{text-wrap:balance;font-family:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;font-weight:400;font-size:clamp(2rem,4.6vw,3.1rem);letter-spacing:-.025em;color:var(--ag-head);line-height:1.15}
+body.devil-ui #welcome h2 mark{background:var(--ag-mark);color:var(--ag-mark-text);font-style:italic;padding:0 .14em;margin:0 .02em}
+body.devil-ui.agent-empty #scroller{flex:0 0 auto;margin-top:auto;overflow:visible}
+body.devil-ui.agent-empty #thread{padding-top:0;padding-bottom:0}
+body.devil-ui.agent-empty #welcome{padding:0 10px 22px}
+body.devil-ui.agent-empty #composer{margin-bottom:auto;padding-bottom:12vh;background:none}
+body.devil-ui.agent-empty .hint{visibility:hidden}
+body.devil-ui.agent-empty #inp{min-height:64px}
+@media (max-width:600px){
+  body.devil-ui #welcome h2{font-size:1.95rem}
+  body.agent-mode.agent-empty #composer{padding-bottom:18vh}
+  /* AI Mode on phones: heading in the middle, composer docked at the bottom (like Battle Direct) */
+  body.devil-ui:not(.agent-mode).agent-empty #scroller{flex:1 1 auto;margin-top:0;display:flex;flex-direction:column;justify-content:center;overflow:auto}
+  body.devil-ui:not(.agent-mode).agent-empty #composer{margin-bottom:0;padding-bottom:12px}
+  body.devil-ui:not(.agent-mode).agent-empty #inp{min-height:40px}
+}
 
 /* composer */
-body.agent-mode #composer{background:linear-gradient(transparent,var(--bg) 30%)}
-body.agent-mode .compbox{max-width:680px;border-radius:14px;background:var(--panel);border-color:var(--border);box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.05)}
-body.agent-mode .compbox:focus-within{border-color:var(--border-hi);box-shadow:0 1px 2px rgba(0,0,0,.04),0 10px 32px rgba(0,0,0,.08)}
-body.agent-mode #inp{color:var(--text)}
-body.agent-mode #inp::placeholder{color:var(--dim2)}
-body.agent-mode .comprow{padding:8px 8px 8px 8px}
+body.devil-ui #composer{background:linear-gradient(transparent,var(--bg) 30%)}
+body.devil-ui .compbox{max-width:680px;border-radius:14px;background:var(--panel);border-color:var(--border);box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.05)}
+body.devil-ui .compbox:focus-within{border-color:var(--border-hi);box-shadow:0 1px 2px rgba(0,0,0,.04),0 10px 32px rgba(0,0,0,.08)}
+body.devil-ui #inp{color:var(--text)}
+body.devil-ui #inp::placeholder{color:var(--dim2)}
+body.devil-ui .comprow{padding:8px}
+body.devil-ui .modelwrap{gap:4px}
 #attachBtn .atxt{display:none}
-body.agent-mode #attachBtn{width:auto;height:32px;padding:0 10px;gap:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:.82rem}
+body.devil-ui #attachBtn,body.devil-ui #voiceBtn,body.devil-ui #promptBtn{width:32px;height:32px;border-radius:8px;color:var(--dim)}
+body.devil-ui #attachBtn:hover,body.devil-ui #voiceBtn:hover,body.devil-ui #promptBtn:hover{background:var(--ag-hover);color:var(--text)}
+body.devil-ui #voiceBtn.on{background:var(--panel3);color:var(--text);box-shadow:none}
+body.agent-mode #attachBtn{width:auto;padding:0 10px;gap:6px;border:1px solid var(--border);color:var(--text);font-size:.82rem}
 body.agent-mode #attachBtn .atxt{display:inline}
-body.agent-mode #attachBtn:hover{background:var(--ag-hover);color:var(--text)}
-body.agent-mode #voiceBtn,body.agent-mode #promptBtn,body.agent-mode #quickVoiceBtn{display:none!important}
-body.agent-mode #modelBtn,body.agent-mode #customModelBtn{border-color:transparent;color:var(--dim);font-weight:500;padding:6px 9px;border-radius:8px}
-body.agent-mode #modelBtn:hover,body.agent-mode #customModelBtn:hover{background:var(--ag-hover);border-color:transparent;color:var(--text)}
-body.agent-mode #sendBtn[hidden]{display:flex!important}
-body.agent-mode #sendBtn{width:32px;height:32px;border-radius:8px;background:transparent;color:var(--dim);border:1px solid var(--border);box-shadow:none}
-body.agent-mode #sendBtn:not(:disabled){background:var(--text);color:var(--bg);border-color:var(--text)}
-body.agent-mode #sendBtn:hover{transform:none}
-body.agent-mode #sendBtn.stopmode{background:var(--panel3);color:var(--text);border-color:var(--border-hi)}
-body.agent-mode #modelMenu,body.agent-mode #customModelMenu{background:var(--panel);border-color:var(--border);border-radius:12px}
-body.agent-mode .hint{color:var(--dim2)}
+body.agent-mode #voiceBtn,body.agent-mode #promptBtn{display:none!important}
+body.devil-ui #quickVoiceBtn{display:none!important}
+body.devil-ui:not(.agent-mode) #attachBtn{order:1}
+body.devil-ui:not(.agent-mode) .modechipwrap{order:2}
+body.devil-ui:not(.agent-mode) #modelBtn{order:3}
+body.devil-ui:not(.agent-mode) #customWrap{order:4}
+body.devil-ui:not(.agent-mode) #promptBtn{order:5}
+body.devil-ui:not(.agent-mode) #voiceBtn{order:6}
+body.devil-ui #modelBtn,body.devil-ui #customModelBtn{border-color:transparent;color:var(--text);font-weight:500;padding:6px 9px;border-radius:8px}
+body.agent-mode #modelBtn,body.agent-mode #customModelBtn{color:var(--dim)}
+body.devil-ui #modelBtn:hover,body.devil-ui #customModelBtn:hover{background:var(--ag-hover);border-color:transparent;color:var(--text)}
+body.devil-ui #sendBtn[hidden]{display:flex!important}
+body.devil-ui #sendBtn{width:32px;height:32px;border-radius:8px;background:transparent;color:var(--dim);border:1px solid var(--border);box-shadow:none}
+body.devil-ui #sendBtn:not(:disabled){background:var(--text);color:var(--bg);border-color:var(--text)}
+body.devil-ui #sendBtn:hover{transform:none}
+body.devil-ui #sendBtn.stopmode{background:var(--panel3);color:var(--text);border-color:var(--border-hi)}
+body.devil-ui #modelMenu,body.devil-ui #customModelMenu,body.devil-ui #promptMenu{background:var(--panel);border-color:var(--border);border-radius:12px}
+body.devil-ui .hint{color:var(--dim2)}
+body.devil-ui #editChip,body.devil-ui #voiceChip{background:var(--panel2);border-color:var(--border);color:var(--dim)}
+
+/* mode chip inside the composer (AI Mode, like Battle's "Direct ⌄") */
+.modechipwrap{display:none;position:relative}
+body.devil-ui:not(.agent-mode) .modechipwrap{display:block}
+#modeChip{height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border-radius:8px;color:var(--text);font-size:.82rem;font-weight:500;white-space:nowrap}
+#modeChip:hover,.modechipwrap.open #modeChip{background:var(--ag-hover)}
+#modeChip .mcc{display:inline-flex;color:var(--dim)}
+.modemenu2{display:none;position:absolute;bottom:calc(100% + 8px);left:0;width:290px;max-width:calc(100vw - 40px);padding:6px;z-index:80}
+.modechipwrap.open .modemenu2{display:block;animation:rise .16s ease}
+.modemenu2 .mhead{padding:8px 10px 6px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+body.devil-ui.agent-empty:not(.agent-mode) .modemenu2{bottom:auto;top:calc(100% + 8px)}
+@media (max-width:600px){ body.devil-ui.agent-empty:not(.agent-mode) .modemenu2{top:auto;bottom:calc(100% + 8px)} #modeChip .mcl{display:none} }
 
 /* messages */
-body.agent-mode #thread{max-width:740px}
-body.agent-mode .msg-user .bub{background:var(--ag-user);border-color:transparent;border-radius:14px;color:var(--text)}
-body.agent-mode .msg-ai .ava,body.agent-mode .msg-ai .who{display:none}
-body.agent-mode .msg-ai .content{color:var(--text)}
-body.agent-mode .content a{color:var(--ag-accent)}
+body.devil-ui #thread{max-width:740px}
+body.devil-ui .msg-user .bub{background:var(--ag-user);border-color:transparent;border-radius:14px;color:var(--text)}
+body.devil-ui .msg-ai .ava{display:none}
+body.devil-ui .msg-ai .who{gap:7px;margin-bottom:8px}
+body.devil-ui .msg-ai .who:before{content:'';width:18px;height:18px;background:url(assets/logo.svg) center/contain no-repeat;flex-shrink:0}
+body.devil-ui .msg-ai .who b{font-size:.84rem;font-weight:600;color:var(--text)}
+body.devil-ui .msg-ai .who .mtag{border:none;padding:0;color:var(--dim);font-size:.78rem;letter-spacing:0}
+body.devil-ui .msg-ai .who .mtag:before{content:'·';margin-right:6px;color:var(--dim2)}
+body.agent-mode .msg-ai .who{display:none}
+body.devil-ui .msg-ai .content{color:var(--text)}
+body.devil-ui .content a{color:var(--ag-accent)}
+body.devil-ui .content pre,body.devil-ui .content code{border-color:var(--border)}
+body.devil-ui .acts button{color:var(--dim2)}
+body.devil-ui .acts button:hover{background:var(--ag-hover);color:var(--text)}
+body.devil-ui .dots span{background:var(--dim)}
 
 /* activity timeline (agent steps) */
 .agx{margin:0 0 12px;font-size:.84rem;color:var(--dim)}
@@ -607,7 +662,6 @@ body.agent-mode .content a{color:var(--ag-accent)}
 .agx-shimmer{background:linear-gradient(90deg,var(--dim) 0%,var(--text) 50%,var(--dim) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:agshim 1.8s linear infinite}
 @keyframes agspin{to{transform:rotate(360deg)}}
 @keyframes agshim{from{background-position:200% 0}to{background-position:-200% 0}}
-body.agent-mode .msg-ai.thinking .content{display:block}
 
 /* workspace panel */
 #wsPanel{position:absolute;top:0;right:0;bottom:0;width:340px;max-width:100%;z-index:45;background:var(--panel);border-left:1px solid var(--border);box-shadow:none;transform:translateX(102%);visibility:hidden;transition:transform .22s ease,visibility 0s linear .22s;display:flex;flex-direction:column}
@@ -631,10 +685,9 @@ a.ws-item:hover{background:var(--ag-hover)}
 .ws-stat b{display:block;font-size:1.1rem;color:var(--text);font-weight:600}
 .ws-stat span{font-size:.72rem;color:var(--dim2)}
 @media (max-width:900px){ #wsPanel{width:100%} }
-@media (max-width:600px){ body.agent-mode #welcome h2{font-size:1.85rem} body.agent-mode.agent-empty #composer{padding-bottom:18vh} }
 </style>
 </head>
-<body class="<?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? 'loading-chat' : '' ?>">
+<body class="devil-ui<?= $ROUTE_MODE === 'agent' ? ' agent-mode' : '' ?><?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? ' loading-chat' : '' ?>">
 
 <div id="app">
 
@@ -718,6 +771,7 @@ a.ws-item:hover{background:var(--ag-hover)}
     <div id="scroller"><div id="thread">
       <div id="welcome">
         <img class="big" src="assets/logo.svg" alt="Devil AI logo">
+        <div class="wmark"><img src="assets/logo.svg" alt="">Devil AI</div>
         <h2>What shall we summon today?</h2>
         <p class="sub">Pick a model in the chat box and ask me anything.</p>
         <div class="cards">
@@ -739,6 +793,14 @@ a.ws-item:hover{background:var(--ag-hover)}
         <div class="comprow">
           <div class="modelwrap">
             <button id="attachBtn" title="Attach files" type="button"><?= icon('paperclip', 16) ?><span class="atxt">Add files</span></button>
+            <div class="modechipwrap" id="modeChipWrap">
+              <button id="modeChip" type="button" title="Switch mode" aria-haspopup="menu" aria-expanded="false"><span class="mcc"><?= icon('message', 15) ?></span><span class="mcl">AI Mode</span><span class="mcc"><?= icon('chevron-down', 13) ?></span></button>
+              <div class="modemenu2" role="menu" aria-label="Chat mode">
+                <div class="mhead">Choose mode</div>
+                <button class="modeopt on" type="button" role="menuitemradio" data-mode="ai" aria-checked="true"><span class="mic"><?= icon('sparkles', 17) ?></span><span class="mtx"><b>AI Mode</b><small>Normal chat — fast, direct answers</small></span><span class="mck"><?= icon('check', 16) ?></span></button>
+                <button class="modeopt" type="button" role="menuitemradio" data-mode="agent" aria-checked="false"><span class="mic"><?= icon('brain', 17) ?></span><span class="mtx"><b>Agent Mode</b><small>Searches the web, reads pages and calculates before answering</small></span><span class="mck"><?= icon('check', 16) ?></span></button>
+              </div>
+            </div>
             <button id="voiceBtn" title="Live voice chat" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
             <button id="promptBtn" title="Prompt library" type="button"><?= icon('lightbulb', 16) ?></button>
             <div id="promptMenu"></div>
@@ -845,7 +907,7 @@ function syncModeUI() {
   var sw = $('#modeSw'); if (!sw) { return; }
   sw.classList.toggle('agent', agentMode);
   var tag = $('#modeTag'); if (tag) { tag.textContent = agentMode ? 'Agent' : 'AI'; }
-  $$('#modeMenu .modeopt').forEach(function (o) {
+  $$('.modeopt[data-mode]').forEach(function (o) {
     var on = (o.dataset.mode === 'agent') === agentMode;
     o.classList.toggle('on', on);
     o.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -854,9 +916,9 @@ function syncModeUI() {
   var h = $('#welcome h2'), p = $('#welcome .sub'), ta = $('#inp');
   if (h && p && !WELCOME_TEXT) { WELCOME_TEXT = { h: h.textContent, p: p.textContent, ph: ta ? ta.placeholder : '' }; }
   if (WELCOME_TEXT) {
-    h.textContent = agentMode ? 'What would you like to do?' : WELCOME_TEXT.h;
+    if (agentMode) { h.textContent = 'What would you like to do?'; } else { h.innerHTML = 'What shall we <mark>summon</mark> today?'; }
     p.textContent = agentMode ? 'Devil Agent searches the web, reads pages and calculates before answering.' : WELCOME_TEXT.p;
-    if (ta) { ta.placeholder = agentMode ? 'Ask anything…' : WELCOME_TEXT.ph; }
+    if (ta) { ta.placeholder = 'Ask anything…'; }
   }
   document.body.classList.toggle('agent-mode', agentMode);
   if (!agentMode) { setWorkspace(false); }
@@ -884,6 +946,7 @@ function setModeMenu(open) {
 function chooseMode(mode) {
   var wantAgent = mode === 'agent';
   setModeMenu(false);
+  if (window.__devilCloseModeChip) { window.__devilCloseModeChip(); }
   if (wantAgent === agentMode) { return; }
   if (wantAgent && !agentEnabled) { toast('Agent Mode is currently disabled', 'warning'); return; }
   if (busy) { toast('Pause the response before switching mode', 'warning'); return; }
@@ -904,11 +967,15 @@ function chooseMode(mode) {
 (function () {
   var btn = $('#modeBtn'); if (!btn) { return; }
   btn.addEventListener('click', function (e) { e.stopPropagation(); setModeMenu(!$('#modeSw').classList.contains('open')); });
-  $$('#modeMenu .modeopt').forEach(function (o) {
+  $$('.modeopt[data-mode]').forEach(function (o) {
     o.addEventListener('click', function (e) { e.stopPropagation(); chooseMode(o.dataset.mode); });
   });
-  document.addEventListener('click', function (e) { if (!e.target.closest('#modeSw')) { setModeMenu(false); } });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setModeMenu(false); } });
+  var chip = $('#modeChip'), chipWrap = $('#modeChipWrap');
+  function setChip(open) { if (!chipWrap) { return; } chipWrap.classList.toggle('open', open); chip.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  if (chip) { chip.addEventListener('click', function (e) { e.stopPropagation(); setModeMenu(false); setChip(!chipWrap.classList.contains('open')); }); }
+  document.addEventListener('click', function (e) { if (!e.target.closest('#modeSw')) { setModeMenu(false); } if (!e.target.closest('#modeChipWrap')) { setChip(false); } });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setModeMenu(false); setChip(false); } });
+  window.__devilCloseModeChip = function () { setChip(false); };
 })();
 var personalOK = true;
 function rawCookie(name) {
