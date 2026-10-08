@@ -1029,12 +1029,23 @@ function delete_code_email(string $to, string $code): bool {
     return devil_mail($to, $subject, $html, $text);
 }
 
+/* ── per-request time budget ──
+   Long jobs (one agent step) set $GLOBALS['DEVIL_DEADLINE']; every outgoing engine call then shrinks its
+   timeout to the time that is left, so a request never runs into Cloudflare's 100s cut-off (error 524). */
+function devil_time_left(int $default): int {
+    if (empty($GLOBALS['DEVIL_DEADLINE'])) { return $default; }
+    $left = (int)floor((float)$GLOBALS['DEVIL_DEADLINE'] - microtime(true));
+    return max(0, min($default, $left));
+}
+
 /* ── HTTP (cURL with stream fallback) ── */
 function http_post_json(string $url, array $headers, array $body): array {
     $payload = json_encode($body, JSON_UNESCAPED_UNICODE);
     if ($payload === false) { return [false, 'JSON encoding failed', 0]; }
     $hdrs = array_merge(['Content-Type: application/json; charset=utf-8'], $headers);
 
+    $tl = devil_time_left(60);
+    if ($tl < 5) { return [false, 'This step ran out of time — retrying.', 0]; }
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -1042,8 +1053,8 @@ function http_post_json(string $url, array $headers, array $body): array {
             CURLOPT_POSTFIELDS     => $payload,
             CURLOPT_HTTPHEADER     => $hdrs,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 60,
-            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT        => $tl,
+            CURLOPT_CONNECTTIMEOUT => min(15, $tl),
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 3,
             CURLOPT_USERAGENT      => 'DevilAI/' . DEVIL_VERSION . ' (+php)',
@@ -1061,7 +1072,7 @@ function http_post_json(string $url, array $headers, array $body): array {
         'method'        => 'POST',
         'header'        => implode("\r\n", $hdrs),
         'content'       => $payload,
-        'timeout'       => 60,
+        'timeout' => $tl,
         'ignore_errors' => true,
     ]]);
     $res  = @file_get_contents($url, false, $ctx);
@@ -1079,14 +1090,16 @@ function http_get_query(string $url, array $headers, array $params): array {
     $qs = http_build_query($params);
     if ($qs !== '') { $url .= (strpos($url, '?') === false ? '?' : '&') . $qs; }
 
+    $tl = devil_time_left(60);
+    if ($tl < 5) { return [false, 'This step ran out of time — retrying.', 0]; }
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_HTTPGET        => true,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 60,
-            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT        => $tl,
+            CURLOPT_CONNECTTIMEOUT => min(15, $tl),
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 3,
             CURLOPT_USERAGENT      => 'DevilAI/' . DEVIL_VERSION . ' (+php)',
@@ -1103,7 +1116,7 @@ function http_get_query(string $url, array $headers, array $params): array {
     $ctx = stream_context_create(['http' => [
         'method'        => 'GET',
         'header'        => implode("\r\n", $headers),
-        'timeout'       => 60,
+        'timeout' => $tl,
         'ignore_errors' => true,
     ]]);
     $res  = @file_get_contents($url, false, $ctx);
@@ -2290,6 +2303,10 @@ function security_alert_email(array $user, ?array $loginRec): void {
 
 try {
     $action = isset($_GET['action']) ? (string)$_GET['action'] : '';
+    /* browser actions answer within ~88s, so Cloudflare (100s) never cuts them off with a bare 524 */
+    if ($action !== '' && strpos($action, 'dev_') !== 0) {
+        $GLOBALS['DEVIL_DEADLINE'] = (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)) + 88.0;
+    }
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
     /* ─────────── PUBLIC ─────────── */
@@ -3478,7 +3495,7 @@ try {
             if (!$sbxOn) { $job['max_steps'] = max(1, (int)($cfgAll['agent_max_steps'] ?? 6)); }
             if (!save_json_atomic($jobPath($jid), $job)) { json_out(['ok' => false, 'error' => 'Could not create the agent job — check data/ permissions.'], 500); }
             /* tidy: drop finished jobs older than a day */
-            foreach (glob($jobDir . '/j*.json') ?: [] as $f) { if (@filemtime($f) < time() - 86400) { @unlink($f); } }
+            foreach (glob($jobDir . '/j*.json*') ?: [] as $f) { if (@filemtime($f) < time() - 86400) { @unlink($f); } }   /* job + its .lock/.cancel files */
             json_out(['ok' => true, 'job' => $jid, 'sandbox' => $sbxOn, 'uploads' => $uploaded, 'mode' => 'agent', 'temp' => $temp, 'model' => $job['model_out']] + $saved);
         }
 
@@ -3515,6 +3532,8 @@ try {
                 $sbxCtx = ['cfg' => $cfgAll, 'sid' => (string)$job['sid']];
             }
             /* agent prompts carry tool instructions + tool output: allow a much larger prompt than chat */
+            /* one agent step = one model call or one tool: keep it well inside the 100s proxy limit */
+            $GLOBALS['DEVIL_DEADLINE'] = (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)) + (float)max(40, min(85, (int)($cfgAll['agent_step_budget'] ?? 78)));
             $cfgAgent = $cfgAll;
             $cfgAgent['_prompt_limits'] = ['user_text' => 16000, 'assistant_text' => 9000, 'attachment_text' => 6000, 'latest_text' => 16000, 'latest_attachment' => 6000, 'turns' => 120, 'budget' => (int)($cfgAll['agent_prompt_budget'] ?? 42000)];
             $event = agent_job_advance($job, [
@@ -3526,13 +3545,13 @@ try {
             if (is_file($path . '.cancel')) {
                 /* the user pressed Stop while this step was running: the cancel request already finished the job */
                 $stopped = load_json($path);
-                if ($fh) { flock($fh, LOCK_UN); fclose($fh); @unlink($path . '.lock'); }
+                if ($fh) { flock($fh, LOCK_UN); fclose($fh); }
                 json_out(['ok' => true, 'done' => true, 'stopped' => true, 'event' => ['type' => 'final', 'reply' => (string)($stopped['reply'] ?? 'Stopped.')]]);
             }
             $resp = ['ok' => true, 'done' => ($job['state'] ?? '') === 'done', 'event' => $event, 'steps_used' => count((array)$job['trace']), 'max_steps' => (int)$job['max_steps']];
             if ($resp['done']) { $resp += $finishJob($job); }
             save_json_atomic($path, $job);
-            if ($fh) { flock($fh, LOCK_UN); fclose($fh); @unlink($path . '.lock'); }
+            if ($fh) { flock($fh, LOCK_UN); fclose($fh); }
             json_out($resp);
         }
 

@@ -94,7 +94,7 @@ function sbx_open(array $cfg, string $sid): array {
 function sbx_exec(array $cfg, string $sid, string $cmd, int $timeout = 80, bool $background = false, float $wait = 3.0, string $cwd = ''): array {
     $payload = ['cmd' => $cmd, 'timeout' => $timeout, 'background' => $background, 'wait' => $wait];
     if ($cwd !== '') { $payload['cwd'] = $cwd; }
-    $r = sbx_request($cfg, 'POST', '/v1/s/' . $sid . '/exec', (string)json_encode($payload), $timeout + 30);
+    $r = sbx_request($cfg, 'POST', '/v1/s/' . $sid . '/exec', (string)json_encode($payload), $timeout + 12);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'exec failed'];
 }
 function sbx_files(array $cfg, string $sid, string $path = '.', int $depth = 4): array {
@@ -136,7 +136,7 @@ function sbx_rel(string $p): string {
 
 function sbx_agent_tools(): array {
     return [
-        'bash'           => 'Run shell commands in your Linux sandbox (cwd /home/user/work, ~80 s limit). INPUT: the command(s); several lines are fine.',
+        'bash'           => 'Run a shell command in your Linux sandbox (cwd /home/user/work). Output and exit code come back. A command that is still running after ~55s keeps running in the background and you get its pid and log file — check it later with tail. Use start_server (not bash) for servers. INPUT: the command(s); several lines are fine.',
         'write_file'     => 'Create or overwrite a file. INPUT: first line = path (relative to /home/user/work), then the full file content on the following lines.',
         'read_file'      => 'Read a text file from the sandbox. INPUT: path.',
         'list_files'     => 'List files in the workspace. INPUT: a folder path, or "." for everything.',
@@ -178,7 +178,27 @@ function sbx_run_tool(array $ctx, string $name, string $input): array {
         case 'bash': {
             $cmd = sbx_unfence($input);
             if (trim($cmd) === '') { return ['ok' => false, 'text' => 'Empty command.']; }
-            $r = sbx_exec($cfg, $sid, $cmd, 80);
+            /* The command runs as a detached job. We wait up to ~55s for it; if it is still going
+               (npm install, a dev server in the foreground, a long build…) it keeps running in the
+               background and the agent gets the pid + log path instead of a timeout. This keeps every
+               agent step well under Cloudflare's 100s request limit. */
+            $wait = max(10, min(55, (int)($cfg['agent_bash_wait'] ?? 55)));
+            $job = '/home/user/.bg/cmd-' . bin2hex(random_bytes(4));
+            $wrapper = 'mkdir -p /home/user/.bg; J=' . $job . '; echo ' . base64_encode($cmd) . ' | base64 -d > "$J.sh"; '
+                . 'nohup setsid bash -c \'bash -l "$1" > "$1.log" 2>&1; echo $? > "$1.rc"\' _ "$J.sh" > /dev/null 2>&1 < /dev/null & P=$!; '
+                . 'i=0; while [ ! -f "$J.sh.rc" ] && [ $i -lt ' . ($wait * 5) . ' ]; do sleep 0.2; i=$((i+1)); done; '
+                . 'if [ -f "$J.sh.rc" ]; then sz=$(stat -c %s "$J.sh.log" 2>/dev/null || echo 0); '
+                . 'if [ "$sz" -gt 14000 ]; then head -c 3000 "$J.sh.log"; echo; echo "… [$sz bytes of output, middle cut] …"; tail -c 10000 "$J.sh.log"; else cat "$J.sh.log"; fi; '
+                . 'rc=$(cat "$J.sh.rc"); rm -f "$J.sh" "$J.sh.rc" "$J.sh.log"; exit $rc; '
+                . 'else echo "__DEVIL_STILL_RUNNING__ pid=$P log=$J.sh.log"; tail -c 3000 "$J.sh.log" 2>/dev/null; exit 0; fi';
+            $r = sbx_exec($cfg, $sid, $wrapper, $wait + 15);
+            $out = (string)($r['stdout'] ?? '');
+            if (preg_match('/__DEVIL_STILL_RUNNING__ pid=(\d+) log=(\S+)\n?/', $out, $m)) {
+                $tail = trim(str_replace($m[0], '', $out));
+                return ['ok' => true, 'text' => "The command is still running in the background after {$wait}s (pid {$m[1]}). "
+                    . "Its output keeps going to {$m[2]} — check it later with: tail -n 40 {$m[2]}  (or wait with: sleep 20; tail -n 40 {$m[2]}).\n"
+                    . ($tail !== '' ? "Output so far:\n" . $tail : '(no output yet)'), 'meta' => ['background' => true, 'pid' => (int)$m[1], 'log' => $m[2]]];
+            }
             $f = sbx_fmt_exec($r);
             return ['ok' => $f['ok'], 'text' => $f['text'], 'meta' => ['exit_code' => $f['exit_code'] ?? null]];
         }
@@ -302,12 +322,12 @@ PY;
             $dir = dirname($path);
             /* everything runs inside the sandbox: 1) GenImage (returns a URL)  2) AiApp image (returns the image)  3) Pollinations */
             $cmd = 'mkdir -p ' . escapeshellarg($dir === '.' ? '.' : $dir) . ' && rm -f ' . $P . '; B=' . escapeshellarg($body) . '; '
-                 . 'u=$(curl -fsS --max-time 45 -X POST -H "Content-Type: application/json" -d "$B" ' . escapeshellarg($root . 'genimage') . ' | jq -r ".image_url // .url // empty" 2>/dev/null); '
-                 . '[ -n "$u" ] && curl -fsSL --max-time 20 -o ' . $P . ' "$u"; '
-                 . 'file -b ' . $P . ' 2>/dev/null | grep -qi image || curl -fsS --max-time 40 -X POST -H "Content-Type: application/json" -d "$B" -o ' . $P . ' ' . escapeshellarg($root . 'aiappgen') . '; '
-                 . 'file -b ' . $P . ' 2>/dev/null | grep -qi image || curl -fsSL --max-time 40 -o ' . $P . ' ' . escapeshellarg($fallback) . '; '
+                 . 'u=$(curl -fsS --max-time 28 -X POST -H "Content-Type: application/json" -d "$B" ' . escapeshellarg($root . 'genimage') . ' | jq -r ".image_url // .url // empty" 2>/dev/null); '
+                 . '[ -n "$u" ] && curl -fsSL --max-time 12 -o ' . $P . ' "$u"; '
+                 . 'file -b ' . $P . ' 2>/dev/null | grep -qi image || curl -fsS --max-time $(( SECONDS < 40 ? 25 : 8 )) -X POST -H "Content-Type: application/json" -d "$B" -o ' . $P . ' ' . escapeshellarg($root . 'aiappgen') . '; '
+                 . 'file -b ' . $P . ' 2>/dev/null | grep -qi image || { [ $SECONDS -lt 62 ] && curl -fsSL --max-time $(( 70 - SECONDS )) -o ' . $P . ' ' . escapeshellarg($fallback) . '; }; '
                  . 'file -b ' . $P . ' && stat -c %s ' . $P;
-            $r = sbx_exec($cfg, $sid, $cmd, 85);
+            $r = sbx_exec($cfg, $sid, $cmd, 75);
             $out = trim((string)($r['stdout'] ?? ''));
             if ((int)($r['exit_code'] ?? 1) !== 0 || stripos($out, 'image') === false) {
                 return ['ok' => false, 'text' => 'Image generation failed. ' . mb_substr($out . ' ' . (string)($r['stderr'] ?? $r['error'] ?? ''), 0, 600)];

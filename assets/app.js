@@ -2802,13 +2802,17 @@ function agentLiveEl() {
   var el = addAiMsg({ modelTag: activeModelLabel() });
   el.classList.add('agent-live');
   var box = renderAgentTrace(el, [], 0, true);
-  el.querySelector('.content').innerHTML = '<span class="agx-live"><span class="agx-spark">' + (I.spark || '') + '</span><span class="agx-shimmer">Thinking…</span></span>';
+  /* one live status only — in the header (like the reference agent): "Thinking…" while the model plans,
+     "Working…" while a tool runs (the step row itself shows which tool). No second line below. */
+  var lbl = box.querySelector('.agx-lbl');
+  lbl.classList.add('agx-shimmer'); lbl.textContent = 'Thinking…';
+  el.querySelector('.content').innerHTML = '';
   var t0 = Date.now(), tm = box.querySelector('.agx-time');
   var iv = setInterval(function () { if (!document.body.contains(el) || !el.classList.contains('agent-live')) { clearInterval(iv); return; } tm.textContent = fmtDur(Date.now() - t0); }, 1000);
   refreshMessageActions(); scrollDown();
   return el;
 }
-function agentStatus(el, text) { var s = el && el.querySelector('.agx-shimmer'); if (s) { s.textContent = text; } }
+function agentStatus(el, text) { var s = el && el.querySelector('.agx.live .agx-lbl'); if (s) { s.textContent = text; } }
 
 function runAgent(payload) {
   busy = true;
@@ -2868,8 +2872,9 @@ function agentLoop() {
     if (!j.ok) {
       if (/expired|Unknown agent job/i.test(j.error || '')) { r.el.remove(); addErr(j.error); agentEnd(); return; }
       r.fails++;
-      if (r.fails <= 4) { agentStatus(r.el, 'Connection hiccup — retrying…'); setTimeout(agentLoop, 1500 * r.fails); return; }
-      agentStatus(r.el, 'Lost connection');
+      /* network blips / a sandbox host hand-over (~1 min): keep retrying with back-off before giving up */
+      if (r.fails <= 8) { agentStatus(r.el, 'Reconnecting…'); setTimeout(agentLoop, Math.min(10, 2 * r.fails) * 1000); return; }
+      agentStatus(r.el, 'Lost connection — ' + (j.error || 'the server did not answer'));
       agentResumeBtn(r);
       return;
     }
@@ -2880,7 +2885,7 @@ function agentLoop() {
       var s = { tool: ev.tool, input: ev.input, thought: ev.thought };
       r.runEl = agxStepEl(s, r.steps.length, true);
       list.appendChild(r.runEl);
-      agentStatus(r.el, (AGX_TOOLS[ev.tool] || { verb: ev.tool }).verb.replace(/^Ran command/, 'Running a command').replace(/^Wrote file/, 'Writing a file') + '…');
+      agentStatus(r.el, 'Working…');
       scrollDown();
     } else if (ev.type === 'tool_done' && ev.step) {
       r.steps.push(ev.step);
