@@ -34,6 +34,15 @@ A complete Claude-style AI chat product for shared hosting. No frameworks, no Co
 - **Identity protection** — the bot always answers as **Devil AI** and never reveals the underlying models/providers (hardened persona + scripted identity answer; every engine is live-tested before being added to the admin list). UI, API and page source contain zero provider names.
 - **Public-safety hardening** — password-locked admin panel, per-user message rate limit, per-IP auth attempt limit, XSS-safe rendering, HTTP-only sessions with ID regeneration on login.
 
+## AI Mode / Agent Mode
+
+The **Devil AI** title at the top of the chat page is a dropdown: choose **AI Mode** (normal chat) or **Agent Mode** (web search, read pages, calculator, date/time tools).
+
+- Agent chats live at `/agent/{128-char-slug}`; a new agent chat is `/agent`.
+- Normal chats keep their `/chat/{model}/{type}/{slug}` URLs.
+- Each chat remembers its mode (`mode: ai|agent`); opening a chat with the wrong URL corrects it automatically.
+- Switching mode inside a saved chat starts a fresh chat in the other mode. The admin flag `agent_enabled` disables Agent Mode.
+
 ## Requirements
 
 - PHP 7.4+ with `mail()` working (cURL recommended, `allow_url_fopen` as fallback)

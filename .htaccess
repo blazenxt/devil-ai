@@ -32,6 +32,10 @@ Options -Indexes -MultiViews
   # Pretty chat URLs: /chat/{model}/{type}/{128-char-slug}
   RewriteRule ^chat/([A-Za-z0-9-]+)/([A-Za-z0-9-]+)/([A-Fa-f0-9]{128})/?$ app.php?route_model=$1&route_type=$2&chat=$3 [L,QSA]
 
+  # Agent Mode URLs: /agent (new agent chat) and /agent/{128-char-slug}
+  RewriteRule ^agent/?$ app.php?mode=agent [L,QSA]
+  RewriteRule ^agent/([A-Fa-f0-9]{128})/?$ app.php?mode=agent&chat=$1 [L,QSA]
+
   # Developer API (OpenAI-compatible)
   RewriteRule ^v1/models/?$ api.php?action=dev_models [L,QSA]
   RewriteRule ^v1/chat/completions/?$ api.php?action=dev_chat_completions [L,QSA]

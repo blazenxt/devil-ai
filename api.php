@@ -1789,6 +1789,18 @@ function infer_chat_route(array $chat): array {
     return [segment_slug($model, 'flash'), 'chat'];
 }
 
+/* Chat mode: 'ai' (normal chat, /chat/... URLs) or 'agent' (Agent Mode, /agent/{slug} URLs).
+   Stored once per chat; older chats are inferred from their first assistant reply. */
+function infer_chat_mode(array $chat): string {
+    $m = strtolower((string)($chat['mode'] ?? ''));
+    if ($m === 'ai' || $m === 'agent') { return $m; }
+    foreach (($chat['messages'] ?? []) as $msg) {
+        if (!is_array($msg) || ($msg['role'] ?? '') !== 'assistant') { continue; }
+        return !empty($msg['agent']) ? 'agent' : 'ai';
+    }
+    return 'ai';
+}
+
 function ensure_chat_meta(array &$chat): bool {
     $changed = false;
     if (empty($chat['id']) || !preg_match('/^c[a-f0-9]{6,32}$/', (string)$chat['id'])) {
@@ -1802,6 +1814,8 @@ function ensure_chat_meta(array &$chat): bool {
     [$model, $type] = infer_chat_route($chat);
     if (($chat['url_model'] ?? '') !== $model) { $chat['url_model'] = $model; $changed = true; }
     if (($chat['url_type'] ?? '') !== $type) { $chat['url_type'] = $type; $changed = true; }
+    $mode = infer_chat_mode($chat);
+    if (($chat['mode'] ?? '') !== $mode) { $chat['mode'] = $mode; $changed = true; }
     if (!isset($chat['edit_variants']) || !is_array($chat['edit_variants'])) { $chat['edit_variants'] = []; $changed = true; }
     return $changed;
 }
@@ -1911,6 +1925,7 @@ function list_chats(string $uid): array {
             'slug'    => (string)($j['slug'] ?? ''),
             'url_model' => (string)($j['url_model'] ?? 'flash'),
             'url_type'  => (string)($j['url_type'] ?? 'chat'),
+            'mode'    => infer_chat_mode($j),
             'title'   => (string)($j['title'] ?? 'New chat'),
             'updated' => (int)($j['updated'] ?? filemtime($f) ?: 0),
         ];
@@ -1989,6 +2004,7 @@ function display_chat_variant(string $uid, array $requestedChat, string $variant
     $display['slug'] = (string)($rootChat['slug'] ?? '');
     $display['url_model'] = (string)($rootChat['url_model'] ?? 'flash');
     $display['url_type'] = (string)($rootChat['url_type'] ?? 'chat');
+    $display['mode'] = infer_chat_mode($rootChat);
     $display['active_variant'] = $activeVariant;
     $display['variant_chat_id'] = $activeVariant === $rootId ? '' : $activeVariant;
     $display['title'] = (string)($rootChat['title'] ?? ($display['title'] ?? 'New chat'));
@@ -2144,7 +2160,7 @@ try {
     /* ─────────── PUBLIC ─────────── */
 
     if ($action === 'bootstrap' && $method === 'GET') {
-        json_out(['ok' => true, 'models' => public_models(), 'custom_models' => public_custom_models(), 'default' => 'flash', 'version' => DEVIL_VERSION]);
+        json_out(['ok' => true, 'models' => public_models(), 'custom_models' => public_custom_models(), 'default' => 'flash', 'version' => DEVIL_VERSION, 'agent_enabled' => !empty(load_config()['agent_enabled'])]);
     }
 
     if ($action === 'settings' && $method === 'GET') {
@@ -3103,7 +3119,7 @@ try {
                 if (count($existing) >= (int)$cfgAll['max_chats']) {
                     json_out(['ok' => false, 'error' => 'You reached your chat limit (' . (int)$cfgAll['max_chats'] . ').', 'hint' => 'Delete some old chats to make room.'], 400);
                 }
-                $chat = ['id' => 'c' . bin2hex(random_bytes(8)), 'title' => '', 'created' => time(), 'updated' => time(), 'messages' => []];
+                $chat = ['id' => 'c' . bin2hex(random_bytes(8)), 'title' => '', 'created' => time(), 'updated' => time(), 'mode' => 'agent', 'messages' => []];
                 $responseRootId = (string)$chat['id'];
             }
         }
@@ -3173,7 +3189,7 @@ try {
             $outModel = (string)($chat['url_model'] ?? 'flash');
             $outType = (string)($chat['url_type'] ?? 'chat');
         }
-        json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace']]]);
+        json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'mode' => 'agent', 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace']]]);
     }
 
     json_out(['ok' => false, 'error' => 'Unknown action.'], 404);

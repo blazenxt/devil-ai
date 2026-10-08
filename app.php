@@ -25,6 +25,8 @@ if (isset($_SESSION['devil_uid'])) {
 $APP_BASE_PATH = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/app.php'))), '/');
 if ($APP_BASE_PATH === '.' || $APP_BASE_PATH === '/') { $APP_BASE_PATH = ''; }
 if (!$me) { header('Location: ' . ($APP_BASE_PATH ?: '') . '/login.php'); exit; }
+/* /agent and /agent/{slug} are rewritten to app.php?mode=agent */
+$ROUTE_MODE = (($_GET['mode'] ?? '') === 'agent') ? 'agent' : 'ai';
 
 $JS_ICONS = [
     'send' => icon('send', 17), 'stop' => icon('stop', 17), 'copy' => icon('copy', 15), 'retry' => icon('retry', 15),
@@ -132,6 +134,28 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 .ctbtn:hover{background:rgba(244,63,94,.12);color:var(--soft);border-color:var(--border)}
 .ctbtn.primary{background:linear-gradient(135deg,rgba(244,63,94,.18),rgba(190,18,60,.12));color:var(--soft);border-color:var(--border)}
 .ctbtn.on{background:rgba(244,63,94,.22);color:#fff;border-color:var(--border-hi);box-shadow:0 0 0 3px rgba(244,63,94,.08)}
+.modesw{position:absolute;top:14px;left:18px;z-index:26}
+.modebtn{height:48px;display:inline-flex;align-items:center;gap:9px;padding:0 12px 0 10px;border:1px solid var(--border);background:rgba(23,16,20,.72);backdrop-filter:blur(14px);border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.22);color:var(--text);font-weight:800;font-size:.95rem;letter-spacing:.01em;transition:.16s}
+.modebtn:hover,.modesw.open .modebtn{border-color:var(--border-hi);background:rgba(244,63,94,.10)}
+.modebtn img{width:24px;height:24px;filter:drop-shadow(0 0 7px rgba(244,63,94,.45))}
+.modebtn .mtag{font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:3px 7px;border-radius:999px;background:rgba(244,63,94,.14);color:var(--soft);border:1px solid var(--border)}
+.modesw.agent .modebtn .mtag{background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff;border-color:transparent}
+.modebtn .mchev{display:inline-flex;color:var(--dim);transition:transform .18s}
+.modesw.open .modebtn .mchev{transform:rotate(180deg)}
+.modemenu{position:absolute;top:calc(100% + 8px);left:0;width:300px;max-width:calc(100vw - 28px);background:var(--panel2);border:1px solid var(--border-hi);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:6px;display:none;z-index:80}
+.modesw.open .modemenu{display:block;animation:rise .16s ease}
+.modemenu .mhead{padding:8px 10px 6px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2)}
+.modeopt{width:100%;display:flex;align-items:center;gap:11px;padding:10px;border-radius:11px;text-align:left;color:var(--text);transition:.12s}
+.modeopt:hover{background:rgba(244,63,94,.10)}
+.modeopt.on{background:rgba(244,63,94,.14)}
+.modeopt .mic{width:34px;height:34px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(244,63,94,.12);color:var(--soft)}
+.modeopt.on .mic{background:linear-gradient(135deg,#f43f5e,#be123c);color:#fff}
+.modeopt .mtx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.modeopt .mtx b{font-size:.86rem}
+.modeopt .mtx small{font-size:.72rem;color:var(--dim);line-height:1.35}
+.modeopt .mck{display:none;color:var(--soft)}
+.modeopt.on .mck{display:inline-flex}
+.modeopt[disabled]{opacity:.45;cursor:not-allowed}
 .agent-trace{margin:0 0 10px;border:1px solid var(--border);border-radius:12px;background:var(--panel2);overflow:hidden;font-size:.74rem}
 .agent-head{padding:8px 12px;font-weight:700;color:var(--soft);border-bottom:1px solid var(--border)}
 .agent-step{padding:7px 12px;border-bottom:1px solid var(--border);color:var(--dim);display:flex;flex-direction:column;gap:2px}
@@ -366,6 +390,10 @@ body.voice-open{overflow:hidden}
   #sidebar.closed{margin-left:-272px;box-shadow:none}
   #backdrop.show{display:block}
   .m-top{display:flex}
+  .m-top .brand{visibility:hidden}
+  .modesw{top:9px;left:54px}
+  .modebtn{height:38px;gap:7px;padding:0 9px 0 8px;border-radius:12px;font-size:.88rem;box-shadow:none;background:transparent;border-color:transparent;backdrop-filter:none}
+  .modebtn img{width:22px;height:22px}
   .chattools{top:8px;right:56px;padding:4px;border-radius:14px;background:rgba(23,16,20,.86)}
   .ctbtn{height:34px;min-width:34px;padding:0 9px}.ctbtn .txt{display:none}
   #thread{padding:20px 16px 24px}
@@ -385,6 +413,13 @@ body.voice-open{overflow:hidden}
 }
 [data-theme=light] body{background:radial-gradient(1000px 500px at 70% -10%,rgba(225,29,72,.05),transparent 55%),var(--bg)}
 [data-theme=light] .m-top{background:rgba(250,249,247,.92)}
+[data-theme=light] .modebtn{background:rgba(255,255,255,.86);box-shadow:0 14px 40px rgba(120,80,90,.14)}
+[data-theme=light] .modebtn:hover,[data-theme=light] .modesw.open .modebtn{background:rgba(190,30,60,.07);border-color:rgba(190,30,60,.3)}
+[data-theme=light] .modebtn .mtag{background:rgba(190,30,60,.08);color:#a63d57;border-color:rgba(190,30,60,.2)}
+[data-theme=light] .modesw.agent .modebtn .mtag{background:linear-gradient(135deg,#e11d48,#be123c);color:#fff}
+[data-theme=light] .modemenu{box-shadow:0 18px 50px rgba(120,80,90,.18)}
+[data-theme=light] .modeopt .mic{background:rgba(190,30,60,.08);color:#a63d57}
+@media (max-width:900px){[data-theme=light] .modebtn{background:transparent;box-shadow:none;border-color:transparent}}
 [data-theme=light] .chattools{background:rgba(255,255,255,.86);box-shadow:0 14px 40px rgba(120,80,90,.14)}
 [data-theme=light] .ctbtn{color:#6e5f65}
 [data-theme=light] .ctbtn:hover{background:rgba(190,30,60,.09);color:#a63d57;border-color:rgba(190,30,60,.22)}
@@ -481,8 +516,26 @@ body.voice-open{overflow:hidden}
       <button class="iconbtn" id="themeBtnM" title="Switch theme"><?= icon('sun', 17) ?></button>
     </header>
 
+    <div class="modesw<?= $ROUTE_MODE === 'agent' ? ' agent' : '' ?>" id="modeSw">
+      <button class="modebtn" id="modeBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="Switch between AI Mode and Agent Mode">
+        <img src="assets/logo.svg" alt=""><span class="mname">Devil AI</span><span class="mtag" id="modeTag"><?= $ROUTE_MODE === 'agent' ? 'Agent' : 'AI' ?></span><span class="mchev"><?= icon('chevron-down', 15) ?></span>
+      </button>
+      <div class="modemenu" id="modeMenu" role="menu" aria-label="Chat mode">
+        <div class="mhead">Choose mode</div>
+        <button class="modeopt<?= $ROUTE_MODE === 'ai' ? ' on' : '' ?>" type="button" role="menuitemradio" data-mode="ai" aria-checked="<?= $ROUTE_MODE === 'ai' ? 'true' : 'false' ?>">
+          <span class="mic"><?= icon('sparkles', 17) ?></span>
+          <span class="mtx"><b>AI Mode</b><small>Normal chat — fast, direct answers</small></span>
+          <span class="mck"><?= icon('check', 16) ?></span>
+        </button>
+        <button class="modeopt<?= $ROUTE_MODE === 'agent' ? ' on' : '' ?>" type="button" role="menuitemradio" data-mode="agent" aria-checked="<?= $ROUTE_MODE === 'agent' ? 'true' : 'false' ?>">
+          <span class="mic"><?= icon('brain', 17) ?></span>
+          <span class="mtx"><b>Agent Mode</b><small>Searches the web, reads pages and calculates before answering</small></span>
+          <span class="mck"><?= icon('check', 16) ?></span>
+        </button>
+      </div>
+    </div>
+
     <div class="chattools" id="chatTools" aria-label="Chat actions">
-      <button class="ctbtn" id="agentBtn" type="button" title="Agent mode — Devil AI can search the web, read pages and calculate" aria-pressed="false"><?= icon('brain', 17) ?><span class="txt">Agent</span></button>
       <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
       <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
     </div>
@@ -597,6 +650,7 @@ body.voice-open{overflow:hidden}
 const I = <?= json_encode($JS_ICONS, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ME = <?= json_encode(['name' => $me['name'], 'email' => $me['email']], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const APP_BASE_PATH = <?= json_encode($APP_BASE_PATH, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const ROUTE_MODE = <?= json_encode($ROUTE_MODE) ?>;
 const INITIAL_CHAT_ID = <?= json_encode(preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? (string)$_GET['chat'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const INITIAL_VARIANT = <?= json_encode((preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['variant'] ?? '')) || (string)($_GET['variant'] ?? '') === 'original') ? (string)$_GET['variant'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 (function () {
@@ -609,22 +663,61 @@ var models = [], modelById = {}, currentModel = 'flash';
 var customModels = [], customById = {}, currentCustom = 'devil-09';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages, temp?} */
 var busy = false, isTempChat = false, activeController = null, sendSeq = 0, inlineEdit = null, editRestoreChat = null;
-var agentMode = read('devil_agent_mode') === '1';
-(function () {
-  var b = $('#agentBtn'); if (!b) { return; }
-  function sync() {
-    b.classList.toggle('on', agentMode);
-    b.setAttribute('aria-pressed', agentMode ? 'true' : 'false');
-    var t = b.querySelector('.txt');
-    if (t) { t.textContent = agentMode ? 'Agent on' : 'Agent'; }
-  }
-  b.addEventListener('click', function () {
-    agentMode = !agentMode;
-    store('devil_agent_mode', agentMode ? '1' : '0');
-    sync();
-    toast(agentMode ? 'Agent mode on — I can search the web, read pages and calculate' : 'Agent mode off', 'check');
+var agentMode = ROUTE_MODE === 'agent', agentEnabled = true;
+var WELCOME_TEXT = null;
+function newChatPath() { return agentMode ? 'agent' : 'app.php'; }
+function syncModeUI() {
+  var sw = $('#modeSw'); if (!sw) { return; }
+  sw.classList.toggle('agent', agentMode);
+  var tag = $('#modeTag'); if (tag) { tag.textContent = agentMode ? 'Agent' : 'AI'; }
+  $$('#modeMenu .modeopt').forEach(function (o) {
+    var on = (o.dataset.mode === 'agent') === agentMode;
+    o.classList.toggle('on', on);
+    o.setAttribute('aria-checked', on ? 'true' : 'false');
+    if (o.dataset.mode === 'agent') { o.disabled = !agentEnabled && !agentMode; }
   });
-  sync();
+  var h = $('#welcome h2'), p = $('#welcome .sub'), ta = $('#inp');
+  if (h && p && !WELCOME_TEXT) { WELCOME_TEXT = { h: h.textContent, p: p.textContent, ph: ta ? ta.placeholder : '' }; }
+  if (WELCOME_TEXT) {
+    h.textContent = agentMode ? 'Agent Mode is ready' : WELCOME_TEXT.h;
+    p.textContent = agentMode ? 'Give me a task — I can search the web, read pages and calculate before I answer.' : WELCOME_TEXT.p;
+    if (ta) { ta.placeholder = agentMode ? 'Give Devil Agent a task…' : WELCOME_TEXT.ph; }
+  }
+  document.body.classList.toggle('agent-mode', agentMode);
+}
+function setModeMenu(open) {
+  var sw = $('#modeSw'); if (!sw) { return; }
+  sw.classList.toggle('open', open);
+  $('#modeBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function chooseMode(mode) {
+  var wantAgent = mode === 'agent';
+  setModeMenu(false);
+  if (wantAgent === agentMode) { return; }
+  if (wantAgent && !agentEnabled) { toast('Agent Mode is currently disabled', 'warning'); return; }
+  if (busy) { toast('Pause the response before switching mode', 'warning'); return; }
+  var hasSaved = currentChat && !isTempChat && currentChat.messages && currentChat.messages.length;
+  if (hasSaved) {
+    /* a saved chat keeps its mode — switching starts a fresh chat in the other mode */
+    window.location.href = wantAgent ? 'agent' : 'app.php';
+    return;
+  }
+  agentMode = wantAgent;
+  syncModeUI();
+  if (window.history) {
+    var q = isTempChat ? '?temp=1' : '';
+    history.replaceState(null, '', (agentMode ? 'agent' : 'app.php') + q);
+  }
+  toast(agentMode ? 'Agent Mode — I can search the web, read pages and calculate' : 'AI Mode — normal chat', agentMode ? 'check' : 'sparkles');
+}
+(function () {
+  var btn = $('#modeBtn'); if (!btn) { return; }
+  btn.addEventListener('click', function (e) { e.stopPropagation(); setModeMenu(!$('#modeSw').classList.contains('open')); });
+  $$('#modeMenu .modeopt').forEach(function (o) {
+    o.addEventListener('click', function (e) { e.stopPropagation(); chooseMode(o.dataset.mode); });
+  });
+  document.addEventListener('click', function (e) { if (!e.target.closest('#modeSw')) { setModeMenu(false); } });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setModeMenu(false); } });
 })();
 var personalOK = true;
 function rawCookie(name) {
@@ -702,6 +795,7 @@ function cleanAppBasePath() {
 }
 function chatUrlFor(slug) {
   var base = cleanAppBasePath();
+  if (agentMode) { return base + '/agent/' + encodeURIComponent(slug); }
   return base + '/chat/' + encodeURIComponent(seg(routeModel(), 'flash')) + '/' + encodeURIComponent(seg(routeType(), 'chat')) + '/' + encodeURIComponent(slug);
 }
 function replaceChatUrl() {
@@ -712,6 +806,7 @@ function replaceChatUrl() {
 function chatUrlForItem(c) {
   var base = cleanAppBasePath();
   var slug = (c && (c.slug || c.id)) || '';
+  if (c && c.mode === 'agent') { return base + '/agent/' + encodeURIComponent(slug); }
   var m = (c && c.url_model) || 'flash';
   var t = (c && c.url_type) || 'chat';
   return base + '/chat/' + encodeURIComponent(seg(m, 'flash')) + '/' + encodeURIComponent(seg(t, 'chat')) + '/' + encodeURIComponent(slug);
@@ -1171,7 +1266,7 @@ function renderAgentTrace(el, steps) {
   var box = document.createElement('div');
   box.className = 'agent-trace';
   var rows = steps.map(function (s) {
-    return '<div class="agent-step"><span class="agent-tool">' + esc((I.brain || '') + ' ' + (s.tool || 'tool')) + '</span>' +
+    return '<div class="agent-step"><span class="agent-tool">' + (I.brain || '') + ' ' + esc(s.tool || 'tool') + '</span>' +
       '<span class="agent-io">' + esc(s.input || '') + '</span>' +
       (s.ok ? '' : '<span class="agent-err">step failed</span>') + '</div>';
   }).join('');
@@ -1733,7 +1828,7 @@ function startTempChat(forceOn) {
   currentChat = { id: null, title: 'Temporary chat', temp: true, messages: [] };
   msgs.innerHTML = '';
   welcome.style.display = '';
-  if (window.history) { history.replaceState(null, '', 'app.php?temp=1'); }
+  if (window.history) { history.replaceState(null, '', newChatPath() + '?temp=1'); }
   renderList($('#searchInp').value);
   updateChatActions();
   toast('Temporary chat on — this chat will not be saved', 'ghost');
@@ -1746,7 +1841,7 @@ function stopTempChat() {
   currentChat = null;
   msgs.innerHTML = '';
   welcome.style.display = '';
-  if (window.history) { history.replaceState(null, '', 'app.php'); }
+  if (window.history) { history.replaceState(null, '', newChatPath()); }
   renderList($('#searchInp').value);
   updateChatActions();
   toast('Temporary chat off — new chats will be saved');
@@ -1890,7 +1985,7 @@ inp.addEventListener('keydown', function (e) {
 });
 sendBtn.addEventListener('click', function () { if (busy) { pauseSend(); } else { send(); } });
 $('#tempChatBtn').addEventListener('click', startTempChat);
-$('#topNewChatBtn').addEventListener('click', function () { if (busy) { pauseSend(); } window.location.href = 'app.php'; });
+$('#topNewChatBtn').addEventListener('click', function () { if (busy) { pauseSend(); } window.location.href = newChatPath(); });
 $('#editCancel').addEventListener('click', function () { clearEdit(); inp.value = ''; resize(); inp.focus(); });
 
 function newChatView() {
@@ -1904,7 +1999,7 @@ function newChatView() {
   updateChatActions();
   if (window.innerWidth > 900) { inp.focus(); }
 }
-$('#newChatBtn').addEventListener('click', function () { window.location.href = 'app.php'; });
+$('#newChatBtn').addEventListener('click', function () { window.location.href = newChatPath(); });
 
 $$('#welcome .card').forEach(function (c) {
   c.addEventListener('click', function () { inp.value = c.dataset.fill; resize(); send(); });
@@ -1964,6 +2059,7 @@ function runSend(payload) {
         currentChat.slug = j.slug || currentChat.slug || currentChat.root_id;
         currentChat.url_model = j.url_model || currentChat.url_model || routeModel();
         currentChat.url_type = j.url_type || currentChat.url_type || routeType();
+        currentChat.mode = j.mode || currentChat.mode || (agentMode ? 'agent' : 'ai');
         currentChat.active_variant = j.variant || currentChat.active_variant || currentChat.root_id;
         currentChat.variant_chat_id = j.variant || currentChat.variant_chat_id || '';
       }
@@ -1979,6 +2075,7 @@ function runSend(payload) {
       }
       var am = { role: 'assistant', content: j.reply, model_label: (j.model && j.model.label) || activeModelLabel() };
       if (j.agent && j.agent.steps && j.agent.steps.length) { am.agent_steps = j.agent.steps; }
+      if (currentChat && j.mode) { currentChat.mode = j.mode; }
       currentChat.messages.push(am);
       var aiIndex = currentChat.messages.length - 1;
       var el = addAiMsg({ modelTag: (j.model && j.model.label) || activeModelLabel() });
@@ -2014,6 +2111,8 @@ function openChat(id, variant) {
     currentChat = j.chat;
     currentChat.temp = false;
     currentChat.branch_groups = j.branch_groups || currentChat.branch_groups || {};
+    agentMode = currentChat.mode === 'agent';
+    syncModeUI();
     replaceChatUrl();
     renderCurrentMessages();
     renderList($('#searchInp').value);
@@ -2218,7 +2317,10 @@ api('bootstrap').then(function (j) {
   setModelBtn();
   renderModelMenu();
   renderCustomModelMenu('');
+  agentEnabled = j.agent_enabled !== false;
+  syncModeUI();
 });
+syncModeUI();
 if (INITIAL_CHAT_ID) {
   openChat(INITIAL_CHAT_ID, INITIAL_VARIANT);
 } else if (new URLSearchParams(window.location.search).get('temp') === '1') {
