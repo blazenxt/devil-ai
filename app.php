@@ -64,7 +64,7 @@ $JS_ICONS = [
     'swords' => icon('swords', 15), 'columns' => icon('columns', 15), 'trophy' => icon('trophy', 16), 'maximize' => icon('maximize', 14),
     'shuffle' => icon('shuffle', 15), 'arrowL' => icon('arrow-left', 15), 'arrowR' => icon('arrow-right', 15), 'arrowD' => icon('arrow-down', 17),
     'equal' => icon('equal', 15), 'sparkM' => icon('spark', 17), 'swordsM' => icon('swords', 17), 'columnsM' => icon('columns', 17), 'messageM' => icon('message', 15),
-    'swordsS' => icon('swords', 13), 'columnsS' => icon('columns', 13), 'sparkS' => icon('spark', 13), 'chevS' => icon('chevron-down', 13),
+    'swordsS' => icon('swords', 13), 'columnsS' => icon('columns', 13), 'sparkS' => icon('spark', 13), 'msgS' => icon('message', 13), 'chevS' => icon('chevron-down', 13),
 ];
 ?><!DOCTYPE html>
 <html lang="en">
@@ -828,6 +828,106 @@ body.cmp-mode .compbox{max-width:760px}
 #toBottom{position:absolute;left:50%;bottom:150px;transform:translate(-50%,10px);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--border);color:var(--text);box-shadow:0 6px 20px rgba(0,0,0,.12);opacity:0;pointer-events:none;transition:.18s;z-index:30}
 #toBottom.show{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
 #toBottom:hover{background:var(--panel2)}
+
+/* ═══════════ MOBILE POLISH (phones + small tablets) ═══════════ */
+/* neutral Battle accents instead of the old pink ones */
+body.devil-ui .iconbtn:hover,body.devil-ui .userbtn:hover,body.devil-ui #userMenu .mi:hover,body.devil-ui .popt:hover,body.devil-ui .mopt:hover,body.devil-ui .cmopt:hover,body.devil-ui .pvbtn:hover{background:var(--ag-hover);color:var(--text)}
+body.devil-ui .mopt.on,body.devil-ui .cmopt.on{background:var(--panel2)}
+body.devil-ui .popt .ic,body.devil-ui .mopt .ic,body.devil-ui .cmopt .ic{background:var(--panel2);color:var(--text)}
+body.devil-ui .mopt .tick,body.devil-ui .cmopt .tick{color:var(--text)}
+body.devil-ui .popt b{color:var(--text)}
+body.devil-ui #userMenu{background:var(--panel);border-color:var(--border);box-shadow:0 18px 50px rgba(0,0,0,.16)}
+body.devil-ui .userbtn.open,body.devil-ui #userBtn[aria-expanded=true]{background:var(--ag-hover)}
+body.devil-ui .btn.primary{background:var(--text);color:var(--bg);box-shadow:none}
+body.devil-ui .btn.primary:hover{filter:none;opacity:.9}
+body.devil-ui #toast svg{color:var(--text)}
+body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
+/* scroll-to-latest always floats just above the composer */
+#toBottom{bottom:calc(var(--compH,130px) + 10px)}
+.hint .hk{display:inline}
+
+@media (max-width:600px){
+  /* every composer popover opens as a full-width panel right above the composer */
+  .compbox .modelwrap,.compbox .modechipwrap,.compbox .cmppick,.compbox #customWrap{position:static}
+  .compbox #modelMenu,.compbox #customModelMenu,.compbox #promptMenu,.compbox .modemenu2,.compbox .cmpmenu,
+  body.devil-ui.agent-empty .compbox .modemenu2,body.devil-ui.agent-empty .compbox .cmpmenu{position:absolute;left:0!important;right:0!important;width:auto!important;max-width:none!important;top:auto!important;bottom:calc(100% + 8px)!important;max-height:min(58vh,430px);overflow-y:auto;overscroll-behavior:contain}
+  .compbox .mopt .tx span,.compbox .cmopt .tx span{white-space:normal}
+  /* tighter composer row so model names are not cut */
+  body.devil-ui .comprow{gap:6px;padding:7px}
+  body.devil-ui .modelwrap{gap:2px}
+  body.devil-ui #modeChip{padding:0 6px;gap:3px}
+  body.devil-ui #modelBtn,body.devil-ui #customModelBtn{padding:6px 7px;max-width:none;min-width:0}
+  body.devil-ui #inp{font-size:16px}
+  .hint{margin-top:6px}
+  .hint .hk{display:none}
+  /* header: keep title + tools on one clean line */
+  body.devil-ui .m-top{padding:0 10px}
+  body.devil-ui .modebtn{padding:0 8px;font-size:.92rem;max-width:calc(100vw - 190px)}
+  body.devil-ui .modebtn .mname,body.devil-ui .modebtn .aglabel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  /* thread */
+  body.devil-ui #thread{padding:18px 14px 20px}
+  body.devil-ui .content pre{max-width:100%}
+  body.devil-ui .content table{display:block;max-width:100%;overflow-x:auto}
+  /* toast: top of the screen so it never hides the composer */
+  #toast{top:calc(60px + env(safe-area-inset-top));bottom:auto;width:max-content;max-width:calc(100vw - 32px);text-align:left;line-height:1.4}
+  /* modals */
+  .modal{padding:12px}
+  .sheet{padding:18px;border-radius:16px;max-height:calc(100dvh - 24px)}
+  .lbsheet,.cmpsheet{width:100%!important}
+  .lbbody{max-height:58dvh}
+  .lbtable{font-size:.8rem}
+  .lbtable th{padding:8px 7px;font-size:.6rem;letter-spacing:.04em;white-space:nowrap}
+  .lbtable td{padding:9px 7px}
+  .lbtable td.r{width:30px}
+  .lbtable td.n .oi{display:none!important}
+  .lbtable td.n{word-break:break-word}
+  .sheet .btnrow,.sheet .row{flex-wrap:wrap}
+  /* battle / side-by-side */
+  .cmp-result.show{row-gap:8px}
+  .cmp-result.show > span:first-child{flex-basis:100%}
+  .cmp-col{flex-basis:88%}
+  .cmp-head{padding:8px 8px 8px 10px}
+  .cmp-body{padding:11px 12px 12px}
+  .cmp-vote .vq{font-size:.78rem}
+  body.cmp-mode .compbox .modelwrap{flex:1 1 auto}
+  .cmppick{flex:0 1 auto;min-width:0}
+  .cmpbtn{max-width:100%;padding:0 6px;gap:4px}
+}
+@media (max-width:400px){
+  body.cmp-mode #modeChip .mcc:last-child{display:none}
+}
+@media (max-width:340px){
+  body.cmp-mode .cmpbtn .cmpab{display:none}
+  body.cmp-mode .cmpbtn > svg{display:none}
+}
+@media (max-width:370px){
+  #modeChip .mcc:last-child{display:none}
+  body.devil-ui #voiceBtn{display:none!important}
+  body.devil-ui .modebtn{font-size:.88rem}
+  .cmp-vote button{font-size:.8rem}
+}
+/* touch screens: no sticky hover highlight after a tap */
+@media (hover:none){
+  body.devil-ui .iconbtn:hover,body.devil-ui #sbToggle:hover{background:transparent;color:var(--dim)}
+  body.devil-ui .ctbtn:not(.on):hover{background:transparent!important;color:var(--dim)!important}
+}
+/* phones in landscape: give the conversation room */
+@media (max-height:500px) and (orientation:landscape){
+  body.devil-ui .m-top{height:46px}
+  body.devil-ui .modesw,body.devil-ui .chattools{top:5px}
+  #thread{padding-top:12px!important}
+  body.devil-ui.agent-empty #scroller{flex:1 1 auto!important;margin-top:0!important;display:flex;flex-direction:column;justify-content:center;overflow:auto!important}
+  body.devil-ui.agent-empty #composer{margin-bottom:0!important;padding-bottom:10px!important}
+  body.devil-ui.agent-empty #inp{min-height:40px!important}
+  body.devil-ui.agent-empty .compbox .modemenu2,body.devil-ui.agent-empty .compbox .cmpmenu{top:auto!important;bottom:calc(100% + 8px)!important}
+  body.devil-ui #welcome h2{font-size:1.6rem!important}
+  body.devil-ui.agent-empty #welcome{padding-bottom:10px}
+  #inp{max-height:96px}
+  .hint{display:none}
+  .compbox #modelMenu,.compbox #customModelMenu,.compbox #promptMenu,.compbox .modemenu2,.compbox .cmpmenu{max-height:calc(100dvh - 150px)!important;overflow-y:auto}
+  .sheet{max-height:calc(100dvh - 20px)}
+  .lbbody{max-height:calc(100dvh - 190px)}
+}
 </style>
 </head>
 <body class="devil-ui<?= $ROUTE_MODE === 'agent' ? ' agent-mode' : '' ?><?= $ROUTE_MODE !== 'ai' ? ' alt-mode' : '' ?><?= $IS_CMP ? ' cmp-mode ' . $ROUTE_MODE . '-mode' : '' ?><?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? ' loading-chat' : '' ?>">
@@ -955,7 +1055,7 @@ body.cmp-mode .compbox{max-width:760px}
           <button id="sendBtn" title="Send (Enter)" type="button" disabled hidden><?= icon('send', 17) ?></button>
         </div>
       </div>
-      <p class="hint">Enter = new line • Ctrl/⌘ + Enter = send • Devil AI can make mistakes.</p>
+      <p class="hint"><span class="hk">Enter = new line • Ctrl/⌘ + Enter = send • </span>Devil AI can make mistakes.</p>
     </div>
   </main>
 </div>
@@ -1565,7 +1665,7 @@ function renderList(filter) {
     groups[k].forEach(function (c) {
       var isOn = currentChat && (currentChat.id === c.id || currentChat.root_id === c.id || (currentChat.slug && currentChat.slug === c.slug));
       html += '<div class="chatitem' + (isOn ? ' on' : '') + '" data-id="' + c.id + '" data-slug="' + (c.slug || '') + '">' +
-        (c.mode && c.mode !== 'ai' && MODE_INFO[c.mode] ? '<span class="cmode" title="' + MODE_INFO[c.mode].label + '">' + I[c.mode === 'battle' ? 'swordsS' : (c.mode === 'sbs' ? 'columnsS' : 'sparkS')] + '</span>' : '') +
+        '<span class="cmode" title="' + ((MODE_INFO[c.mode] || MODE_INFO.ai || { label: 'AI Mode' }).label) + '">' + I[c.mode === 'battle' ? 'swordsS' : (c.mode === 'sbs' ? 'columnsS' : (c.mode === 'agent' ? 'sparkS' : 'msgS'))] + '</span>' +
         '<span class="t"></span><span class="act">' +
         '<button data-rename="' + c.id + '" title="Rename">' + I.pencil + '</button>' +
         '<button data-del="' + c.id + '" title="Delete">' + I.trash + '</button></span></div>';
@@ -2906,6 +3006,10 @@ function openLeaderboard() {
   scroller.addEventListener('scroll', upd, { passive: true });
   window.addEventListener('resize', upd);
   tb.addEventListener('click', function () { scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' }); });
+  var comp = $('#composer');
+  function compH() { if (comp && tb.parentNode) { tb.parentNode.style.setProperty('--compH', comp.offsetHeight + 'px'); } }
+  compH();
+  if (comp && window.ResizeObserver) { new ResizeObserver(compH).observe(comp); } else { window.addEventListener('resize', compH); }
 })();
 
 /* ── open / delete / rename chats ── */
@@ -3073,8 +3177,8 @@ document.addEventListener('click', function (e) {
 });
 
 /* ── user menu ── */
-$('#userBtn').addEventListener('click', function (e) { e.stopPropagation(); $('#userMenu').classList.toggle('open'); });
-document.addEventListener('click', function (e) { if (!e.target.closest('.sb-bottom')) { $('#userMenu').classList.remove('open'); } });
+$('#userBtn').addEventListener('click', function (e) { e.stopPropagation(); var o = $('#userMenu').classList.toggle('open'); this.setAttribute('aria-expanded', o ? 'true' : 'false'); });
+document.addEventListener('click', function (e) { if (!e.target.closest('.sb-bottom')) { $('#userMenu').classList.remove('open'); $('#userBtn').setAttribute('aria-expanded', 'false'); } });
 $('#mLogout').addEventListener('click', function () { api('logout', {}).then(function () { window.location.href = 'index.php'; }); });
 $('#mCookies').addEventListener('click', function () { $('#userMenu').classList.remove('open'); if (window.devilOpenCookies) { devilOpenCookies(); } });
 
