@@ -303,8 +303,7 @@ function agent_search_bing(string $q): array {
         if (count($out) >= 8) { break; }
     }
     /* Bing's feed sometimes answers bots with unrelated pages: keep only results that mention the query */
-    $stop = ['the', 'and', 'for', 'what', 'who', 'when', 'where', 'which', 'how', 'why', 'is', 'are', 'was', 'latest', 'today', 'now', 'current', 'new', 'best', 'top', 'news', 'with', 'from', 'about', 'version', 'list', 'kya', 'hai', 'kaise', 'kaun'];
-    $words = array_values(array_unique(array_filter(preg_split('/[^\p{L}\p{M}\p{N}]+/u', mb_strtolower($q)) ?: [], static function ($w) use ($stop) { return mb_strlen($w) >= 3 && !in_array($w, $stop, true); })));
+    $words = agent_search_words($q);
     $need = min(2, count($words));
     $out = array_values(array_filter($out, static function ($r) use ($words, $need) {
         if ($need === 0) { return true; }
@@ -327,6 +326,113 @@ function agent_search_wikipedia(string $q): array {
         if (!is_array($s) || empty($s['title'])) { continue; }
         $out[] = ['title' => (string)$s['title'] . ' — Wikipedia', 'snippet' => agent_clean_text((string)($s['snippet'] ?? '')), 'url' => 'https://' . $lang . '.wikipedia.org/wiki/' . rawurlencode(str_replace(' ', '_', (string)$s['title']))];
     }
+    return $out;
+}
+
+/* weather questions: answer from wttr.in (live data) instead of hoping a web page has today's numbers */
+function agent_search_weather(string $q): array {
+    $lq = mb_strtolower($q);
+    if (!preg_match('/\b(weather|temperature|forecast|mausam|rain|humidity)\b|मौसम|আবহাওয়া/u', $lq)) { return []; }
+    $place = preg_replace('/\b(weather|temperature|forecast|mausam|rain|humidity|today|now|current|tomorrow|this|week|in|at|of|for|the|aaj|ka|ki|ke|kaisa|kaisi|hai|kya|batao|right|live|report|update|me|mein)\b|मौसम|আবহাওয়া/u', ' ', $lq);
+    $place = trim((string)preg_replace('/[^\p{L}\p{M}\p{N} ,.-]+|\s+/u', ' ', (string)$place));
+    if ($place === '' || mb_strlen($place) > 60) { return []; }
+    $r = agent_http_get('https://wttr.in/' . rawurlencode($place) . '?format=j1', ['timeout' => 6, 'ua' => 'curl/8.0']);
+    $j = $r['ok'] ? json_decode($r['body'], true) : null;
+    $c = $j['current_condition'][0] ?? null;
+    if (!is_array($c)) { return []; }
+    $area = (string)($j['nearest_area'][0]['areaName'][0]['value'] ?? $place);
+    $region = (string)($j['nearest_area'][0]['region'][0]['value'] ?? '');
+    $country = (string)($j['nearest_area'][0]['country'][0]['value'] ?? '');
+    $txt = 'Now: ' . ($c['temp_C'] ?? '?') . '°C (feels ' . ($c['FeelsLikeC'] ?? '?') . '°C), ' . ($c['weatherDesc'][0]['value'] ?? '') . ', humidity ' . ($c['humidity'] ?? '?') . '%, wind ' . ($c['windspeedKmph'] ?? '?') . ' km/h.';
+    foreach (array_slice((array)($j['weather'] ?? []), 0, 3) as $d) {
+        if (is_array($d)) { $txt .= ' ' . ($d['date'] ?? '') . ': ' . ($d['mintempC'] ?? '?') . '–' . ($d['maxtempC'] ?? '?') . '°C.'; }
+    }
+    return [['title' => 'Live weather — ' . trim($area . ', ' . $region . ', ' . $country, ', '), 'snippet' => $txt, 'url' => 'https://wttr.in/' . rawurlencode($place)]];
+}
+
+/* meaningful words of a search query (lower-case; keeps Indic vowel signs) */
+function agent_search_words(string $q): array {
+    $stop = ['the', 'and', 'for', 'what', 'who', 'when', 'where', 'which', 'how', 'why', 'is', 'are', 'was', 'latest', 'today', 'now', 'current', 'new', 'best', 'top', 'news', 'with', 'from', 'about', 'version', 'list', 'kya', 'hai', 'kaise', 'kaun', 'tha', 'thi', 'batao'];
+    return array_values(array_unique(array_filter(preg_split('/[^\p{L}\p{M}\p{N}]+/u', mb_strtolower($q)) ?: [], static function ($w) use ($stop) { return mb_strlen($w) >= 3 && !in_array($w, $stop, true); })));
+}
+
+/* Open the top results in parallel (a few seconds max) and pull out the sentences that
+   actually talk about the query — snippets alone often miss the answer, and models then guess. */
+function agent_search_enrich(string $q, array $results, int $n = 3): array {
+    if (!function_exists('curl_multi_init')) { return []; }
+    $budget = function_exists('devil_time_left') ? devil_time_left(6) : 6;
+    if ($budget < 3) { return []; }
+    $words = agent_search_words($q);
+    if (!$words) { return []; }
+    $lq = mb_strtolower($q);
+    $extra = [];
+    if (preg_match('/\b(win|won|winner|winners|champion|champions|jeet|jita|jeeta)\b/u', $lq)) { $extra = ['won', 'beat', 'defeated', 'champion', 'champions', 'title', 'winner', 'final']; }
+    elseif (preg_match('/\b(price|cost|rate|kimat|keemat)\b/u', $lq)) { $extra = ['price', '₹', 'rs', 'usd', '$']; }
+    elseif (preg_match('/\b(version|release|released|latest)\b/u', $lq)) { $extra = ['released', 'release', 'stable', 'version'] ; }
+    $mh = curl_multi_init();
+    $handles = [];
+    foreach ($results as $i => $r) {
+        if (count($handles) >= $n) { break; }
+        $u = (string)($r['url'] ?? '');
+        if (preg_match('#\.(pdf|zip|mp4|mp3|jpg|png)(\?|$)|youtube\.com|youtu\.be|facebook\.com|instagram\.com|//(www\.)?(x|twitter)\.com#i', $u) || !agent_url_safe($u)) { continue; }
+        $ch = curl_init($u);
+        $buf = '';
+        $handles[$i] = ['ch' => $ch, 'buf' => &$buf];
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => false, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS, CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_TIMEOUT => min(5, $budget - 1), CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_ENCODING => '',
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+            CURLOPT_HTTPHEADER => ['Accept: text/html,application/xhtml+xml', 'Accept-Language: en-US,en;q=0.9'],
+            CURLOPT_WRITEFUNCTION => static function ($c, $chunk) use (&$buf) { $buf .= $chunk; return strlen($buf) > 700000 ? 0 : strlen($chunk); },
+        ]);
+        curl_multi_add_handle($mh, $ch);
+        unset($buf);
+    }
+    if (!$handles) { curl_multi_close($mh); return []; }
+    $t0 = microtime(true);
+    do {
+        $st = curl_multi_exec($mh, $running);
+        if ($running) { curl_multi_select($mh, 0.5); }
+    } while ($running && $st === CURLM_OK && microtime(true) - $t0 < $budget);
+    $out = [];
+    foreach ($handles as $i => $h) {
+        $ch = $h['ch'];
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $type = strtolower((string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE));
+        $ip = (string)curl_getinfo($ch, CURLINFO_PRIMARY_IP);
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+        if ($code < 200 || $code >= 300 || ($type !== '' && strpos($type, 'html') === false) || ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false)) { continue; }
+        $html = (string)$h['buf'];
+        $html = preg_replace('/<(nav|footer|header|aside|form)\b[^>]*>.*?<\/\1>/is', ' ', $html);
+        $text = agent_html_to_text((string)$html);
+        $segs = preg_split('/(?<=[.!?।])\s+|\n+/u', $text) ?: [];
+        $scored = [];
+        foreach ($segs as $pos => $sg) {
+            $sg = trim((string)preg_replace('/\s+/u', ' ', $sg));
+            $len = mb_strlen($sg);
+            if ($len < 30 || $len > 450) { continue; }
+            $low = mb_strtolower($sg);
+            $hit = 0;
+            foreach ($words as $w) { if (mb_strpos($low, $w) !== false) { $hit++; } }
+            if ($hit === 0) { continue; }
+            $bonus = 0;
+            foreach ($extra as $w) { if (mb_strpos($low, $w) !== false) { $bonus++; } }
+            $score = $hit * 2 + min(3, $bonus) * 2 + (preg_match('/\b(19|20)\d\d\b/', $sg) ? 1 : 0);
+            if ($score < min(4, 2 * count($words))) { continue; }
+            $scored[] = [$score, $pos, $sg];
+            if (count($scored) > 400) { break; }
+        }
+        if (!$scored) { continue; }
+        usort($scored, static function ($a, $b) { return $b[0] <=> $a[0] ?: $a[1] <=> $b[1]; });
+        $pick = array_slice($scored, 0, 3);
+        usort($pick, static function ($a, $b) { return $a[1] <=> $b[1]; });
+        $seen = []; $parts = [];
+        foreach ($pick as $p) { $k = mb_substr($p[2], 0, 60); if (!isset($seen[$k])) { $seen[$k] = 1; $parts[] = $p[2]; } }
+        $out[$i] = mb_substr(implode(' … ', $parts), 0, 700);
+    }
+    curl_multi_close($mh);
     return $out;
 }
 
@@ -356,7 +462,7 @@ function agent_tool_web_search(array $cfg, string $query): array {
         $used = 'tavily';
     }
     /* keyless chain: DuckDuckGo → Bing → Wikipedia (the first that answers wins; thin answers get topped up) */
-    foreach (['agent_search_ddg', 'agent_search_bing', 'agent_search_wikipedia'] as $fn) {
+    foreach (['agent_search_weather', 'agent_search_ddg', 'agent_search_bing', 'agent_search_wikipedia'] as $fn) {
         if (count($results) >= 4) { break; }
         $more = $fn($q);
         if ($more) { $used .= ($used !== '' ? '+' : '') . str_replace('agent_search_', '', $fn); }
@@ -367,11 +473,15 @@ function agent_tool_web_search(array $cfg, string $query): array {
         }
     }
     if (!$results) { return ['ok' => false, 'text' => 'Search is temporarily unavailable (no provider answered). Try a different query, or open a known page with fetch_url.']; }
+    $results = array_slice($results, 0, 8);
+    $excerpts = agent_search_enrich($q, $results, 3);
     $lines = [];
-    foreach (array_slice($results, 0, 8) as $i => $r) {
+    foreach ($results as $i => $r) {
         $lines[] = ($i + 1) . '. ' . trim(($r['title'] !== '' ? $r['title'] . ' — ' : '') . mb_substr($r['snippet'], 0, 300)) . ' (' . $r['url'] . ')';
+        if (!empty($excerpts[$i])) { $lines[] = '   From the page: ' . $excerpts[$i]; }
     }
-    return ['ok' => true, 'text' => "Search results for \"{$q}\":\n" . implode("\n", $lines), 'provider' => $used];
+    $tail = $excerpts ? '' : "\n(Snippets only — if they do not clearly contain the answer, open the most relevant result with fetch_url before answering.)";
+    return ['ok' => true, 'text' => "Search results for \"{$q}\":\n" . implode("\n", $lines) . $tail, 'provider' => $used];
 }
 
 function agent_tool_fetch_url(array $cfg, string $url): array {
