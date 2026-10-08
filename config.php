@@ -60,6 +60,14 @@ return [
     'recaptcha_v2_site_key' => '',
     'recaptcha_v2_secret_key' => '',
     'recaptcha_min_score' => 0.45,
+
+    /* Agent mode (Devil Agent): tools = web_search, fetch_url, calculator, datetime.
+       agent_search_provider: duckduckgo (keyless) | brave | tavily (both need agent_search_api_key). */
+    'agent_enabled' => true,
+    'agent_max_steps' => 6,
+    'agent_search_provider' => 'duckduckgo',
+    'agent_search_api_key' => '',
+    'agent_fetch_max_bytes' => 200000,
     'security_block_disposable_emails' => true,
     'security_block_subdomain_emails' => true,
     'security_extra_blocked_email_domains' => [],

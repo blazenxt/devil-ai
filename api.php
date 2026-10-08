@@ -45,6 +45,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/inc/session.php';
+require_once __DIR__ . '/inc/agent.php';
 devil_session_boot();
 
 define('DEVIL_VERSION', '1.0.0.0');
@@ -2487,7 +2488,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export'], true)) {
+    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -3039,6 +3040,140 @@ try {
             $outType = (string)($chat['url_type'] ?? 'chat');
         }
         json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'reply' => $reply, 'model' => $modelOut]);
+    }
+
+    /* ── Agent mode: chat_send with a tool-use loop (web search / fetch / calc / time) ── */
+    if ($action === 'agent_chat' && $method === 'POST') {
+        $cfgAll = load_config();
+        if (empty($cfgAll['agent_enabled'])) { json_out(['ok' => false, 'error' => 'Agent mode is currently disabled.'], 403); }
+        $in     = input_json();
+        $retry  = !empty($in['retry']);
+        $temp   = !empty($in['temp']);
+        $variantId = (string)($in['variant'] ?? '');
+        $msg    = trim((string)($in['message'] ?? ''));
+        $model  = (string)($in['model'] ?? 'flash');
+        $img    = '';
+        if (isset($in['image']) && is_string($in['image']) && trim($in['image']) !== '') {
+            $img = validate_image($in['image']);
+            if ($img === null) { json_out(['ok' => false, 'error' => 'That image could not be read. Use a PNG, JPEG, GIF or WebP file under 2 MB.'], 400); }
+        }
+        $validModel = false;
+        foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
+        if (!$validModel) { $model = 'flash'; }
+        $customModel = '';
+        if ($model === 'custom') {
+            $customModel = strtolower(trim((string)($in['custom_model'] ?? 'askgpt5')));
+            if (!custom_model_by_id($customModel)) { $customModel = 'askgpt5'; }
+        }
+
+        /* per-user rate limit (an agent turn counts as one message) */
+        $rl = (int)$cfgAll['rate_per_hour'];
+        if (!rate_ok('rl.json', 'u:' . $uid, $rl, 3600)) {
+            json_out(['ok' => false, 'error' => "Easy there, human! You're sending messages too fast.", 'hint' => 'Limit: ' . $rl . ' messages per hour. Please wait a bit.'], 429);
+        }
+        $tz = (string)($cfgAll['timezone'] ?? '');
+        if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) { date_default_timezone_set($tz); }
+
+        /* load/create saved chat, or build an unsaved temporary chat from client history */
+        $chat = null;
+        $responseRootId = '';
+        $responseVariant = '';
+        $rootChatForSend = null;
+        if ($temp) {
+            $chat = ['id' => null, 'title' => 'Temporary chat', 'created' => time(), 'updated' => time(), 'messages' => []];
+            $histIn = isset($in['history']) && is_array($in['history']) ? array_slice($in['history'], -20) : [];
+            foreach ($histIn as $hm) {
+                if (!is_array($hm)) { continue; }
+                $r = (string)($hm['role'] ?? '');
+                if ($r !== 'user' && $r !== 'assistant') { continue; }
+                $c = trim((string)($hm['content'] ?? ''));
+                if ($c === '') { continue; }
+                $chat['messages'][] = ['role' => $r, 'content' => mb_substr($c, 0, MAX_INPUT), 'ts' => time()];
+            }
+        } else {
+            if (!empty($in['id'])) {
+                $baseChat = load_chat($uid, (string)$in['id']);
+                if (!$baseChat) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+                list($chat, $unusedBranchGroups, $rootChatForSend, $activeVariantForSend) = display_chat_variant($uid, $baseChat, $variantId);
+                $responseRootId = (string)($rootChatForSend['id'] ?? chat_branch_root_id($baseChat));
+                $responseVariant = ($activeVariantForSend !== '' && $activeVariantForSend !== $responseRootId && $activeVariantForSend !== 'original') ? $activeVariantForSend : '';
+            }
+            if (!$chat) {
+                $existing = list_chats($uid);
+                if (count($existing) >= (int)$cfgAll['max_chats']) {
+                    json_out(['ok' => false, 'error' => 'You reached your chat limit (' . (int)$cfgAll['max_chats'] . ').', 'hint' => 'Delete some old chats to make room.'], 400);
+                }
+                $chat = ['id' => 'c' . bin2hex(random_bytes(8)), 'title' => '', 'created' => time(), 'updated' => time(), 'messages' => []];
+                $responseRootId = (string)$chat['id'];
+            }
+        }
+        $chat['messages'] = array_values(array_filter($chat['messages'] ?? [], 'is_array'));
+
+        if ($retry) {
+            if (count($chat['messages']) && ($chat['messages'][count($chat['messages']) - 1]['role'] ?? '') === 'assistant') {
+                array_pop($chat['messages']);
+            }
+            $lastUser = ''; $lastImg = '';
+            foreach (array_reverse($chat['messages']) as $m) {
+                if (($m['role'] ?? '') === 'user') { $lastUser = (string)$m['content']; $lastImg = (string)($m['img'] ?? ''); break; }
+            }
+            if ($lastUser === '' && $lastImg === '') { json_out(['ok' => false, 'error' => 'Nothing to retry.'], 400); }
+            $msg = $lastUser;
+            if ($img === '') { $img = $lastImg; }
+        } else {
+            if ($msg === '' && $img === '') { json_out(['ok' => false, 'error' => 'Message is empty.'], 400); }
+            if (mb_strlen($msg) > MAX_INPUT) { json_out(['ok' => false, 'error' => 'Message is too long (max ' . MAX_INPUT . ' characters).'], 400); }
+            $newMsg = ['role' => 'user', 'content' => $msg, 'ts' => time()];
+            if ($img !== '') { $newMsg['img'] = $img; }
+            $chat['messages'][] = $newMsg;
+        }
+
+        /* run the agent loop (tools: web search, fetch URL, calculator, datetime) */
+        $hist = array_slice($chat['messages'], -20);
+        $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
+        $aiModel = ($model === 'custom') ? ('custom:' . $customModel) : $model;
+        $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
+        $agent = agent_respond($cfgAll, $aiModel, $providerMsgs, static function ($c, $m, $msgs, $im) { return ai_respond($c, $m, $msgs, $im); }, $img, ['max_steps' => (int)($cfgAll['agent_max_steps'] ?? 6)]);
+        if (!$agent['ok']) { json_out(['ok' => false, 'error' => (string)$agent['error']], 502); }
+        $reply = (string)$agent['reply'];
+
+        $assistantMsg = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => $displayLabel, 'agent' => 1];
+        if ($customModel !== '') { $assistantMsg['custom_model'] = $customModel; }
+        if (!empty($agent['trace'])) { $assistantMsg['agent_steps'] = $agent['trace']; }
+        $chat['messages'][] = $assistantMsg;
+        if ($chat['title'] === '') {
+            $title = trim(preg_replace('/\s+/u', ' ', $msg));
+            if ($title === '' && $img !== '') { $title = 'Image'; }
+            $chat['title'] = mb_strlen($title) > 60 ? mb_substr($title, 0, 57) . '…' : ($title !== '' ? $title : 'New chat');
+        }
+        if (count($chat['messages']) > MAX_MSGS_PER_CHAT) { $chat['messages'] = array_slice($chat['messages'], -MAX_MSGS_PER_CHAT); }
+        $chat['updated'] = time();
+
+        $modelOut = ['id' => $model, 'label' => $displayLabel];
+        if ($customModel !== '') { $modelOut['custom'] = $customModel; }
+
+        if ($temp) {
+            json_out(['ok' => true, 'id' => null, 'temp' => true, 'title' => 'Temporary chat', 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace']]]);
+        }
+        if ($rootChatForSend) {
+            update_root_variant_messages($rootChatForSend, $responseVariant !== '' ? $responseVariant : (string)$responseRootId, $chat);
+            ensure_chat_meta($rootChatForSend);
+            if (!save_chat($uid, $rootChatForSend)) { json_out(['ok' => false, 'error' => 'Could not save the chat — check data/ permissions.'], 500); }
+            $outId = (string)$rootChatForSend['id'];
+            $outSlug = (string)($rootChatForSend['slug'] ?? '');
+            $outTitle = (string)($rootChatForSend['title'] ?? $chat['title']);
+            $outModel = (string)($rootChatForSend['url_model'] ?? 'flash');
+            $outType = (string)($rootChatForSend['url_type'] ?? 'chat');
+        } else {
+            ensure_chat_meta($chat);
+            if (!save_chat($uid, $chat)) { json_out(['ok' => false, 'error' => 'Could not save the chat — check data/ permissions.'], 500); }
+            $outId = (string)$chat['id'];
+            $outSlug = (string)($chat['slug'] ?? '');
+            $outTitle = (string)$chat['title'];
+            $outModel = (string)($chat['url_model'] ?? 'flash');
+            $outType = (string)($chat['url_type'] ?? 'chat');
+        }
+        json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace']]]);
     }
 
     json_out(['ok' => false, 'error' => 'Unknown action.'], 404);

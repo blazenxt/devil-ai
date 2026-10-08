@@ -132,6 +132,13 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;bac
 .ctbtn:hover{background:rgba(244,63,94,.12);color:var(--soft);border-color:var(--border)}
 .ctbtn.primary{background:linear-gradient(135deg,rgba(244,63,94,.18),rgba(190,18,60,.12));color:var(--soft);border-color:var(--border)}
 .ctbtn.on{background:rgba(244,63,94,.22);color:#fff;border-color:var(--border-hi);box-shadow:0 0 0 3px rgba(244,63,94,.08)}
+.agent-trace{margin:0 0 10px;border:1px solid var(--border);border-radius:12px;background:var(--panel2);overflow:hidden;font-size:.74rem}
+.agent-head{padding:8px 12px;font-weight:700;color:var(--soft);border-bottom:1px solid var(--border)}
+.agent-step{padding:7px 12px;border-bottom:1px solid var(--border);color:var(--dim);display:flex;flex-direction:column;gap:2px}
+.agent-step:last-child{border-bottom:none}
+.agent-tool{color:var(--text);font-weight:700;display:flex;align-items:center;gap:6px}
+.agent-io{color:var(--dim2);word-break:break-word}
+.agent-err{color:#fca5a5;font-weight:700}
 .ctbtn.stop{display:none;color:#fecaca;background:rgba(190,18,60,.18);border-color:rgba(248,113,113,.35)}
 .ctbtn.stop.show{display:inline-flex}
 .ctbtn .txt{display:inline}
@@ -475,6 +482,7 @@ body.voice-open{overflow:hidden}
     </header>
 
     <div class="chattools" id="chatTools" aria-label="Chat actions">
+      <button class="ctbtn" id="agentBtn" type="button" title="Agent mode — Devil AI can search the web, read pages and calculate" aria-pressed="false"><?= icon('brain', 17) ?><span class="txt">Agent</span></button>
       <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
       <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
     </div>
@@ -601,6 +609,23 @@ var models = [], modelById = {}, currentModel = 'flash';
 var customModels = [], customById = {}, currentCustom = 'devil-09';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages, temp?} */
 var busy = false, isTempChat = false, activeController = null, sendSeq = 0, inlineEdit = null, editRestoreChat = null;
+var agentMode = read('devil_agent_mode') === '1';
+(function () {
+  var b = $('#agentBtn'); if (!b) { return; }
+  function sync() {
+    b.classList.toggle('on', agentMode);
+    b.setAttribute('aria-pressed', agentMode ? 'true' : 'false');
+    var t = b.querySelector('.txt');
+    if (t) { t.textContent = agentMode ? 'Agent on' : 'Agent'; }
+  }
+  b.addEventListener('click', function () {
+    agentMode = !agentMode;
+    store('devil_agent_mode', agentMode ? '1' : '0');
+    sync();
+    toast(agentMode ? 'Agent mode on — I can search the web, read pages and calculate' : 'Agent mode off', 'check');
+  });
+  sync();
+})();
 var personalOK = true;
 function rawCookie(name) {
   if (window.devilCookieGet) { return window.devilCookieGet(name); }
@@ -1141,6 +1166,20 @@ function addAiMsg(opts) {
   return d;
 }
 
+function renderAgentTrace(el, steps) {
+  if (!el || !steps || !steps.length) { return; }
+  var box = document.createElement('div');
+  box.className = 'agent-trace';
+  var rows = steps.map(function (s) {
+    return '<div class="agent-step"><span class="agent-tool">' + esc((I.brain || '') + ' ' + (s.tool || 'tool')) + '</span>' +
+      '<span class="agent-io">' + esc(s.input || '') + '</span>' +
+      (s.ok ? '' : '<span class="agent-err">step failed</span>') + '</div>';
+  }).join('');
+  box.innerHTML = '<div class="agent-head">' + esc('Agent mode · ' + steps.length + ' step' + (steps.length > 1 ? 's' : '')) + '</div>' + rows;
+  var body = el.querySelector('.body');
+  if (body) { body.insertBefore(box, el.querySelector('.content')); }
+}
+
 function aiContent(el, text, meta) {
   meta = meta || {};
   el.querySelector('.content').innerHTML = md(text);
@@ -1173,7 +1212,7 @@ function renderCurrentMessages() {
   arr.forEach(function (m, idx) {
     if (!m || !m.role) { return; }
     if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited, branchGroup: branchGroupFor(idx), attachments: m.attachments || [] }); }
-    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx }); }
+    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx }); if (m.agent_steps && m.agent_steps.length) { renderAgentTrace(el, m.agent_steps); } }
   });
   refreshMessageActions();
   scrollDown();
@@ -1910,7 +1949,7 @@ function runSend(payload) {
   activeController = window.AbortController ? new AbortController() : null;
   resize();
   var th = addThinking();
-  api('chat_send', payload, undefined, activeController ? activeController.signal : null).then(function (j) {
+  api(agentMode ? 'agent_chat' : 'chat_send', payload, undefined, activeController ? activeController.signal : null).then(function (j) {
     if (seq !== sendSeq) { return; }
     th.remove();
     if (j.aborted) { toast('Response paused', 'stop'); return; }
@@ -1938,10 +1977,13 @@ function runSend(payload) {
         if (payload.attachments) { um.attachments = payload.attachments.map(function (a) { return { name: a.name, type: a.type, size: a.size, is_image: /^data:image\//.test(a.data || '') }; }); }
         currentChat.messages.push(um);
       }
-      currentChat.messages.push({ role: 'assistant', content: j.reply, model_label: (j.model && j.model.label) || activeModelLabel() });
+      var am = { role: 'assistant', content: j.reply, model_label: (j.model && j.model.label) || activeModelLabel() };
+      if (j.agent && j.agent.steps && j.agent.steps.length) { am.agent_steps = j.agent.steps; }
+      currentChat.messages.push(am);
       var aiIndex = currentChat.messages.length - 1;
       var el = addAiMsg({ modelTag: (j.model && j.model.label) || activeModelLabel() });
       aiContent(el, j.reply, { index: aiIndex });
+      if (j.agent && j.agent.steps && j.agent.steps.length) { renderAgentTrace(el, j.agent.steps); }
       if (voiceMode) { speakText(j.reply); }
       if (!isTempChat) { loadChats(); }
       updateChatActions();
