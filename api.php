@@ -716,7 +716,7 @@ function normalize_cidr_list($raw): array {
     return array_values(array_unique($out));
 }
 function admin_security_snapshot(): array {
-    $bans = load_json(data_dir() . '/security_bans_v2.json');
+    $bans = load_json(data_dir() . '/security_bans_v3.json');
     $rl = load_json(data_dir() . '/security_rl.json');
     $cidrs = load_json(data_dir() . '/security_datacenter_cidrs.json');
     if (!is_array($cidrs)) { $cidrs = []; }
@@ -2657,7 +2657,7 @@ try {
         if (!admin_ok((string)($in['current_admin_password'] ?? ''))) {
             json_out(['ok' => false, 'error' => 'Admin password is incorrect.'], 403);
         }
-        @file_put_contents(data_dir() . '/security_bans_v2.json', json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        @file_put_contents(data_dir() . '/security_bans_v3.json', json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
         @file_put_contents(data_dir() . '/security_rl.json', json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
         json_out(['ok' => true, 'security' => admin_security_snapshot()]);
     }

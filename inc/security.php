@@ -83,7 +83,7 @@ function devil_sec_block(string $message = 'Request blocked for security reasons
         $safe = htmlspecialchars($message, ENT_QUOTES);
         $logo = devil_sec_logo_data_uri();
         $logoHtml = $logo !== '' ? '<img src="' . htmlspecialchars($logo, ENT_QUOTES) . '" alt="Devil AI logo">' : '<span>Devil AI</span>';
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Security check — Devil AI</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(900px 420px at 70% -10%,rgba(244,63,94,.20),transparent 62%),#0c0709;color:#efe6ea;font-family:Segoe UI,system-ui,-apple-system,Roboto,sans-serif}.card{width:min(92vw,560px);padding:30px;border:1px solid rgba(244,63,94,.28);border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015)),#171014;box-shadow:0 28px 80px rgba(0,0,0,.42)}.brand{display:flex;align-items:center;gap:12px;font-weight:900;font-size:1.15rem;margin-bottom:18px}.logo{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:rgba(244,63,94,.10);box-shadow:0 0 26px rgba(244,63,94,.32);overflow:hidden}.logo img{width:42px;height:42px;display:block}h1{font-size:1.65rem;line-height:1.1;margin:0 0 10px}p{color:#b99aa5;line-height:1.65;margin:0 0 18px}.steps{border:1px solid rgba(244,63,94,.18);background:#100a0d;border-radius:16px;padding:14px 16px;color:#f5c8d0}.btn{display:inline-flex;margin-top:18px;padding:12px 16px;border-radius:12px;background:linear-gradient(135deg,#f43f5e,#be123c);color:white;text-decoration:none;font-weight:800}</style></head><body><main class="card"><div class="brand"><div class="logo">' . $logoHtml . '</div><span>Devil AI</span></div><h1>Security check</h1><p>' . $safe . '</p><div class="steps">Turn off VPN / Proxy / Tor / WARP, then reload this page. Access will work automatically from a normal network.</div><a class="btn" href="' . htmlspecialchars((string)($_SERVER['REQUEST_URI'] ?? '/'), ENT_QUOTES) . '">Refresh Devil AI</a></main></body></html>';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Security check — Devil AI</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(900px 420px at 70% -10%,rgba(244,63,94,.20),transparent 62%),#0c0709;color:#efe6ea;font-family:Segoe UI,system-ui,-apple-system,Roboto,sans-serif}.card{width:min(92vw,560px);padding:30px;border:1px solid rgba(244,63,94,.28);border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015)),#171014;box-shadow:0 28px 80px rgba(0,0,0,.42)}.brand{display:flex;align-items:center;gap:12px;font-weight:900;font-size:1.15rem;margin-bottom:18px}.logo{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:rgba(244,63,94,.10);box-shadow:0 0 26px rgba(244,63,94,.32);overflow:hidden}.logo img{width:42px;height:42px;display:block}h1{font-size:1.65rem;line-height:1.1;margin:0 0 10px}p{color:#b99aa5;line-height:1.65;margin:0 0 18px}.steps{border:1px solid rgba(244,63,94,.18);background:#100a0d;border-radius:16px;padding:14px 16px;color:#f5c8d0}.btn{display:inline-flex;margin-top:18px;padding:12px 16px;border-radius:12px;background:linear-gradient(135deg,#f43f5e,#be123c);color:white;text-decoration:none;font-weight:800}</style></head><body><main class="card"><div class="brand"><div class="logo">' . $logoHtml . '</div><span>Devil AI</span></div><h1>Security check</h1><p>' . $safe . '</p><div class="steps">If this looks wrong, wait a few minutes and reload the page. If it keeps happening, contact Devil AI support.</div><a class="btn" href="' . htmlspecialchars((string)($_SERVER['REQUEST_URI'] ?? '/'), ENT_QUOTES) . '">Refresh Devil AI</a></main></body></html>';
     }
     exit;
 }
@@ -111,7 +111,7 @@ function devil_sec_rate(string $bucket, string $key, int $max, int $window): boo
 }
 /* v2: the old file held bans made by the URL-probe check that also matched query strings
    (e.g. opening .gitignore in the agent workspace) — starting a fresh file drops all of those. */
-function devil_sec_bans_file(): string { return 'security_bans_v2.json'; }
+function devil_sec_bans_file(): string { return 'security_bans_v3.json'; }
 function devil_sec_ban_ip(string $ip, int $seconds, string $reason): void {
     $bans = devil_sec_json(devil_sec_bans_file());
     $now = time();
@@ -214,14 +214,14 @@ function devil_security_boot(): void {
        workspace opens api.php?action=sbx_file&path=.gitignore — and must never trigger a ban. */
     $path = (string)(parse_url($uri, PHP_URL_PATH) ?? '');
     if (!$isApi && preg_match('#(/\.env|/wp-login|/wp-admin|xmlrpc\.php|phpmyadmin|adminer|/\.git(/|$)|/composer\.(json|lock)|/vendor/|/config\.php|\.sql$|/etc/passwd|\.DS_Store)#i', $path)) {
-        devil_sec_ban_ip($ip, 3600, 'probe');
+        devil_sec_ban_ip($ip, 600, 'probe');
         devil_sec_block('Security probe blocked.', 403);
     }
 
     $limit = $isApi ? 180 : 240;
     if (!devil_sec_rate('all', $ip, $limit, 60)) {
-        devil_sec_ban_ip($ip, 1800, 'rate');
-        devil_sec_block('Rate limit exceeded. Please wait and try again.', 429);
+        /* this request only — no IP ban: on mobile networks (CGNAT) one IP is shared by many people */
+        devil_sec_block('Too many requests. Please wait a moment and try again.', 429);
     }
 
     $hasApiKey = preg_match('/Bearer\s+(?:devil_blazenxt_|dv_live_)/i', (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ''))
@@ -234,8 +234,7 @@ function devil_security_boot(): void {
     $noBrowserHints = empty($_SERVER['HTTP_ACCEPT_LANGUAGE']) && empty($_SERVER['HTTP_SEC_CH_UA']) && !$hasApiKey;
 
     if (!$isApi && $badUa && !str_contains($uaLow, 'devil-agent')) {
-        devil_sec_ban_ip($ip, 1800, 'scraper ua');
-        devil_sec_block('Automated scraping is blocked.', 403);
+        devil_sec_block('Automated scraping is blocked.', 403);   /* block the request, never ban the (possibly shared) IP */
     }
     if (!$isApi && $noBrowserHints && devil_sec_datacenter_like($ip, true)) {
         devil_sec_block('Automated access is blocked.', 403);
