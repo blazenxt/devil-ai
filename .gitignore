@@ -20,3 +20,6 @@ inc/origin_key.php
 data/sbx_daytona.json
 data/sbx_vercel.json
 data/sbx_route.json
+data/hosting/
+data/agent_secrets/
+data/agent_jobs/

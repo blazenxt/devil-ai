@@ -285,37 +285,133 @@ function chatUrlForItem(c) {
   return base + '/chat/' + encodeURIComponent(seg(m, 'flash')) + '/' + encodeURIComponent(seg(t, 'chat')) + '/' + encodeURIComponent(slug);
 }
 
-/* ── markdown (escape-first, XSS safe) ── */
+/* ── markdown (escape-first, XSS safe) ──
+   GitHub-style: headings, **bold** / __bold__, *italic* / _italic_, ~~strike~~, `code`, fenced code,
+   [links](https://…) and bare URLs (clickable, open in a new tab), ordered / unordered / nested / task lists,
+   > quotes, tables, --- rules, ![images](https://…). */
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function mdSafeUrl(u) {
+  u = String(u || '').trim().replace(/&amp;/g, '&');
+  if (/^www\./i.test(u)) { u = 'https://' + u; }
+  if (!/^(https?:\/\/|mailto:|#)/i.test(u)) { return ''; }
+  return esc(u).replace(/&amp;amp;/g, '&amp;');
+}
 function inline(s) {
-  return s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  var keep = [];
+  function hold(html) { keep.push(html); return '\u0000' + (keep.length - 1) + '\u0000'; }
+  /* inline code first: nothing inside it is formatted */
+  s = s.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, function (m, t, c) { return hold('<code>' + c.trim() + '</code>'); });
+  /* images and links */
+  s = s.replace(/!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\s*\)/g, function (m, alt, u) {
+    var href = mdSafeUrl(u); if (!href || !/^https?:/i.test(href)) { return m; }
+    return hold('<img class="md-img" src="' + href + '" alt="' + alt + '" loading="lazy" referrerpolicy="no-referrer">');
+  });
+  s = s.replace(/\[([^\]]+)\]\(\s*([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\s*\)/g, function (m, txt, u) {
+    var href = mdSafeUrl(u); if (!href) { return m; }
+    return hold('<a href="' + href + '"' + (href.charAt(0) === '#' ? '' : ' target="_blank" rel="noopener noreferrer"') + '>' + txt + '</a>');
+  });
+  s = s.replace(/&lt;(https?:\/\/[^\s<>]+?)&gt;/g, function (m, u) { var h = mdSafeUrl(u); return h ? hold('<a href="' + h + '" target="_blank" rel="noopener noreferrer">' + u + '</a>') : m; });
+  /* bare URLs (trailing punctuation stays outside the link) */
+  s = s.replace(/(^|[\s(\[*_~])((?:https?:\/\/|www\.)[^\s<]+)/g, function (m, pre, u) {
+    var tail = ''; var mm = u.match(/[.,;:!?)\]'"]+$/);
+    if (mm) { tail = mm[0]; u = u.slice(0, -tail.length); if (/\)$/.test(tail) && u.indexOf('(') !== -1) { u += ')'; tail = tail.slice(1); } }
+    var h = mdSafeUrl(u); if (!h) { return m; }
+    return pre + hold('<a href="' + h + '" target="_blank" rel="noopener noreferrer">' + u + '</a>') + tail;
+  });
+  s = s.replace(/\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, function (m) { return hold('<a href="mailto:' + m + '">' + m + '</a>'); });
+  /* emphasis */
+  s = s.replace(/\*\*\*([^*\n]+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+       .replace(/\*\*([^\n]+?)\*\*/g, '<strong>$1</strong>')
+       .replace(/(^|[^\w])__([^\n]+?)__(?!\w)/g, '$1<strong>$2</strong>')
+       .replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>')
+       .replace(/(^|[^\w])_(?!\s)([^_\n]+?)_(?!\w)/g, '$1<em>$2</em>')
+       .replace(/~~([^~\n]+?)~~/g, '<del>$1</del>')
+       .replace(/==([^=\n]+?)==/g, '<mark>$1</mark>');
+  return s.replace(/\u0000(\d+)\u0000/g, function (m, i) { return keep[Number(i)]; });
 }
 function md(src) {
-  var lines = esc(src).split('\n'), out = [], inCode = false, buf = [], inList = false, curLang = '';
-  function closeList() { if (inList) { out.push('</ul>'); inList = false; } }
-  lines.forEach(function (line) {
-    if (line.trim().indexOf('```') === 0) {
-      if (inCode) {
-        out.push('<pre data-lang="' + curLang + '"><code>' + buf.join('\n') + '</code></pre>');
-        buf = []; inCode = false; curLang = '';
-      } else { closeList(); inCode = true; curLang = line.trim().slice(3).trim().toLowerCase(); }
-      return;
+  var lines = esc(String(src || '').replace(/\r\n?/g, '\n')).split('\n'), out = [], i = 0;
+  var para = [];
+  function flushPara() { if (para.length) { out.push('<p>' + para.map(inline).join('<br>') + '</p>'); para = []; } }
+  function isTableSep(l) { return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l) && l.indexOf('-') !== -1; }
+  function cells(l) { l = l.trim().replace(/^\|/, '').replace(/\|$/, ''); return l.replace(/\\\|/g, '\u0001').split('|').map(function (c) { return c.trim().replace(/\u0001/g, '|'); }); }
+  var LIST = /^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$/;
+  while (i < lines.length) {
+    var line = lines[i], t = line.trim(), m;
+    /* fenced code */
+    if (/^(```|~~~)/.test(t)) {
+      flushPara();
+      var fence = t.slice(0, 3), lang = t.slice(3).trim().toLowerCase().replace(/[^\w+#.-]/g, ''), buf = [];
+      i++;
+      while (i < lines.length && lines[i].trim().indexOf(fence) !== 0) { buf.push(lines[i]); i++; }
+      i++;
+      out.push('<pre data-lang="' + lang + '"><code>' + buf.join('\n') + '</code></pre>');
+      continue;
     }
-    if (inCode) { buf.push(line); return; }
-    var t = line.trim();
-    if (/^(?:\d+\.|[-*])\s+/.test(t)) {
-      if (!inList) { out.push('<ul>'); inList = true; }
-      out.push('<li>' + inline(t.replace(/^(?:\d+\.|[-*])\s+/, '')) + '</li>');
-      return;
+    if (t === '') { flushPara(); out.push('<div class="sp"></div>'); i++; continue; }
+    /* headings */
+    if ((m = t.match(/^(#{1,6})\s+(.*?)\s*#*$/))) {
+      flushPara();
+      out.push('<h' + (m[1].length <= 2 ? 3 : (m[1].length === 3 ? 4 : 5)) + ' class="md-h' + m[1].length + '">' + inline(m[2]) + '</h' + (m[1].length <= 2 ? 3 : (m[1].length === 3 ? 4 : 5)) + '>');
+      i++; continue;
     }
-    closeList();
-    if (/^###\s+/.test(t)) { out.push('<h4>' + inline(t.replace(/^###\s+/, '')) + '</h4>'); }
-    else if (/^#{1,2}\s+/.test(t)) { out.push('<h3>' + inline(t.replace(/^#{1,2}\s+/, '')) + '</h3>'); }
-    else if (t === '') { out.push('<div class="sp"></div>'); }
-    else { out.push('<p>' + inline(t) + '</p>'); }
-  });
-  if (inList) { out.push('</ul>'); }
-  if (inCode && buf.length) { out.push('<pre><code>' + buf.join('\n') + '</code></pre>'); }
+    /* horizontal rule */
+    if (/^([-*_])(\s*\1){2,}$/.test(t)) { flushPara(); out.push('<hr>'); i++; continue; }
+    /* table */
+    if (t.indexOf('|') !== -1 && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      flushPara();
+      var head = cells(t), al = cells(lines[i + 1]).map(function (c) { return /^:-+:$/.test(c) ? 'center' : (/-+:$/.test(c) ? 'right' : ''); });
+      var h = '<div class="md-tw"><table><thead><tr>' + head.map(function (c, k) { return '<th' + (al[k] ? ' style="text-align:' + al[k] + '"' : '') + '>' + inline(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      i += 2;
+      while (i < lines.length && lines[i].trim() !== '' && lines[i].indexOf('|') !== -1) {
+        var row = cells(lines[i]);
+        h += '<tr>' + head.map(function (x, k) { return '<td' + (al[k] ? ' style="text-align:' + al[k] + '"' : '') + '>' + inline(row[k] || '') + '</td>'; }).join('') + '</tr>';
+        i++;
+      }
+      out.push(h + '</tbody></table></div>');
+      continue;
+    }
+    /* blockquote */
+    if (/^&gt;\s?/.test(t)) {
+      flushPara();
+      var q = [];
+      while (i < lines.length && /^\s*&gt;\s?/.test(lines[i])) { q.push(lines[i].replace(/^\s*&gt;\s?/, '')); i++; }
+      out.push('<blockquote>' + md(q.join('\n').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&')) + '</blockquote>');
+      continue;
+    }
+    /* lists (nested by indentation) */
+    if (LIST.test(line)) {
+      flushPara();
+      var stack = [];
+      while (i < lines.length) {
+        var l = lines[i], lm = l.match(LIST);
+        if (!lm) {
+          /* a continuation line of the previous item */
+          if (l.trim() !== '' && /^\s{2,}/.test(l) && stack.length) { out.push('<br>' + inline(l.trim())); i++; continue; }
+          break;
+        }
+        var ind = lm[1].replace(/\t/g, '    ').length, ordered = /\d/.test(lm[2]);
+        while (stack.length && ind < stack[stack.length - 1].ind) { out.push('</li></' + stack.pop().tag + '>'); }
+        var top = stack[stack.length - 1];
+        if (!top || ind > top.ind) {
+          var tag = ordered ? 'ol' : 'ul', start = ordered ? parseInt(lm[2], 10) : 1;
+          out.push('<' + tag + (ordered && start !== 1 ? ' start="' + start + '"' : '') + '>');
+          stack.push({ ind: ind, tag: tag });
+        } else {
+          out.push('</li>');
+        }
+        var body = lm[3], tm = body.match(/^\[([ xX])\]\s+(.*)$/);
+        if (tm) { out.push('<li class="md-task"><input type="checkbox" disabled' + (tm[1] !== ' ' ? ' checked' : '') + '> ' + inline(tm[2])); }
+        else { out.push('<li>' + inline(body)); }
+        i++;
+      }
+      while (stack.length) { out.push('</li></' + stack.pop().tag + '>'); }
+      continue;
+    }
+    para.push(t);
+    i++;
+  }
+  flushPara();
   return out.join('');
 }
 
@@ -2962,6 +3058,22 @@ function agtRow(s, running) {
     case 'calculator': verb = running ? 'Calculating' : 'Calculate'; body = out ? agtPre(out) : ''; break;
     case 'datetime': verb = 'Check time'; arg = first || 'server clock'; body = out ? agtPre(out) : ''; break;
     case 'ask_user': verb = 'Ask'; body = out ? agtPre(out) : ''; break;
+    case 'deploy_site': {
+      var dl = inp.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+      verb = running ? 'Deploying' : 'Deploy'; arg = (dl[1] || dl[0] || '.') + (dl[1] ? '' : '');
+      body = out ? agtPre(out, s.ok ? '' : 'err') : '';
+      var dp = m.deploy || {};
+      if (!running && s.ok && dp.url) {
+        extra = document.createElement('div');
+        extra.className = 'agt-deploy';
+        extra.innerHTML = '<span class="dic">' + AGT.win + '</span><span class="dtx"><b></b><span class="du"></span></span>' +
+          '<a class="dgo" target="_blank" rel="noopener noreferrer">' + (dp.done === false ? 'Open (partial) ↗' : 'Open site ↗') + '</a>';
+        extra.querySelector('b').textContent = (dp.done === false ? 'Uploading… ' + dp.files + '/' + dp.total + ' files' : 'Live on your server · ' + dp.total + ' files');
+        extra.querySelector('.du').textContent = dp.url;
+        extra.querySelector('.dgo').href = /^https?:\/\//i.test(dp.url) ? dp.url : '#';
+      }
+      break;
+    }
     default: verb = (running ? 'Using ' : 'Used ') + (s.tool || 'tool'); body = out ? agtPre(out) : '';
   }
   if (!running && !s.ok) { info = (info ? info + ' · ' : '') + 'failed'; if (!body && out) { body = agtPre(out, 'err'); } }
@@ -3011,14 +3123,18 @@ function agtHtmlCard(path) {
       src = t;
       var tm = t.match(/<title[^>]*>([^<]{1,140})<\/title>/i);
       if (tm && tm[1].trim()) { c.querySelector('.tt').textContent = tm[1].trim().replace(/&amp;/g, '&').replace(/&mdash;/g, '—'); }
-      var f = document.createElement('iframe');
-      f.setAttribute('sandbox', 'allow-scripts');
-      f.setAttribute('loading', 'lazy');
-      f.setAttribute('tabindex', '-1');
-      f.title = 'Preview of ' + path;
-      f.srcdoc = t;
-      var ld = c.querySelector('.agt-pvload'); if (ld) { ld.remove(); }
-      c.querySelector('.agt-pvf').insertBefore(f, c.querySelector('.agt-pvv'));
+      /* load the real file (its CSS / JS / images come along) — srcdoc only as a fallback */
+      return sbxViewBase().then(function (b) { return sbxViewUrl(b, path); }, function () { return ''; }).then(function (u) {
+        src = u || t;
+        var f = document.createElement('iframe');
+        f.setAttribute('sandbox', 'allow-scripts');
+        f.setAttribute('loading', 'lazy');
+        f.setAttribute('tabindex', '-1');
+        f.title = 'Preview of ' + path;
+        if (u) { f.src = u; } else { f.srcdoc = t; }
+        var ld = c.querySelector('.agt-pvload'); if (ld) { ld.remove(); }
+        c.querySelector('.agt-pvf').insertBefore(f, c.querySelector('.agt-pvv'));
+      });
     }).catch(function () { c.remove(); });
   }
   if (window.IntersectionObserver) {
@@ -3035,7 +3151,7 @@ function agtFullView(title, src, path) {
   d.innerHTML = '<div class="agt-fbox"><div class="agt-fh"><span class="agt-pvi">' + AGT.win + '</span><span class="tt"></span>' +
     '<button type="button" class="fo" title="Open in workspace">Files</button><button type="button" class="fx" title="Close" aria-label="Close">' + AGT.x + '</button></div><iframe sandbox="allow-scripts allow-forms allow-modals"></iframe></div>';
   d.querySelector('.tt').textContent = title;
-  d.querySelector('iframe').srcdoc = src;
+  if (/^sbx-view\//.test(src)) { d.querySelector('iframe').src = src; } else { d.querySelector('iframe').srcdoc = src; }
   function close() { d.remove(); document.removeEventListener('keydown', onKey); }
   function onKey(e) { if (e.key === 'Escape') { close(); } }
   d.addEventListener('click', function (e) { if (e.target === d) { close(); } });
@@ -3172,7 +3288,8 @@ function agtTaskCard(el, reply, idx) {
     var b = e.target.closest('[data-a]'); if (!b) { return; }
     var a = b.dataset.a;
     agtTaskCardClose();
-    if (a === 'more') { if (!busy) { inp.value = 'Keep working'; resize(); send(); } return; }
+    /* like the reference agent: "Keep working" just hands the composer back — the user types what to do next */
+    if (a === 'more') { if (inp) { inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e2) {} } return; }
     var rating = a === 'yes' ? 'good' : 'bad', meta = { index: idx }, key = feedbackKey(meta, reply);
     var up = el && el.querySelector('.acts button[title="Good response"]'), down = el && el.querySelector('.acts button[title="Bad response"]');
     if (!read(key)) {
@@ -3255,6 +3372,7 @@ function agtLiveLabel(tool, input) {
     case 'datetime': return ['Checking the time…'];
     case 'ask_user': return ['Waiting for your answer…'];
     case 'full_internet': return ['Switching to full internet…'];
+    case 'deploy_site': return ['Deploying to your server…', 'Uploading files…'];
     default: return ['Working…'];
   }
 }
@@ -3543,26 +3661,119 @@ function wsPickUpload() {
   });
   fi.click();
 }
-function renderWsViewer(box) {
-  var p = SBX.view.path, name = p.split('/').pop();
-  var tb = wsToolbar('<button type="button" class="ws-btn ic" data-act="back" title="Back to files">' + (I.arrowL || '') + '</button><span class="ws-path" title="' + esc(p) + '">' + esc(p) + '</span><span class="sp"></span>' +
-    '<button type="button" class="ws-btn" data-act="dl" title="Download">' + (I.download || '') + '<span>Download</span></button>');
-  if (/\.(png|jpe?g|gif|webp)$/i.test(name)) {
-    box.innerHTML = tb + '<div class="ws-view img"><img alt="" src="' + esc(sbxFileUrl(p)) + '"></div>';
-    wsBindTb(box); return;
+/* ── file viewer: every common type gets a real preview (like the reference agent) ──
+   Files are served through sbx-view/{signed token}/{path}, so an HTML page loads its own CSS / JS / images. */
+var SBXV = {};
+function sbxViewBase() {
+  var k = sbxChatQuery(), c = SBXV[k];
+  if (c && c.exp > Date.now()) { return Promise.resolve(c.base); }
+  return api('sbx_view_token&' + k).then(function (j) {
+    if (!j || !j.ok || !j.base) { throw new Error((j && j.error) || 'preview unavailable'); }
+    SBXV[k] = { base: j.base, exp: Date.now() + Math.max(600, (j.ttl || 21600) - 900) * 1000 };
+    return j.base;
+  });
+}
+function sbxViewUrl(base, path, q) { return base + String(path).replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/') + (q || ''); }
+function wsKind(name) {
+  var e = (String(name).split('.').pop() || '').toLowerCase();
+  if (!/\./.test(name)) { e = ''; }
+  if (/^(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/.test(e)) { return 'image'; }
+  if (/^html?$/.test(e)) { return 'html'; }
+  if (e === 'pdf') { return 'pdf'; }
+  if (/^(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/.test(e)) { return 'audio'; }
+  if (/^(mp4|webm|ogv|mov|m4v)$/.test(e)) { return 'video'; }
+  if (/^(docx|xlsx|pptx)$/.test(e)) { return 'office'; }
+  if (/^(md|markdown|mdx)$/.test(e)) { return 'md'; }
+  if (/^(csv|tsv)$/.test(e)) { return 'csv'; }
+  if (e === 'json' || e === 'ipynb') { return 'json'; }
+  if (/^(zip|gz|tgz|tar|7z|rar|bz2|xz|exe|bin|so|o|a|dll|pyc|class|jar|sqlite3?|db|woff2?|ttf|otf|eot|doc|xls|ppt|psd|ai|dmg|iso|apk|wasm|node)$/.test(e)) { return 'binary'; }
+  return 'text';
+}
+function wsCodeHtml(t) {
+  var lines = String(t).split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') { lines.pop(); }
+  return '<pre class="ws-view code ln">' + lines.map(function (l) { return '<span class="wl">' + (esc(l) || ' ') + '</span>'; }).join('\n') + '</pre>';
+}
+function wsCsvTable(t, sep) {
+  var rows = [], row = [], cur = '', q = false, i, ch, n = 0;
+  for (i = 0; i < t.length && rows.length < 1000; i++) {
+    ch = t[i];
+    if (q) { if (ch === '"') { if (t[i + 1] === '"') { cur += '"'; i++; } else { q = false; } } else { cur += ch; } continue; }
+    if (ch === '"') { q = true; } else if (ch === sep) { row.push(cur); cur = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && t[i + 1] === '\n') { i++; } row.push(cur); rows.push(row); row = []; cur = ''; }
+    else { cur += ch; }
   }
-  if (/\.(zip|gz|tgz|tar|7z|rar|pdf|mp4|mp3|wav|woff2?|ttf|exe|bin|so|o|pyc|sqlite|db|xlsx?|docx?|pptx?)$/i.test(name)) {
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  rows.forEach(function (r) { n = Math.max(n, r.length); });
+  n = Math.min(n, 60);
+  return '<div class="ws-view tbl"><table>' + rows.map(function (r, ri) {
+    var tag = ri === 0 ? 'th' : 'td', h = '<tr>';
+    for (var k = 0; k < n; k++) { h += '<' + tag + '>' + esc(r[k] || '') + '</' + tag + '>'; }
+    return h + '</tr>';
+  }).join('') + '</table></div>' + (rows.length >= 1000 ? '<div class="ws-note">Showing the first 1000 rows — download to see everything.</div>' : '');
+}
+function renderWsViewer(box) {
+  var p = SBX.view.path, name = p.split('/').pop(), kind = wsKind(name);
+  var canToggle = kind === 'html' || kind === 'md' || kind === 'csv';
+  var mode = SBX.view.mode || (canToggle ? 'preview' : 'code');
+  var tbBtns = '<button type="button" class="ws-btn ic" data-act="back" title="Back to files">' + (I.arrowL || '') + '</button><span class="ws-path" title="' + esc(p) + '">' + esc(p) + '</span><span class="sp"></span>' +
+    (canToggle ? '<span class="ws-seg"><button type="button" data-mode="preview"' + (mode === 'preview' ? ' class="on"' : '') + '>Preview</button><button type="button" data-mode="code"' + (mode === 'code' ? ' class="on"' : '') + '>Code</button></span>' : '') +
+    (/^(html|pdf|image|office|video|audio)$/.test(kind) ? '<button type="button" class="ws-btn ic" data-act="vopen" title="Open in new tab">' + (I.external || '↗') + '</button>' : '') +
+    '<button type="button" class="ws-btn" data-act="dl" title="Download">' + (I.download || '') + '<span>Download</span></button>';
+  var tb = wsToolbar(tbBtns);
+  function bind() {
+    wsBindTb(box);
+    Array.prototype.forEach.call(box.querySelectorAll('.ws-seg [data-mode]'), function (b) {
+      b.addEventListener('click', function () { if (SBX.view) { SBX.view.mode = b.dataset.mode; renderWorkspace(); } });
+    });
+    var vo = box.querySelector('[data-act="vopen"]');
+    if (vo) { vo.addEventListener('click', function () { sbxViewBase().then(function (b) { window.open(sbxViewUrl(b, p, kind === 'office' ? '?as=html' : ''), '_blank', 'noopener'); }); }); }
+  }
+  function fail(msg) { if (!SBX.view || SBX.view.path !== p) { return; } box.innerHTML = tb + '<div class="ws-empty">' + esc(msg || 'Could not open this file.') + '</div>'; bind(); }
+  function same() { return SBX.view && SBX.view.path === p; }
+  if (kind === 'binary') {
     box.innerHTML = tb + '<div class="ws-empty"><div class="wi">' + (I.fileS || '') + '</div>' + esc(name) + '<br>Preview isn\'t available for this file type.<br><br><button type="button" class="ws-btn" data-act="dl">' + (I.download || '') + '<span>Download</span></button></div>';
-    wsBindTb(box); return;
+    bind(); return;
   }
   box.innerHTML = tb + '<div class="ws-empty"><span class="agx-spin"></span></div>';
-  wsBindTb(box);
+  bind();
+  /* media + rendered documents: point the element at the real file */
+  if (kind === 'image' || kind === 'pdf' || kind === 'audio' || kind === 'video' || kind === 'office' || (kind === 'html' && mode === 'preview')) {
+    sbxViewBase().then(function (b) {
+      if (!same()) { return; }
+      var u = esc(sbxViewUrl(b, p, kind === 'office' ? '?as=html' : '')), h;
+      if (kind === 'image') { h = '<div class="ws-view img"><img alt="" src="' + u + '"></div>'; }
+      else if (kind === 'audio') { h = '<div class="ws-view media"><div class="ws-aud"><div class="wi">' + (I.fileS || '') + '</div><div class="nm">' + esc(name) + '</div><audio controls preload="metadata" src="' + u + '"></audio></div></div>'; }
+      else if (kind === 'video') { h = '<div class="ws-view media"><video controls playsinline preload="metadata" src="' + u + '"></video></div>'; }
+      else if (kind === 'pdf') { h = '<iframe class="ws-frame doc" src="' + u + '" title="' + esc(name) + '"></iframe>'; }
+      else if (kind === 'office') { h = '<iframe class="ws-frame doc" sandbox="" src="' + u + '" title="' + esc(name) + '"></iframe>'; }
+      else { h = '<iframe class="ws-frame" sandbox="allow-scripts allow-forms allow-popups allow-modals" src="' + u + '" title="' + esc(name) + '"></iframe>'; }
+      box.innerHTML = tb + h;
+      bind();
+      var md0 = box.querySelector('img,audio,video');
+      if (md0) { md0.addEventListener('error', function () {
+        var asleep = 'Could not load this file — the sandbox may be asleep. Try again in a moment.';
+        if (md0.tagName === 'IMG') { fail(asleep); return; }
+        /* the file is there but the browser cannot play it (codec / broken file) → say so instead of blaming the sandbox */
+        fetch(md0.getAttribute('src'), { method: 'HEAD', credentials: 'omit' }).then(function (r) {
+          fail(r.ok ? 'This browser can\'t play this file. Use Download to open it in another app.' : asleep);
+        }, function () { fail(asleep); });
+      }); }
+    }).catch(function (e) { fail(e.message); });
+    return;
+  }
+  /* text-like files: fetch the text, render it here */
   fetch(sbxFileUrl(p), { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); }).then(function (t) {
-    if (!SBX.view || SBX.view.path !== p) { return; }
-    var big = t.length > 300000;
-    box.innerHTML = tb + '<pre class="ws-view code">' + esc(big ? t.slice(0, 300000) + '\n… (truncated — download to see everything)' : t) + '</pre>';
-    wsBindTb(box);
-  }).catch(function () { box.innerHTML = tb + '<div class="ws-empty">Could not open this file.</div>'; wsBindTb(box); });
+    if (!same()) { return; }
+    var big = t.length > 300000, tt = big ? t.slice(0, 300000) : t, h;
+    if (kind === 'md' && mode === 'preview') { h = '<div class="ws-view mdv content">' + md(tt) + '</div>'; }
+    else if (kind === 'csv' && mode === 'preview') { h = wsCsvTable(tt, /\.tsv$/i.test(name) ? '\t' : ','); }
+    else if (kind === 'json') { var pj = tt; try { pj = JSON.stringify(JSON.parse(t), null, 2); } catch (e) {} h = wsCodeHtml(pj); }
+    else { h = wsCodeHtml(tt); }
+    if (big) { h += '<div class="ws-note">Showing the first 300 KB — download to see everything.</div>'; }
+    box.innerHTML = tb + h;
+    bind();
+  }).catch(function () { fail(); });
 }
 function renderWsPreview(box) {
   box.innerHTML = '<div class="ws-empty"><span class="agx-spin"></span><br>Looking for running apps…</div>';

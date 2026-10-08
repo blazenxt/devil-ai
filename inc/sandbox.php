@@ -16,6 +16,7 @@ declare(strict_types=1);
 const SBX_WORKDIR = '/home/user/work';
 require_once __DIR__ . '/sandbox_daytona.php';
 require_once __DIR__ . '/sandbox_vercel.php';
+require_once __DIR__ . '/hosting.php';
 
 /**
  * Providers: "daytona" | "vercel" | "auto" (Daytona first, Vercel Sandbox as the automatic backup) | "devil" (old gateway).
@@ -362,6 +363,7 @@ function sbx_agent_tools_all(): array {
         'read_file'      => 'Read a text file from the sandbox. INPUT: path.',
         'list_files'     => 'List files in the workspace. INPUT: a folder path, or "." for everything.',
         'start_server'   => 'Start a long-running app/dev server in the background and get its public preview URL. INPUT: first line = port, second line = command (bind to 0.0.0.0).',
+        'deploy_site'    => 'Publish a finished website to the USER\'S OWN hosting server (their FTP/SFTP account from Settings → Hosting) and get its live URL. Use only when the user wants the site hosted/published/deployed on their server. INPUT: first line = folder inside /home/user/work to upload (e.g. site or app/dist — for React/Vite run the build first and deploy dist), optional second line = site name (letters, numbers, dashes; it becomes the sub-folder and URL path).',
         'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors and saves a screenshot. INPUT: URL.',
         'generate_image' => 'Generate an image from a text prompt and save it in the workspace. INPUT: first line = output path (e.g. images/hero.png), second line = the prompt.',
         'full_internet'  => 'Move this chat to a sandbox with FULL internet (2 CPU, 4 GB RAM). Use it only when the task needs websites/APIs that the current sandbox cannot reach. Your /home/user/work files are copied (node_modules / venvs are not); running servers must be restarted. INPUT: one short reason.',
@@ -606,6 +608,10 @@ PY;
             if (!empty($j['screenshot'])) { $t .= "\n\nScreenshot saved: " . $j['screenshot']; }
             return ['ok' => empty($j['errors']), 'text' => $t, 'meta' => ['screenshot' => (string)($j['screenshot'] ?? ''), 'url' => $url]];
         }
+        case 'deploy_site': {
+            if (empty($ctx['uid'])) { return ['ok' => false, 'text' => 'deploy_site is not available here.']; }
+            return host_deploy_tool($cfg, $sid, (string)$ctx['uid'], $input);
+        }
         case 'full_internet': {
             $m = sbx_move_to_vercel($cfg, $sid);
             if (empty($m['ok'])) { return ['ok' => false, 'text' => 'Could not switch to the full-internet sandbox: ' . (string)($m['error'] ?? '') . '. Continue on the current sandbox (use web_search / read_url for the web).']; }
@@ -708,4 +714,152 @@ function sbx_secret_mask($v, array $vals) {
     }
     if (is_array($v)) { foreach ($v as $k => $x) { $v[$k] = sbx_secret_mask($x, $vals); } }
     return $v;
+}
+
+/* ═════════════ File viewer: /sbx-view/{token}/{path} ═════════════
+   Serves files from a chat's sandbox with their real folder layout, so an HTML file's own CSS / JS /
+   images load (the old viewer showed one file alone → pages looked unstyled). The token is signed and
+   short-lived (no cookies needed — the viewer iframe has an opaque origin). Every response except PDF
+   carries a CSP sandbox, so agent-made pages never run with Devil AI's origin. */
+function sbx_view_key(array $cfg): string {
+    $k = (string)($cfg['sandbox_secret'] ?? '');
+    if ($k === '') { $k = (string)($cfg['daytona_api_key'] ?? '') . '|' . (string)($cfg['vercel_token'] ?? ''); }
+    return hash('sha256', 'sbx-view|' . $k);
+}
+function sbx_view_token(array $cfg, string $sid, int $ttl = 21600): string {
+    $p = $sid . '.' . base_convert((string)(time() + $ttl), 10, 36);
+    return $p . '.' . substr(hash_hmac('sha256', $p, sbx_view_key($cfg)), 0, 22);
+}
+function sbx_view_check(array $cfg, string $tok): string {
+    if (!preg_match('/^(s[a-f0-9]{31})\.([a-z0-9]{4,10})\.([a-f0-9]{22})$/', $tok, $m)) { return ''; }
+    if (!hash_equals(substr(hash_hmac('sha256', $m[1] . '.' . $m[2], sbx_view_key($cfg)), 0, 22), $m[3])) { return ''; }
+    if ((int)base_convert($m[2], 36, 10) < time()) { return ''; }
+    return $m[1];
+}
+function sbx_view_mime(string $path): string {
+    static $m = ['html' => 'text/html; charset=utf-8', 'htm' => 'text/html; charset=utf-8', 'css' => 'text/css; charset=utf-8', 'js' => 'text/javascript; charset=utf-8',
+        'mjs' => 'text/javascript; charset=utf-8', 'json' => 'application/json; charset=utf-8', 'map' => 'application/json', 'wasm' => 'application/wasm',
+        'svg' => 'image/svg+xml', 'png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp', 'avif' => 'image/avif',
+        'bmp' => 'image/bmp', 'ico' => 'image/x-icon', 'pdf' => 'application/pdf', 'mp3' => 'audio/mpeg', 'wav' => 'audio/wav', 'ogg' => 'audio/ogg', 'oga' => 'audio/ogg',
+        'm4a' => 'audio/mp4', 'aac' => 'audio/aac', 'flac' => 'audio/flac', 'opus' => 'audio/ogg', 'mp4' => 'video/mp4', 'm4v' => 'video/mp4', 'webm' => 'video/webm', 'ogv' => 'video/ogg', 'mov' => 'video/quicktime',
+        'woff' => 'font/woff', 'woff2' => 'font/woff2', 'ttf' => 'font/ttf', 'otf' => 'font/otf', 'xml' => 'application/xml; charset=utf-8', 'webmanifest' => 'application/manifest+json',
+        'txt' => 'text/plain; charset=utf-8', 'csv' => 'text/plain; charset=utf-8', 'md' => 'text/plain; charset=utf-8'];
+    $e = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    return $m[$e] ?? 'text/plain; charset=utf-8';
+}
+/** Word / Excel / PowerPoint → a simple readable HTML page (no ZipArchive on the server: PharData reads zips) */
+function sbx_office_html(string $data, string $ext, string $title): string {
+    $tmp = sys_get_temp_dir() . '/devil_office_' . bin2hex(random_bytes(6)) . '.zip';
+    file_put_contents($tmp, $data);
+    $read = static function (string $inner) use ($tmp): string {
+        $f = 'phar://' . $tmp . '/' . $inner;
+        return is_file($f) ? (string)@file_get_contents($f) : '';
+    };
+    $esc = static function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); };
+    $body = '';
+    try {
+        new PharData($tmp);
+        if ($ext === 'docx') {
+            $x = $read('word/document.xml');
+            preg_match_all('#<w:p[ >].*?</w:p>#s', $x, $ps);
+            foreach ($ps[0] as $p) {
+                preg_match_all('#<w:t[^>]*>(.*?)</w:t>#s', $p, $ts);
+                $t = html_entity_decode(implode('', $ts[1]), ENT_QUOTES | ENT_XML1, 'UTF-8');
+                $hd = preg_match('#<w:pStyle w:val="(Heading|Title)(\d?)"#', $p, $hm);
+                if (trim($t) === '') { $body .= '<div style="height:.6em"></div>'; continue; }
+                $body .= $hd ? '<h' . max(1, min(4, (int)($hm[2] ?: 1))) . '>' . $esc($t) . '</h' . max(1, min(4, (int)($hm[2] ?: 1))) . '>' : '<p>' . $esc($t) . '</p>';
+            }
+        } elseif ($ext === 'xlsx') {
+            $ss = [];
+            if (preg_match_all('#<si>(.*?)</si>#s', $read('xl/sharedStrings.xml'), $sm)) {
+                foreach ($sm[1] as $si) { preg_match_all('#<t[^>]*>(.*?)</t>#s', $si, $tt); $ss[] = html_entity_decode(implode('', $tt[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'); }
+            }
+            for ($n = 1; $n <= 3; $n++) {
+                $x = $read('xl/worksheets/sheet' . $n . '.xml');
+                if ($x === '') { break; }
+                $body .= '<h3>Sheet ' . $n . '</h3><div class="tw"><table>';
+                preg_match_all('#<row[^>]*>(.*?)</row>#s', $x, $rows);
+                foreach (array_slice($rows[1], 0, 300) as $ri => $row) {
+                    preg_match_all('#<c r="([A-Z]+)\d+"([^>]*?)(?:/>|>(.*?)</c>)#s', $row, $cs, PREG_SET_ORDER);
+                    $cells = [];
+                    foreach ($cs as $c) {
+                        $col = 0; foreach (str_split($c[1]) as $ch) { $col = $col * 26 + (ord($ch) - 64); }
+                        if ($col > 40) { continue; }
+                        $v = preg_match('#<v>(.*?)</v>#s', (string)($c[3] ?? ''), $vm) ? $vm[1] : (preg_match('#<t[^>]*>(.*?)</t>#s', (string)($c[3] ?? ''), $im) ? $im[1] : '');
+                        if (strpos($c[2], 't="s"') !== false) { $v = $ss[(int)$v] ?? ''; } else { $v = html_entity_decode($v, ENT_QUOTES | ENT_XML1, 'UTF-8'); }
+                        $cells[$col] = $v;
+                    }
+                    $max = $cells ? max(array_keys($cells)) : 0;
+                    $tag = $ri === 0 ? 'th' : 'td';
+                    $body .= '<tr>'; for ($i = 1; $i <= $max; $i++) { $body .= "<{$tag}>" . $esc($cells[$i] ?? '') . "</{$tag}>"; } $body .= '</tr>';
+                }
+                $body .= '</table></div>';
+            }
+        } elseif ($ext === 'pptx') {
+            for ($n = 1; $n <= 60; $n++) {
+                $x = $read('ppt/slides/slide' . $n . '.xml');
+                if ($x === '') { break; }
+                preg_match_all('#<a:p>(.*?)</a:p>#s', $x, $ps);
+                $body .= '<section><div class="sn">Slide ' . $n . '</div>';
+                foreach ($ps[1] as $i => $p) {
+                    preg_match_all('#<a:t>(.*?)</a:t>#s', $p, $ts);
+                    $t = trim(html_entity_decode(implode('', $ts[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
+                    if ($t !== '') { $body .= $i === 0 ? '<h3>' . $esc($t) . '</h3>' : '<p>' . $esc($t) . '</p>'; }
+                }
+                $body .= '</section>';
+            }
+        }
+    } catch (Throwable $e) {
+        $body = '<p>Could not read this file (' . $esc($e->getMessage()) . ').</p>';
+    }
+    @unlink($tmp);
+    if ($body === '') { $body = '<p>No readable text found in this file.</p>'; }
+    return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . $esc($title) . '</title><style>'
+        . 'body{font:15px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:28px;background:#fff;color:#1f2328}h1,h2,h3,h4{margin:.8em 0 .3em}p{margin:.35em 0}'
+        . '.tw{overflow:auto;border:1px solid #d0d7de;border-radius:8px;margin-bottom:18px}table{border-collapse:collapse;font-size:13px}th,td{border:1px solid #e5e7eb;padding:5px 9px;white-space:nowrap;text-align:left}th{background:#f6f8fa}'
+        . 'section{border:1px solid #d0d7de;border-radius:10px;padding:14px 18px;margin-bottom:14px}.sn{font-size:11px;color:#57606a;text-transform:uppercase;letter-spacing:.05em}'
+        . '@media(prefers-color-scheme:dark){body{background:#1e1e1e;color:#e6e6e6}th{background:#2a2a2a}th,td{border-color:#3a3a3a}.tw,section{border-color:#3a3a3a}}</style></head><body>' . $body . '</body></html>';
+}
+/** handle GET sbx-view/{token}/{path} (exits) */
+function sbx_view_serve(array $cfg, string $tok, string $path): void {
+    $sid = sbx_view_check($cfg, $tok);
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: no-referrer');
+    header('Cache-Control: private, no-store');
+    if ($sid === '') { http_response_code(403); header('Content-Type: text/plain'); echo 'This preview link expired — reopen the file.'; exit; }
+    $path = str_replace(["\0", '\\'], ['', '/'], $path);
+    $path = (string)preg_replace('#/+#', '/', ltrim($path, '/'));
+    foreach (explode('/', $path) as $seg) { if ($seg === '..') { http_response_code(400); exit; } }
+    if ($path === '' || substr($path, -1) === '/') { $path .= 'index.html'; }
+    $as = (string)($_GET['as'] ?? '');
+    $r = sbx_read($cfg, $sid, $path);
+    if (empty($r['ok']) && pathinfo($path, PATHINFO_EXTENSION) === '') {
+        $r2 = sbx_read($cfg, $sid, $path . '/index.html');
+        if (!empty($r2['ok'])) { header('Location: ' . basename($path) . '/', true, 302); exit; }
+    }
+    if (empty($r['ok'])) {
+        http_response_code((int)($r['status'] ?? 0) === 404 ? 404 : 502);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo (int)($r['status'] ?? 0) === 404 ? 'Not found: ' . $path : 'The sandbox is waking up — reload in a few seconds.';
+        exit;
+    }
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    $data = (string)$r['data'];
+    $csp = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox";
+    if ($as === 'html' && in_array($ext, ['docx', 'xlsx', 'pptx'], true)) {
+        header('Content-Type: text/html; charset=utf-8');
+        header("Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'");
+        echo sbx_office_html($data, $ext, basename($path));
+        exit;
+    }
+    $ct = sbx_view_mime($path);
+    if ($ext !== 'pdf') { header('Content-Security-Policy: ' . $csp); }
+    if (strpos($ct, 'text/html') === 0) {
+        /* root-relative links ("/style.css") → relative to this page's folder */
+        $data = (string)preg_replace('#(\s(?:src|href|action|poster)\s*=\s*["\'])/(?!/)#i', '$1./', $data);
+    }
+    header('Content-Type: ' . $ct);
+    header('Content-Length: ' . strlen($data));
+    echo $data;
+    exit;
 }

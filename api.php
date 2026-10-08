@@ -2716,10 +2716,17 @@ try {
         json_out(['ok' => true, 'reply' => $txt]);
     }
 
+    /* sandbox file viewer (signed short-lived token, no cookies: the viewer iframe has an opaque origin) */
+    if ($action === 'sbx_view' && ($method === 'GET' || $method === 'HEAD')) {
+        $cfgV = load_config();
+        if (!sbx_enabled($cfgV)) { http_response_code(503); exit; }
+        sbx_view_serve($cfgV, (string)($_GET['t'] ?? ''), (string)($_GET['p'] ?? ''));
+    }
+
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+    if (in_array($action, ['host_get', 'host_save', 'host_test', 'host_delete', 'chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -2727,6 +2734,22 @@ try {
     /* Release the PHP session lock before chat/file/AI work so parallel requests
        (chat_load + sidebar list, or page refresh + API calls) do not block each other. */
     if ($action !== 'account_delete' && session_status() === PHP_SESSION_ACTIVE) { @session_write_close(); }
+
+    /* ─── Hosting (FTP / SFTP): the user's own server for the agent's deploy_site tool ─── */
+    if (in_array($action, ['host_get', 'host_save', 'host_test', 'host_delete'], true)) {
+        require_once __DIR__ . '/inc/hosting.php';
+        if ($action === 'host_get') { json_out(['ok' => true, 'hosting' => host_public(host_load($uid)), 'caps' => host_caps()]); }
+        if ($method !== 'POST') { json_out(['ok' => false, 'error' => 'POST required.'], 405); }
+        $in = input_json();
+        if ($action === 'host_delete') { host_delete($uid); json_out(['ok' => true]); }
+        list($h, $err) = host_validate($in, host_load($uid));
+        if (!$h) { json_out(['ok' => false, 'error' => $err], 400); }
+        if ($action === 'host_test') { $t = host_test($h); json_out($t + ['ok' => false]); }
+        $t = !empty($in['skip_test']) ? ['ok' => true] : host_test($h);
+        if (empty($t['ok'])) { json_out(['ok' => false, 'error' => 'Not saved — ' . (string)($t['error'] ?? 'connection failed')], 400); }
+        if (!host_save($uid, $h)) { json_out(['ok' => false, 'error' => 'Could not save the settings.'], 500); }
+        json_out(['ok' => true, 'hosting' => host_public($h), 'note' => (string)($t['note'] ?? '')]);
+    }
 
     if ($action === 'security_sessions' && $method === 'GET') {
         $all = devil_security_store_read('sessions'); $mine = []; $hash = substr(hash('sha256', $uid), 0, 32); $current = devil_security_session_id();
@@ -3352,7 +3375,7 @@ try {
 
     /* ═════════ Agent Mode v2: step-driven jobs + per-chat sandbox ═════════ */
 
-    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         $cfgAll = load_config();
         $sbxOn = sbx_enabled($cfgAll);
         $GLOBALS['DEVIL_SCRUB_SBX'] = $cfgAll + ['_' => 1];
@@ -3597,7 +3620,7 @@ try {
             }
             $sbxCtx = null;
             if (!empty($job['sandbox']) && $sbxOn) {
-                $sbxCtx = ['cfg' => $cfgAll, 'sid' => (string)$job['sid']];
+                $sbxCtx = ['cfg' => $cfgAll, 'sid' => (string)$job['sid'], 'uid' => $uid];
             }
             /* agent prompts carry tool instructions + tool output: allow a much larger prompt than chat */
             /* one agent step = one model call or one tool: keep it well inside the 100s proxy limit */
@@ -3628,6 +3651,9 @@ try {
         $q = $method === 'GET' ? $_GET : input_json();
         $sid = $sbxSidFor((string)($q['id'] ?? ''), !empty($q['temp']));
 
+        if ($action === 'sbx_view_token') {
+            json_out(['ok' => true, 'base' => 'sbx-view/' . sbx_view_token($cfgAll, $sid) . '/', 'ttl' => 21600]);
+        }
         if ($action === 'agent_secret' && $method === 'POST') {
             $r = sbx_secret_set($cfgAll, $sid, (string)($q['name'] ?? ''), (string)($q['value'] ?? ''));
             json_out($r + ['ok' => false], !empty($r['ok']) ? 200 : 400);
