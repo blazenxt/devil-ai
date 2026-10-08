@@ -36,6 +36,12 @@ Options -Indexes -MultiViews
   RewriteRule ^agent/?$ app.php?mode=agent [L,QSA]
   RewriteRule ^agent/([A-Fa-f0-9]{128})/?$ app.php?mode=agent&chat=$1 [L,QSA]
 
+  # Battle modes: /battle, /battle/{slug}, /side-by-side, /side-by-side/{slug}
+  RewriteRule ^battle/?$ app.php?mode=battle [L,QSA]
+  RewriteRule ^battle/([A-Fa-f0-9]{128})/?$ app.php?mode=battle&chat=$1 [L,QSA]
+  RewriteRule ^side-by-side/?$ app.php?mode=sbs [L,QSA]
+  RewriteRule ^side-by-side/([A-Fa-f0-9]{128})/?$ app.php?mode=sbs&chat=$1 [L,QSA]
+
   # Developer API (OpenAI-compatible)
   RewriteRule ^v1/models/?$ api.php?action=dev_models [L,QSA]
   RewriteRule ^v1/chat/completions/?$ api.php?action=dev_chat_completions [L,QSA]

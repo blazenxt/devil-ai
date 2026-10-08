@@ -26,7 +26,25 @@ $APP_BASE_PATH = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_
 if ($APP_BASE_PATH === '.' || $APP_BASE_PATH === '/') { $APP_BASE_PATH = ''; }
 if (!$me) { header('Location: ' . ($APP_BASE_PATH ?: '') . '/login.php'); exit; }
 /* /agent and /agent/{slug} are rewritten to app.php?mode=agent */
-$ROUTE_MODE = (($_GET['mode'] ?? '') === 'agent') ? 'agent' : 'ai';
+$ROUTE_MODE = in_array((string)($_GET['mode'] ?? ''), ['agent', 'battle', 'sbs'], true) ? (string)$_GET['mode'] : 'ai';
+/* Pro-style modes (order matches the reference site): Battle, Agent, Side by Side, Direct (AI Mode) */
+$MODE_DEFS = [
+    'battle' => ['label' => 'Battle Mode',  'chip' => 'Battle',       'icon' => 'swords',  'desc' => 'Battle 2 anonymous models — vote, then names are revealed'],
+    'agent'  => ['label' => 'Agent Mode',   'chip' => 'Agent',        'icon' => 'spark',   'desc' => 'Built for complex tasks — searches the web, reads pages, calculates'],
+    'sbs'    => ['label' => 'Side by Side', 'chip' => 'Side by Side', 'icon' => 'columns', 'desc' => 'Compare 2 models of your choice'],
+    'ai'     => ['label' => 'AI Mode',      'chip' => 'Direct',       'icon' => 'message', 'desc' => 'Direct — chat with 1 model at a time'],
+];
+$IS_CMP = ($ROUTE_MODE === 'battle' || $ROUTE_MODE === 'sbs');
+function mode_options_html(array $defs, string $cur): string {
+    $h = '';
+    foreach ($defs as $id => $d) {
+        $on = $id === $cur;
+        $h .= '<button class="modeopt' . ($on ? ' on' : '') . '" type="button" role="menuitemradio" data-mode="' . $id . '" aria-checked="' . ($on ? 'true' : 'false') . '">'
+            . '<span class="mic">' . icon($d['icon'], 17) . '</span><span class="mtx"><b>' . htmlspecialchars($d['label']) . '</b><small>' . htmlspecialchars($d['desc']) . '</small></span>'
+            . '<span class="mck">' . icon('check', 16) . '</span></button>';
+    }
+    return $h;
+}
 
 $JS_ICONS = [
     'send' => icon('send', 17), 'stop' => icon('stop', 17), 'copy' => icon('copy', 15), 'retry' => icon('retry', 15),
@@ -43,6 +61,10 @@ $JS_ICONS = [
     'globe' => icon('globe', 14), 'spark' => icon('spark', 15), 'calc' => icon('calculator', 14), 'clock' => icon('clock', 14),
     'link' => icon('link', 14), 'fileText' => icon('file-text', 14), 'brainS' => icon('brain', 14), 'chevR' => icon('chevron-right', 13),
     'layers' => icon('layers', 15), 'brain' => icon('brain', 15), 'server' => icon('server', 15),
+    'swords' => icon('swords', 15), 'columns' => icon('columns', 15), 'trophy' => icon('trophy', 16), 'maximize' => icon('maximize', 14),
+    'shuffle' => icon('shuffle', 15), 'arrowL' => icon('arrow-left', 15), 'arrowR' => icon('arrow-right', 15), 'arrowD' => icon('arrow-down', 17),
+    'equal' => icon('equal', 15), 'sparkM' => icon('spark', 17), 'swordsM' => icon('swords', 17), 'columnsM' => icon('columns', 17), 'messageM' => icon('message', 15),
+    'swordsS' => icon('swords', 13), 'columnsS' => icon('columns', 13), 'sparkS' => icon('spark', 13), 'chevS' => icon('chevron-down', 13),
 ];
 ?><!DOCTYPE html>
 <html lang="en">
@@ -513,9 +535,9 @@ body.devil-ui .modebtn{height:36px;gap:7px;padding:0 10px;border-radius:9px;bord
 body.devil-ui .modebtn:hover,body.devil-ui .modesw.open .modebtn{background:var(--ag-hover)!important;border-color:transparent}
 body.devil-ui .modebtn img{width:20px;height:20px;filter:none}
 body.devil-ui .modebtn .mtag{display:none}
-body.agent-mode .modebtn img,body.agent-mode .modebtn .mname{display:none}
+body.alt-mode .modebtn img,body.alt-mode .modebtn .mname{display:none}
 .modebtn .aglabel{display:none;align-items:center;gap:7px}
-body.agent-mode .modebtn .aglabel{display:inline-flex}
+body.alt-mode .modebtn .aglabel{display:inline-flex}
 .aglabel .agspark{display:inline-flex;color:var(--ag-accent)}
 body.devil-ui .modebtn .mchev{color:var(--dim)}
 @media (max-width:900px){ body.devil-ui .modesw{left:52px} }
@@ -685,9 +707,130 @@ a.ws-item:hover{background:var(--ag-hover)}
 .ws-stat b{display:block;font-size:1.1rem;color:var(--text);font-weight:600}
 .ws-stat span{font-size:.72rem;color:var(--dim2)}
 @media (max-width:900px){ #wsPanel{width:100%} }
+
+/* ═══════════ BATTLE MODES: Battle + Side by Side, leaderboard, chat upgrades ═══════════ */
+.sbnav{display:flex;align-items:center;gap:9px;width:calc(100% - 24px);margin:6px 12px 0;padding:8px 12px;border-radius:10px;color:var(--dim);font-size:.86rem;font-weight:500;transition:.12s}
+.sbnav:hover{background:var(--ag-hover,rgba(255,255,255,.06));color:var(--text)}
+.chatitem .cmode{display:inline-flex;color:var(--dim2);flex-shrink:0}
+.chatitem.on .cmode,.chatitem:hover .cmode{color:var(--text)}
+body.alt-mode .modebtn .agspark{color:var(--ag-accent)}
+body.cmp-mode .modebtn .agspark{color:var(--text)}
+
+/* header chat title (centered, like Battle's conversation header) */
+.m-top .ctitle{display:none}
+@media (min-width:901px){
+  body.devil-ui .m-top .ctitle{display:block;position:absolute;left:50%;top:26px;z-index:5;transform:translate(-50%,-50%);max-width:min(46%,520px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.86rem;font-weight:500;color:var(--dim);pointer-events:none}
+}
+
+/* composer: compare-mode controls */
+.cmpchip,.cmppick{display:none}
+body.cmp-mode #modelBtn,body.cmp-mode #customWrap,body.cmp-mode #attachBtn,body.cmp-mode #voiceBtn{display:none!important}
+body.battle-mode .cmpchip{display:inline-flex}
+body.sbs-mode .cmppick{display:block}
+.cmpchip{align-items:center;gap:6px;height:32px;padding:0 9px;border-radius:8px;color:var(--dim);font-size:.82rem;font-weight:500;white-space:nowrap;order:3;cursor:default}
+.cmppick{position:relative;order:3}
+#cmpPickB{order:4}
+.cmpbtn{height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;border-radius:8px;color:var(--text);font-size:.82rem;font-weight:500;white-space:nowrap;max-width:190px}
+.cmpbtn .lb{overflow:hidden;text-overflow:ellipsis}
+.cmpbtn svg{color:var(--dim);flex-shrink:0}
+.cmpbtn:hover,.cmppick.open .cmpbtn{background:var(--ag-hover)}
+.cmpab{width:18px;height:18px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;font-size:.66rem;font-weight:800;background:var(--panel3);color:var(--text);flex-shrink:0}
+.cmpmenu{display:none;position:absolute;bottom:calc(100% + 8px);left:0;width:250px;max-height:320px;overflow:auto;padding:6px;z-index:80;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.18)}
+body.devil-ui.agent-empty .cmpmenu{bottom:auto;top:calc(100% + 8px)}
+.cmppick.open .cmpmenu{display:block;animation:rise .16s ease}
+.cmpmenu .mhead{padding:8px 10px 6px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2)}
+.cmpopt{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border-radius:8px;font-size:.84rem;color:var(--text);text-align:left}
+.cmpopt:hover{background:var(--ag-hover)}
+.cmpopt.on{background:var(--panel2);font-weight:600}
+.cmpopt .oi{display:inline-flex;color:var(--dim)}
+.cmpopt .ock{margin-left:auto;display:none}
+.cmpopt.on .ock{display:inline-flex}
+@media (max-width:600px){
+  body.devil-ui.agent-empty .cmpmenu{top:auto;bottom:calc(100% + 8px)}
+  .cmpchip .lb{display:none}
+  .cmpbtn{max-width:118px}
+  .cmpmenu{position:fixed;left:12px;right:12px;width:auto;bottom:150px}
+  body.sbs-mode #promptBtn{display:none}
+}
+
+/* wider thread for two-column answers */
+body.cmp-mode #thread{max-width:1180px}
+body.cmp-mode .msg-user{max-width:740px;margin-left:auto;margin-right:auto}
+body.cmp-mode .msg-user .bub{margin-left:auto}
+body.cmp-mode .compbox{max-width:760px}
+
+.cmp-turn{margin:6px 0 26px}
+.cmp-tabs{display:none}
+@media (max-width:760px){
+  .cmp-tabs{display:flex;gap:4px;padding:3px;margin:0 0 10px;border-radius:10px;background:var(--panel2);border:1px solid var(--border)}
+  .cmp-tabs button{flex:1;min-width:0;height:30px;border-radius:7px;font-size:.78rem;font-weight:600;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px}
+  .cmp-tabs button.on{background:var(--panel);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+}
+.cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.cmp-col{min-width:0;border:1px solid var(--border);border-radius:14px;background:var(--panel);overflow:hidden;transition:border-color .2s,box-shadow .2s}
+[data-theme=light] .cmp-col{background:#fff}
+.cmp-col.win{border-color:var(--text);box-shadow:0 0 0 1px var(--text)}
+.cmp-col.lose{opacity:.78}
+.cmp-head{display:flex;align-items:center;gap:8px;padding:9px 10px 9px 12px;border-bottom:1px solid var(--border);font-size:.8rem}
+.cmp-head .cmpab{width:20px;height:20px}
+.cmp-name{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.78rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp-col.revealed .cmp-name{font-family:inherit;font-size:.82rem;font-weight:600;color:var(--text)}
+.cmp-time{color:var(--dim2);font-size:.72rem;white-space:nowrap}
+.cmp-head .sp{flex:1}
+.cmp-ibtn{width:28px;height:28px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:var(--dim);flex-shrink:0}
+.cmp-ibtn:hover{background:var(--ag-hover);color:var(--text)}
+.cmp-ibtn[hidden]{display:none}
+.cmp-body{padding:12px 14px 14px;max-height:62vh;overflow:auto}
+.cmp-body .content{font-size:.9rem;line-height:1.68;color:var(--text)}
+.cmp-body .content > :first-child{margin-top:0}
+.cmp-wait{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:.86rem}
+.cmp-wait .shim{background:linear-gradient(90deg,var(--dim2),var(--text),var(--dim2));background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:cmpShim 1.6s linear infinite}
+@keyframes cmpShim{to{background-position:-200% 0}}
+.cmp-err{color:var(--dim);font-size:.86rem;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.cmp-err button{border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:.8rem;color:var(--text)}
+.cmp-err button:hover{background:var(--ag-hover)}
+
+.cmp-vote{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:14px}
+.cmp-vote[hidden]{display:none}
+.cmp-vote button{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:.85rem;font-weight:500;transition:.14s}
+.cmp-vote button:hover{border-color:var(--border-hi);background:var(--panel2);transform:translateY(-1px)}
+.cmp-vote button svg{color:var(--dim)}
+.cmp-vote .vq{width:100%;text-align:center;font-size:.8rem;color:var(--dim2);margin-bottom:2px}
+.cmp-result{display:none;margin-top:12px;text-align:center;font-size:.84rem;color:var(--dim)}
+.cmp-result.show{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px}
+.cmp-result .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);color:var(--text);font-weight:500}
+.cmp-result .pill b{font-weight:700}
+.cmp-result button{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;background:var(--text);color:var(--bg);font-weight:600;font-size:.82rem}
+@media (max-width:760px){
+  .cmp-grid{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:10px;margin:0 -14px;padding:0 14px 4px;scrollbar-width:none}
+  .cmp-grid::-webkit-scrollbar{display:none}
+  .cmp-col{flex:0 0 86%;scroll-snap-align:center}
+  .cmp-body{max-height:none}
+  .cmp-vote button{flex:1 1 calc(50% - 8px);justify-content:center;padding:0 8px}
+}
+
+/* modals */
+.lbsheet{max-width:640px!important;width:calc(100vw - 32px)}
+.lbbody{margin-top:12px;max-height:56vh;overflow:auto;border:1px solid var(--border);border-radius:12px}
+.lbtable{width:100%;border-collapse:collapse;font-size:.85rem}
+.lbtable th{position:sticky;top:0;background:var(--panel2);text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:9px 12px;font-weight:700}
+.lbtable td{padding:10px 12px;border-top:1px solid var(--border);color:var(--text)}
+.lbtable td.r{font-weight:700;color:var(--dim);width:44px}
+.lbtable td.n{font-weight:600}
+.lbtable td.s{font-variant-numeric:tabular-nums;font-weight:700}
+.lbtable td.d{color:var(--dim);font-variant-numeric:tabular-nums}
+.lbtable tr.top1 td.r{color:#d4a017}
+.lbempty{padding:22px;text-align:center;color:var(--dim);font-size:.86rem}
+.cmpsheet{max-width:860px!important;width:calc(100vw - 32px)}
+.cmpmodalbody{margin-top:10px;max-height:72vh;overflow:auto;font-size:.93rem;line-height:1.7}
+
+/* scroll-to-latest button (all modes) */
+#toBottom{position:absolute;left:50%;bottom:150px;transform:translate(-50%,10px);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--border);color:var(--text);box-shadow:0 6px 20px rgba(0,0,0,.12);opacity:0;pointer-events:none;transition:.18s;z-index:30}
+#toBottom.show{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
+#toBottom:hover{background:var(--panel2)}
 </style>
 </head>
-<body class="devil-ui<?= $ROUTE_MODE === 'agent' ? ' agent-mode' : '' ?><?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? ' loading-chat' : '' ?>">
+<body class="devil-ui<?= $ROUTE_MODE === 'agent' ? ' agent-mode' : '' ?><?= $ROUTE_MODE !== 'ai' ? ' alt-mode' : '' ?><?= $IS_CMP ? ' cmp-mode ' . $ROUTE_MODE . '-mode' : '' ?><?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? ' loading-chat' : '' ?>">
 
 <div id="app">
 
@@ -699,6 +842,7 @@ a.ws-item:hover{background:var(--ag-hover)}
       <button class="iconbtn" id="themeBtn" title="Switch theme"><?= icon('sun', 17) ?></button>
     </div>
     <button class="newchat" id="newChatBtn"><?= icon('square-pen', 17) ?> New chat</button>
+    <button class="sbnav" id="sbBoard" type="button"><?= icon('trophy', 16) ?> Leaderboard</button>
     <div class="sb-search"><?= icon('search', 15) ?><input id="searchInp" type="text" placeholder="Search chats…" autocomplete="off"></div>
     <nav id="chatList" aria-label="Chat history"></nav>
     <div class="sb-bottom">
@@ -723,8 +867,9 @@ a.ws-item:hover{background:var(--ag-hover)}
   <!-- Agent Mode icon rail (shown when the sidebar is collapsed) -->
   <nav id="agentRail" aria-label="Quick navigation">
     <button class="rbtn rtop" id="railOpen" type="button" title="Open sidebar"><?= icon('panel-left', 18) ?></button>
-    <button class="rbtn" id="railNew" type="button" title="New agent chat"><?= icon('square-pen', 17) ?></button>
+    <button class="rbtn" id="railNew" type="button" title="New chat"><?= icon('square-pen', 17) ?></button>
     <button class="rbtn" id="railHistory" type="button" title="Chat history"><?= icon('list', 17) ?></button>
+    <button class="rbtn" id="railBoard" type="button" title="Leaderboard"><?= icon('trophy', 17) ?></button>
     <span class="rsp"></span>
     <button class="rbtn" id="railTheme" type="button" title="Switch theme"><?= icon('sun', 17) ?></button>
     <button class="rbtn" id="railUser" type="button" title="Account"><span class="rav"><?= htmlspecialchars(strtoupper(mb_substr($me['name'], 0, 1))) ?></span></button>
@@ -735,25 +880,17 @@ a.ws-item:hover{background:var(--ag-hover)}
     <header class="m-top">
       <button class="iconbtn" id="sbOpen" title="Open sidebar"><?= icon('menu', 19) ?></button>
       <span class="brand"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</span>
+      <span class="ctitle" id="chatTitle"></span>
       <button class="iconbtn" id="themeBtnM" title="Switch theme"><?= icon('sun', 17) ?></button>
     </header>
 
-    <div class="modesw<?= $ROUTE_MODE === 'agent' ? ' agent' : '' ?>" id="modeSw">
-      <button class="modebtn" id="modeBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="Switch between AI Mode and Agent Mode">
-        <img src="assets/logo.svg" alt=""><span class="mname">Devil AI</span><span class="mtag" id="modeTag"><?= $ROUTE_MODE === 'agent' ? 'Agent' : 'AI' ?></span><span class="aglabel"><span class="agspark"><?= icon('spark', 17) ?></span>Agent Mode</span><span class="mchev"><?= icon('chevron-down', 15) ?></span>
+    <div class="modesw<?= $ROUTE_MODE !== 'ai' ? ' agent' : '' ?>" id="modeSw">
+      <button class="modebtn" id="modeBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="Switch mode">
+        <img src="assets/logo.svg" alt=""><span class="mname">Devil AI</span><span class="mtag" id="modeTag"><?= htmlspecialchars($MODE_DEFS[$ROUTE_MODE]['chip']) ?></span><span class="aglabel"><span class="agspark" id="agIco"><?= icon($MODE_DEFS[$ROUTE_MODE]['icon'], 17) ?></span><span id="agTxt"><?= htmlspecialchars($MODE_DEFS[$ROUTE_MODE]['label']) ?></span></span><span class="mchev"><?= icon('chevron-down', 15) ?></span>
       </button>
       <div class="modemenu" id="modeMenu" role="menu" aria-label="Chat mode">
         <div class="mhead">Choose mode</div>
-        <button class="modeopt<?= $ROUTE_MODE === 'ai' ? ' on' : '' ?>" type="button" role="menuitemradio" data-mode="ai" aria-checked="<?= $ROUTE_MODE === 'ai' ? 'true' : 'false' ?>">
-          <span class="mic"><?= icon('sparkles', 17) ?></span>
-          <span class="mtx"><b>AI Mode</b><small>Normal chat — fast, direct answers</small></span>
-          <span class="mck"><?= icon('check', 16) ?></span>
-        </button>
-        <button class="modeopt<?= $ROUTE_MODE === 'agent' ? ' on' : '' ?>" type="button" role="menuitemradio" data-mode="agent" aria-checked="<?= $ROUTE_MODE === 'agent' ? 'true' : 'false' ?>">
-          <span class="mic"><?= icon('brain', 17) ?></span>
-          <span class="mtx"><b>Agent Mode</b><small>Searches the web, reads pages and calculates before answering</small></span>
-          <span class="mck"><?= icon('check', 16) ?></span>
-        </button>
+        <?= mode_options_html($MODE_DEFS, $ROUTE_MODE) ?>
       </div>
     </div>
 
@@ -784,6 +921,7 @@ a.ws-item:hover{background:var(--ag-hover)}
       <div id="msgs"></div>
     </div></div>
 
+    <button id="toBottom" type="button" title="Scroll to latest" aria-label="Scroll to latest"><?= icon('arrow-down', 17) ?></button>
     <div id="composer">
       <div class="compbox">
         <div id="imgChip"></div>
@@ -794,13 +932,15 @@ a.ws-item:hover{background:var(--ag-hover)}
           <div class="modelwrap">
             <button id="attachBtn" title="Attach files" type="button"><?= icon('paperclip', 16) ?><span class="atxt">Add files</span></button>
             <div class="modechipwrap" id="modeChipWrap">
-              <button id="modeChip" type="button" title="Switch mode" aria-haspopup="menu" aria-expanded="false"><span class="mcc"><?= icon('message', 15) ?></span><span class="mcl">AI Mode</span><span class="mcc"><?= icon('chevron-down', 13) ?></span></button>
+              <button id="modeChip" type="button" title="Switch mode" aria-haspopup="menu" aria-expanded="false"><span class="mcc" id="modeChipIco"><?= icon($MODE_DEFS[$ROUTE_MODE]['icon'], 15) ?></span><span class="mcl" id="modeChipLbl"><?= htmlspecialchars($MODE_DEFS[$ROUTE_MODE]['chip']) ?></span><span class="mcc"><?= icon('chevron-down', 13) ?></span></button>
               <div class="modemenu2" role="menu" aria-label="Chat mode">
                 <div class="mhead">Choose mode</div>
-                <button class="modeopt on" type="button" role="menuitemradio" data-mode="ai" aria-checked="true"><span class="mic"><?= icon('sparkles', 17) ?></span><span class="mtx"><b>AI Mode</b><small>Normal chat — fast, direct answers</small></span><span class="mck"><?= icon('check', 16) ?></span></button>
-                <button class="modeopt" type="button" role="menuitemradio" data-mode="agent" aria-checked="false"><span class="mic"><?= icon('brain', 17) ?></span><span class="mtx"><b>Agent Mode</b><small>Searches the web, reads pages and calculates before answering</small></span><span class="mck"><?= icon('check', 16) ?></span></button>
+                <?= mode_options_html($MODE_DEFS, $ROUTE_MODE) ?>
               </div>
             </div>
+            <span id="cmpAuto" class="cmpchip" title="Two random Devil models are picked for every battle. Their names stay hidden until you vote."><?= icon('shuffle', 14) ?><span class="lb">Random models</span></span>
+            <div class="cmppick" id="cmpPickA" data-side="a"><button type="button" class="cmpbtn" aria-haspopup="menu"><span class="cmpab">A</span><span class="lb">Devil Flash</span><?= icon('chevron-down', 13) ?></button><div class="cmpmenu" role="menu"></div></div>
+            <div class="cmppick" id="cmpPickB" data-side="b"><button type="button" class="cmpbtn" aria-haspopup="menu"><span class="cmpab">B</span><span class="lb">Devil Pro</span><?= icon('chevron-down', 13) ?></button><div class="cmpmenu" role="menu"></div></div>
             <button id="voiceBtn" title="Live voice chat" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
             <button id="promptBtn" title="Prompt library" type="button"><?= icon('lightbulb', 16) ?></button>
             <div id="promptMenu"></div>
@@ -845,6 +985,20 @@ a.ws-item:hover{background:var(--ag-hover)}
     </div>
   </div>
 </div>
+
+<!-- ═══ leaderboard modal (Battle Mode votes) ═══ -->
+<div class="modal hidden" id="lbModal"><div class="sheet lbsheet">
+  <div class="shead"><h3><?= icon('trophy', 17) ?> Devil Battle Leaderboard</h3><button class="iconbtn" data-close="lbModal"><?= icon('x', 16) ?></button></div>
+  <p class="snote" id="lbNote">Rankings come from anonymous Battle Mode votes (Elo score).</p>
+  <div id="lbBody" class="lbbody"></div>
+  <div class="btnrow"><button class="btn primary" id="lbBattle" type="button"><?= icon('swords', 15) ?> Start a battle</button><button class="btn ghost" data-close="lbModal">Close</button></div>
+</div></div>
+
+<!-- ═══ compare answer full view ═══ -->
+<div class="modal hidden" id="cmpModal"><div class="sheet cmpsheet">
+  <div class="shead"><h3 id="cmpModalTitle">Assistant A</h3><button class="iconbtn" data-close="cmpModal"><?= icon('x', 16) ?></button></div>
+  <div class="content cmpmodalbody" id="cmpModalBody"></div>
+</div></div>
 
 <!-- ═══ rename modal ═══ -->
 <div class="modal hidden" id="renameModal"><div class="sheet">
@@ -900,27 +1054,50 @@ var models = [], modelById = {}, currentModel = 'flash';
 var customModels = [], customById = {}, currentCustom = 'devil-09';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages, temp?} */
 var busy = false, isTempChat = false, activeController = null, sendSeq = 0, inlineEdit = null, editRestoreChat = null;
-var agentMode = ROUTE_MODE === 'agent', agentEnabled = true;
-var WELCOME_TEXT = null;
-function newChatPath() { return agentMode ? 'agent' : 'app.php'; }
+var chatMode = ROUTE_MODE, agentMode = ROUTE_MODE === 'agent', agentEnabled = true;
+var BATTLE_POOL = [], battleById = {}, cmpA = 'flash', cmpB = 'pro', cmpFromChat = false;
+var MODE_INFO = {
+  battle: { label: 'Battle Mode', chip: 'Battle', icon: 'swordsM', chipIcon: 'swords', path: 'battle', seg: 'battle' },
+  agent:  { label: 'Agent Mode', chip: 'Agent', icon: 'sparkM', chipIcon: 'spark', path: 'agent', seg: 'agent' },
+  sbs:    { label: 'Side by Side', chip: 'Side by Side', icon: 'columnsM', chipIcon: 'columns', path: 'side-by-side', seg: 'side-by-side' },
+  ai:     { label: 'AI Mode', chip: 'Direct', icon: 'messageM', chipIcon: 'messageM', path: 'app.php', seg: '' }
+};
+var MODE_WELCOME = {
+  ai:     { h: 'What shall we <mark>summon</mark> today?', p: 'Pick a model in the chat box and ask me anything.' },
+  agent:  { h: 'What would you like to do?', p: 'Devil Agent searches the web, reads pages and calculates before answering.' },
+  battle: { h: 'Let the <mark>battle</mark> begin', p: 'Two anonymous Devil models answer side by side. Vote for the better one — then their names are revealed.' },
+  sbs:    { h: 'Compare <mark>side by side</mark>', p: 'Pick any two Devil models and see their answers next to each other.' }
+};
+function isCmp(m) { m = m || chatMode; return m === 'battle' || m === 'sbs'; }
+function setChatMode(m) { chatMode = MODE_INFO[m] ? m : 'ai'; agentMode = chatMode === 'agent'; }
+function newChatPath() { return MODE_INFO[chatMode].path; }
 function syncModeUI() {
   var sw = $('#modeSw'); if (!sw) { return; }
-  sw.classList.toggle('agent', agentMode);
-  var tag = $('#modeTag'); if (tag) { tag.textContent = agentMode ? 'Agent' : 'AI'; }
+  var info = MODE_INFO[chatMode];
+  sw.classList.toggle('agent', chatMode !== 'ai');
+  var tag = $('#modeTag'); if (tag) { tag.textContent = info.chip; }
+  var agI = $('#agIco'), agT = $('#agTxt');
+  if (agI) { agI.innerHTML = I[info.icon] || ''; }
+  if (agT) { agT.textContent = info.label; }
+  var ci = $('#modeChipIco'), cl = $('#modeChipLbl');
+  if (ci) { ci.innerHTML = I[info.chipIcon] || ''; }
+  if (cl) { cl.textContent = info.chip; }
   $$('.modeopt[data-mode]').forEach(function (o) {
-    var on = (o.dataset.mode === 'agent') === agentMode;
+    var on = o.dataset.mode === chatMode;
     o.classList.toggle('on', on);
     o.setAttribute('aria-checked', on ? 'true' : 'false');
     if (o.dataset.mode === 'agent') { o.disabled = !agentEnabled && !agentMode; }
   });
-  var h = $('#welcome h2'), p = $('#welcome .sub'), ta = $('#inp');
-  if (h && p && !WELCOME_TEXT) { WELCOME_TEXT = { h: h.textContent, p: p.textContent, ph: ta ? ta.placeholder : '' }; }
-  if (WELCOME_TEXT) {
-    if (agentMode) { h.textContent = 'What would you like to do?'; } else { h.innerHTML = 'What shall we <mark>summon</mark> today?'; }
-    p.textContent = agentMode ? 'Devil Agent searches the web, reads pages and calculates before answering.' : WELCOME_TEXT.p;
-    if (ta) { ta.placeholder = 'Ask anything…'; }
-  }
-  document.body.classList.toggle('agent-mode', agentMode);
+  var h = $('#welcome h2'), p = $('#welcome .sub');
+  var w = MODE_WELCOME[chatMode];
+  if (h) { h.innerHTML = w.h; }
+  if (p) { p.textContent = w.p; }
+  var bc = document.body.classList;
+  bc.toggle('agent-mode', agentMode);
+  bc.toggle('alt-mode', chatMode !== 'ai');
+  bc.toggle('cmp-mode', isCmp());
+  bc.toggle('battle-mode', chatMode === 'battle');
+  bc.toggle('sbs-mode', chatMode === 'sbs');
   if (!agentMode) { setWorkspace(false); }
   syncEmptyState();
   if (typeof renderWorkspace === 'function') { renderWorkspace(); }
@@ -929,6 +1106,8 @@ function syncEmptyState() {
   var m = document.getElementById('msgs');
   var empty = !!m && !m.children.length && !document.body.classList.contains('loading-chat');
   document.body.classList.toggle('agent-empty', empty);
+  var ta = document.getElementById('inp');
+  if (ta) { ta.placeholder = empty ? 'Ask anything…' : 'Ask followup…'; }
 }
 function setWorkspace(open) {
   var p = document.getElementById('wsPanel'), b = document.getElementById('wsBtn');
@@ -943,26 +1122,33 @@ function setModeMenu(open) {
   sw.classList.toggle('open', open);
   $('#modeBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
 }
+var MODE_TOAST = {
+  ai: ['AI Mode — chat with 1 model at a time', 'sparkles'],
+  agent: ['Agent Mode — I can search the web, read pages and calculate', 'check'],
+  battle: ['Battle Mode — 2 anonymous models answer, you pick the winner', 'swords'],
+  sbs: ['Side by Side — choose 2 models and compare their answers', 'columns']
+};
 function chooseMode(mode) {
-  var wantAgent = mode === 'agent';
+  if (!MODE_INFO[mode]) { return; }
   setModeMenu(false);
   if (window.__devilCloseModeChip) { window.__devilCloseModeChip(); }
-  if (wantAgent === agentMode) { return; }
-  if (wantAgent && !agentEnabled) { toast('Agent Mode is currently disabled', 'warning'); return; }
+  if (mode === chatMode) { return; }
+  if (mode === 'agent' && !agentEnabled) { toast('Agent Mode is currently disabled', 'warning'); return; }
   if (busy) { toast('Pause the response before switching mode', 'warning'); return; }
   var hasSaved = currentChat && !isTempChat && currentChat.messages && currentChat.messages.length;
-  if (hasSaved) {
+  if (hasSaved || (isTempChat && isCmp(mode))) {
     /* a saved chat keeps its mode — switching starts a fresh chat in the other mode */
-    window.location.href = wantAgent ? 'agent' : 'app.php';
+    window.location.href = MODE_INFO[mode].path;
     return;
   }
-  agentMode = wantAgent;
+  setChatMode(mode);
   syncModeUI();
+  updateChatActions();
   if (window.history) {
     var q = isTempChat ? '?temp=1' : '';
-    history.replaceState(null, '', (agentMode ? 'agent' : 'app.php') + q);
+    history.replaceState(null, '', MODE_INFO[mode].path + q);
   }
-  toast(agentMode ? 'Agent Mode — I can search the web, read pages and calculate' : 'AI Mode — normal chat', agentMode ? 'check' : 'sparkles');
+  toast(MODE_TOAST[mode][0], MODE_TOAST[mode][1]);
 }
 (function () {
   var btn = $('#modeBtn'); if (!btn) { return; }
@@ -972,11 +1158,46 @@ function chooseMode(mode) {
   });
   var chip = $('#modeChip'), chipWrap = $('#modeChipWrap');
   function setChip(open) { if (!chipWrap) { return; } chipWrap.classList.toggle('open', open); chip.setAttribute('aria-expanded', open ? 'true' : 'false'); }
-  if (chip) { chip.addEventListener('click', function (e) { e.stopPropagation(); setModeMenu(false); setChip(!chipWrap.classList.contains('open')); }); }
-  document.addEventListener('click', function (e) { if (!e.target.closest('#modeSw')) { setModeMenu(false); } if (!e.target.closest('#modeChipWrap')) { setChip(false); } });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setModeMenu(false); setChip(false); } });
+  if (chip) { chip.addEventListener('click', function (e) { e.stopPropagation(); setModeMenu(false); closeCmpPickers(); setChip(!chipWrap.classList.contains('open')); }); }
+  document.addEventListener('click', function (e) { if (!e.target.closest('#modeSw')) { setModeMenu(false); } if (!e.target.closest('#modeChipWrap')) { setChip(false); } if (!e.target.closest('.cmppick')) { closeCmpPickers(); } });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setModeMenu(false); setChip(false); closeCmpPickers(); } });
   window.__devilCloseModeChip = function () { setChip(false); };
 })();
+
+/* ── Side by Side model pickers ── */
+function battleLabel(id) { return (battleById[id] || {}).label || (id === 'flash' ? 'Devil Flash' : (id === 'pro' ? 'Devil Pro' : 'Devil AI')); }
+function battleIcon(id) {
+  var m = battleById[id];
+  if (m && I[m.icon]) { return I[m.icon]; }
+  return '<img src="assets/logo.svg" width="15" height="15" alt="">';
+}
+function closeCmpPickers() { $$('.cmppick.open').forEach(function (w) { w.classList.remove('open'); }); }
+function renderCmpPickers() {
+  ['a', 'b'].forEach(function (s) {
+    var w = document.getElementById('cmpPick' + s.toUpperCase()); if (!w) { return; }
+    var cur = s === 'a' ? cmpA : cmpB;
+    w.querySelector('.lb').textContent = battleLabel(cur);
+    w.querySelector('.cmpbtn').title = 'Model ' + s.toUpperCase() + ': ' + battleLabel(cur);
+    w.querySelector('.cmpmenu').innerHTML = '<div class="mhead">Model ' + s.toUpperCase() + '</div>' + BATTLE_POOL.map(function (m) {
+      return '<button type="button" class="cmpopt' + (m.id === cur ? ' on' : '') + '" data-id="' + esc(m.id) + '"><span class="oi">' + battleIcon(m.id) + '</span><span>' + esc(m.label) + '</span><span class="ock">' + I.check + '</span></button>';
+    }).join('');
+  });
+}
+$$('.cmppick').forEach(function (w) {
+  w.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var opt = e.target.closest('.cmpopt');
+    if (opt) {
+      if (w.dataset.side === 'a') { cmpA = opt.dataset.id; store('devil_sbs_a', cmpA); } else { cmpB = opt.dataset.id; store('devil_sbs_b', cmpB); }
+      renderCmpPickers(); closeCmpPickers(); return;
+    }
+    if (e.target.closest('.cmpbtn')) {
+      var open = !w.classList.contains('open');
+      closeCmpPickers(); if (window.__devilCloseModeChip) { window.__devilCloseModeChip(); }
+      w.classList.toggle('open', open);
+    }
+  });
+});
 var personalOK = true;
 function rawCookie(name) {
   if (window.devilCookieGet) { return window.devilCookieGet(name); }
@@ -1053,7 +1274,7 @@ function cleanAppBasePath() {
 }
 function chatUrlFor(slug) {
   var base = cleanAppBasePath();
-  if (agentMode) { return base + '/agent/' + encodeURIComponent(slug); }
+  if (chatMode !== 'ai') { return base + '/' + MODE_INFO[chatMode].seg + '/' + encodeURIComponent(slug); }
   return base + '/chat/' + encodeURIComponent(seg(routeModel(), 'flash')) + '/' + encodeURIComponent(seg(routeType(), 'chat')) + '/' + encodeURIComponent(slug);
 }
 function replaceChatUrl() {
@@ -1064,7 +1285,7 @@ function replaceChatUrl() {
 function chatUrlForItem(c) {
   var base = cleanAppBasePath();
   var slug = (c && (c.slug || c.id)) || '';
-  if (c && c.mode === 'agent') { return base + '/agent/' + encodeURIComponent(slug); }
+  if (c && c.mode && c.mode !== 'ai' && MODE_INFO[c.mode]) { return base + '/' + MODE_INFO[c.mode].seg + '/' + encodeURIComponent(slug); }
   var m = (c && c.url_model) || 'flash';
   var t = (c && c.url_type) || 'chat';
   return base + '/chat/' + encodeURIComponent(seg(m, 'flash')) + '/' + encodeURIComponent(seg(t, 'chat')) + '/' + encodeURIComponent(slug);
@@ -1344,6 +1565,7 @@ function renderList(filter) {
     groups[k].forEach(function (c) {
       var isOn = currentChat && (currentChat.id === c.id || currentChat.root_id === c.id || (currentChat.slug && currentChat.slug === c.slug));
       html += '<div class="chatitem' + (isOn ? ' on' : '') + '" data-id="' + c.id + '" data-slug="' + (c.slug || '') + '">' +
+        (c.mode && c.mode !== 'ai' && MODE_INFO[c.mode] ? '<span class="cmode" title="' + MODE_INFO[c.mode].label + '">' + I[c.mode === 'battle' ? 'swordsS' : (c.mode === 'sbs' ? 'columnsS' : 'sparkS')] + '</span>' : '') +
         '<span class="t"></span><span class="act">' +
         '<button data-rename="' + c.id + '" title="Rename">' + I.pencil + '</button>' +
         '<button data-del="' + c.id + '" title="Delete">' + I.trash + '</button></span></div>';
@@ -1486,7 +1708,7 @@ function addUserMsg(text, img, meta) {
     var eb = actionBtn(I.pencil, 'Edit', 'Edit and regenerate from here', function () {
       beginEdit(meta.index, text, d);
     });
-    if (meta.index === undefined || isTempChat) { eb.hidden = true; }
+    if (meta.index === undefined || isTempChat || isCmp()) { eb.hidden = true; }
     acts.appendChild(eb);
     d.appendChild(acts);
   }
@@ -1635,6 +1857,7 @@ function renderCurrentMessages() {
   welcome.style.display = arr.length ? 'none' : '';
   arr.forEach(function (m, idx) {
     if (!m || !m.role) { return; }
+    if (m.compare) { renderCompareTurn(m, idx); return; }
     if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited, branchGroup: branchGroupFor(idx), attachments: m.attachments || [] }); }
     else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx }); if ((m.agent_steps && m.agent_steps.length) || m.agent_ms) { renderAgentTrace(el, m.agent_steps || [], m.agent_ms); } }
   });
@@ -2129,7 +2352,9 @@ document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && vo
 function updateChatActions() {
   document.body.classList.toggle('temp-chat', isTempChat);
   var tb = $('#tempChatBtn');
-  var showTemp = !busy && (!currentChat || isTempChat);
+  var showTemp = !busy && (!currentChat || isTempChat) && !isCmp();
+  var ct = $('#chatTitle');
+  if (ct) { ct.textContent = (currentChat && !isTempChat && currentChat.messages && currentChat.messages.length) ? (currentChat.title || '') : ''; }
   tb.style.display = showTemp ? 'inline-flex' : 'none';
   tb.classList.toggle('on', isTempChat);
   tb.setAttribute('aria-pressed', isTempChat ? 'true' : 'false');
@@ -2195,6 +2420,7 @@ function pauseSend() {
   sendSeq++;
   if (activeController) { try { activeController.abort(); } catch (e) {} }
   busy = false;
+  pauseCompareTurns();
   $$('.thinking').forEach(function (el) { el.remove(); });
   if (editRestoreChat) {
     currentChat = editRestoreChat;
@@ -2351,6 +2577,7 @@ $$('#welcome .card').forEach(function (c) {
 /* ── send / retry ── */
 function send() {
   if (inlineEdit) { toast('Save or cancel the edited message first', 'warning'); return; }
+  if (isCmp()) { sendCompare(); return; }
   var text = inp.value.trim();
   var files = pendingFiles.slice();
   var img = (files.filter(function (f) { return f.is_image; })[0] || {}).data || pendingImg;
@@ -2443,6 +2670,244 @@ function runSend(payload) {
   });
 }
 
+
+/* ═══ Battle compare modes: Battle (anonymous) + Side by Side ═══ */
+function cmpName(side, label) { return label ? label : ('Assistant ' + side.toUpperCase()); }
+function cmpRevealed() { return chatMode === 'sbs' || !!(currentChat && currentChat.revealed); }
+function lastCompareTurn() { var t = $$('.cmp-turn'); return t.length ? t[t.length - 1] : null; }
+function buildCompareTurn(turnIdx, m) {
+  var d = document.createElement('div');
+  d.className = 'cmp-turn';
+  if (turnIdx !== null && turnIdx !== undefined) { d.dataset.turn = String(turnIdx); }
+  var html = '<div class="cmp-tabs" role="tablist"><button type="button" class="on" data-tab="a">Assistant A</button><button type="button" data-tab="b">Assistant B</button></div><div class="cmp-grid">';
+  ['a', 'b'].forEach(function (s) {
+    html += '<div class="cmp-col" data-side="' + s + '"><div class="cmp-head"><span class="cmpab">' + s.toUpperCase() + '</span><span class="cmp-name"></span><span class="cmp-time"></span><span class="sp"></span>' +
+      '<button type="button" class="cmp-ibtn" data-act="copy" title="Copy">' + I.copy + '</button>' +
+      '<button type="button" class="cmp-ibtn" data-act="retry" title="Regenerate this answer">' + I.retry + '</button>' +
+      '<button type="button" class="cmp-ibtn" data-act="expand" title="Expand">' + I.maximize + '</button></div>' +
+      '<div class="cmp-body"><div class="content"></div></div></div>';
+  });
+  html += '</div><div class="cmp-vote" hidden><div class="vq">Which response is better?</div>' +
+    '<button type="button" data-vote="a">' + I.arrowL + ' A is better</button>' +
+    '<button type="button" data-vote="tie">' + I.equal + ' It’s a tie</button>' +
+    '<button type="button" data-vote="bad">' + I.thumbDown + ' Both are bad</button>' +
+    '<button type="button" data-vote="b">B is better ' + I.arrowR + '</button></div><div class="cmp-result"></div>';
+  d.innerHTML = html;
+  d._m = m;
+  (function () {
+    var g = d.querySelector('.cmp-grid');
+    g.addEventListener('scroll', function () {
+      var right = g.scrollLeft > (g.scrollWidth - g.clientWidth) / 2;
+      d.querySelectorAll('.cmp-tabs button').forEach(function (t) { t.classList.toggle('on', (t.dataset.tab === 'b') === right); });
+    }, { passive: true });
+  })();
+  d.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b || !d.contains(b)) { return; }
+    var col = b.closest('.cmp-col'), side = col ? col.dataset.side : '';
+    var ans = side ? (d._m.answers[side] || {}) : {};
+    if (b.dataset.vote) { voteCompare(d, b.dataset.vote); return; }
+    if (b.dataset.tab) { var g = d.querySelector('.cmp-grid'), tc = d.querySelector('.cmp-col[data-side="' + b.dataset.tab + '"]'); g.scrollTo({ left: tc.offsetLeft - g.offsetLeft - 14, behavior: 'smooth' }); return; }
+    var act = b.dataset.act;
+    if (act === 'copy') { copyText(ans.content || ''); }
+    else if (act === 'expand') {
+      $('#cmpModalTitle').textContent = cmpName(side, cmpRevealed() ? ans.label : null);
+      $('#cmpModalBody').innerHTML = md(ans.content || '');
+      enhancePre($('#cmpModalBody'));
+      $('#cmpModal').classList.remove('hidden');
+    }
+    else if (act === 'retry') { retryCompareSide(d, side); }
+    else if (act === 'newbattle') { window.location.href = 'battle'; }
+  });
+  msgs.appendChild(d);
+  welcome.style.display = 'none';
+  $$('.cmp-turn').forEach(updateCompareTurn);
+  return d;
+}
+function updateCompareTurn(d) {
+  var m = d._m; if (!m || !m.answers) { return; }
+  var revealed = cmpRevealed();
+  ['a', 'b'].forEach(function (s) {
+    var a = m.answers[s] || (m.answers[s] = { status: 'error' });
+    var col = d.querySelector('.cmp-col[data-side="' + s + '"]');
+    var lab = revealed ? (a.label || null) : null;
+    col.classList.toggle('revealed', !!lab);
+    col.querySelector('.cmp-name').textContent = cmpName(s, lab);
+    var tb = d.querySelector('.cmp-tabs [data-tab="' + s + '"]'); if (tb) { tb.textContent = s.toUpperCase() + ' · ' + (lab || 'Assistant ' + s.toUpperCase()); }
+    col.querySelector('.cmp-time').textContent = (a.status === 'done' && a.ms) ? fmtDur(a.ms) : '';
+    col.classList.toggle('pending', a.status === 'pending');
+    var c = col.querySelector('.content');
+    if (a.status === 'done') {
+      if (c.dataset.r !== 'done') { c.innerHTML = md(a.content || ''); enhancePre(col); c.dataset.r = 'done'; }
+    } else if (a.status === 'pending') {
+      if (c.dataset.r !== 'pending') { c.innerHTML = '<span class="cmp-wait"><span class="dots"><span></span><span></span><span></span></span><span class="shim">Generating…</span></span>'; c.dataset.r = 'pending'; }
+    } else {
+      c.dataset.r = 'err';
+      c.innerHTML = '<div class="cmp-err"><span></span><button type="button" data-act="retry">' + I.retry + ' Try again</button></div>';
+      c.querySelector('span').textContent = a.status === 'paused' ? 'Response paused.' : (a.error || 'This model could not answer right now.');
+    }
+    col.querySelector('[data-act=copy]').hidden = a.status !== 'done';
+    col.querySelector('[data-act=expand]').hidden = a.status !== 'done';
+    col.querySelector('.cmp-head [data-act=retry]').hidden = !(a.status === 'done' && !m.vote && !busy && d.dataset.turn !== undefined);
+    col.classList.toggle('win', m.vote === s);
+    col.classList.toggle('lose', (m.vote === 'a' || m.vote === 'b') && m.vote !== s);
+  });
+  var both = m.answers.a.status === 'done' && m.answers.b.status === 'done';
+  d.querySelector('.cmp-vote').hidden = !(both && !m.vote && d.dataset.turn !== undefined);
+  var r = d.querySelector('.cmp-result');
+  if (m.vote) {
+    var txt = { a: 'You voted: A is better', b: 'You voted: B is better', tie: 'You voted: it’s a tie', bad: 'You voted: both are bad' }[m.vote] || 'Voted';
+    var h = '<span>' + esc(txt) + '</span>';
+    if (chatMode === 'battle' && revealed) { h += '<span class="pill"><b>A</b> ' + esc(m.answers.a.label || '?') + '</span><span class="pill"><b>B</b> ' + esc(m.answers.b.label || '?') + '</span>'; }
+    if (chatMode === 'battle' && d === lastCompareTurn()) { h += '<button type="button" data-act="newbattle">' + I.swordsS + ' New battle</button>'; }
+    r.innerHTML = h;
+    r.classList.add('show');
+  } else { r.classList.remove('show'); r.innerHTML = ''; }
+}
+function renderCompareTurn(m, idx) {
+  ['a', 'b'].forEach(function (s) { if (m.answers && m.answers[s] && m.answers[s].status === 'pending') { m.answers[s].status = 'paused'; } });
+  return buildCompareTurn(idx, m);
+}
+function pauseCompareTurns() {
+  $$('.cmp-turn').forEach(function (d) {
+    var m = d._m; if (!m || !m.answers) { return; }
+    ['a', 'b'].forEach(function (s) { if (m.answers[s] && m.answers[s].status === 'pending') { m.answers[s].status = 'paused'; } });
+    if (d.dataset.turn === undefined) { d.remove(); return; }
+    updateCompareTurn(d);
+  });
+}
+function runCompareSides(d, sides, retryFlags) {
+  busy = true;
+  var seq = ++sendSeq;
+  activeController = window.AbortController ? new AbortController() : null;
+  var sig = activeController ? activeController.signal : null;
+  var m = d._m, left = sides.length;
+  sides.forEach(function (s) { m.answers[s].status = 'pending'; delete m.answers[s].error; });
+  resize();
+  updateCompareTurn(d);
+  sides.forEach(function (s) {
+    api('compare_answer', { id: currentChat.id, turn: Number(d.dataset.turn), side: s, retry: retryFlags && retryFlags[s] ? 1 : 0 }, undefined, sig).then(function (r) {
+      if (seq !== sendSeq) { return; }
+      var a = m.answers[s];
+      if (r.ok) { a.status = 'done'; a.content = r.content; a.ms = r.ms; if (r.label) { a.label = r.label; } d.querySelector('.cmp-col[data-side="' + s + '"] .content').dataset.r = ''; }
+      else if (r.aborted) { a.status = 'paused'; }
+      else { a.status = 'error'; a.error = (r.error || 'This model could not answer right now.'); }
+      updateCompareTurn(d);
+    }).finally(function () {
+      left--;
+      if (left === 0 && seq === sendSeq) {
+        busy = false;
+        activeController = null;
+        resize();
+        updateCompareTurn(d);
+        if (m.answers.a.status === 'done' && m.answers.b.status === 'done') { scrollDown(); }
+      }
+    });
+  });
+}
+function retryCompareSide(d, side) {
+  if (busy) { toast('Wait for the current answers first', 'warning'); return; }
+  if (!currentChat || !currentChat.id || d.dataset.turn === undefined) { return; }
+  var flags = {}; flags[side] = d._m.answers[side].status === 'done';
+  runCompareSides(d, [side], flags);
+}
+function sendCompare() {
+  var text = inp.value.trim();
+  if (!text || busy) { return; }
+  if (pendingFiles && pendingFiles.length) { toast('Battle and Side by Side are text-only — use AI Mode for files', 'warning'); return; }
+  inp.value = '';
+  resize();
+  addUserMsg(text, '', {});
+  var m = { role: 'assistant', compare: 1, vote: '', content: '', answers: {
+    a: { status: 'pending', label: chatMode === 'sbs' ? battleLabel(cmpA) : null, model_id: chatMode === 'sbs' ? cmpA : null },
+    b: { status: 'pending', label: chatMode === 'sbs' ? battleLabel(cmpB) : null, model_id: chatMode === 'sbs' ? cmpB : null } } };
+  var d = buildCompareTurn(null, m);
+  scrollDown();
+  busy = true;
+  var seq = ++sendSeq;
+  activeController = window.AbortController ? new AbortController() : null;
+  resize();
+  var payload = { mode: chatMode, message: text, id: (currentChat && currentChat.id) ? currentChat.id : null };
+  if (chatMode === 'sbs') { payload.model_a = cmpA; payload.model_b = cmpB; }
+  api('compare_start', payload, undefined, activeController ? activeController.signal : null).then(function (j) {
+    if (seq !== sendSeq) { return; }
+    if (!j.ok) {
+      busy = false; activeController = null; resize();
+      d.remove();
+      if (j.aborted) { toast('Response paused', 'stop'); } else { addErr(j.error + (j.hint ? '\nHint: ' + j.hint : '')); }
+      return;
+    }
+    if (!currentChat) { currentChat = { messages: [], branch_groups: {} }; }
+    isTempChat = false;
+    currentChat.temp = false;
+    currentChat.id = j.id; currentChat.root_id = j.id; currentChat.slug = j.slug;
+    currentChat.mode = j.mode; currentChat.title = j.title;
+    if (j.mode === 'battle' && j.revealed) { currentChat.revealed = true; }
+    replaceChatUrl();
+    loadChats();
+    currentChat.messages.push({ role: 'user', content: text });
+    ['a', 'b'].forEach(function (s) { if (j.models && j.models[s]) { m.answers[s].label = j.models[s].label; m.answers[s].model_id = j.models[s].id; } });
+    currentChat.messages.push(m);
+    d.dataset.turn = String(j.turn);
+    busy = false;
+    runCompareSides(d, ['a', 'b'], null);
+    updateChatActions();
+  });
+}
+function voteCompare(d, v) {
+  if (!currentChat || !currentChat.id || d.dataset.turn === undefined) { return; }
+  d.querySelectorAll('.cmp-vote button').forEach(function (b) { b.disabled = true; });
+  api('compare_vote', { id: currentChat.id, turn: Number(d.dataset.turn), vote: v }).then(function (j) {
+    d.querySelectorAll('.cmp-vote button').forEach(function (b) { b.disabled = false; });
+    if (!j.ok) { toast(j.error || 'Could not save your vote', 'warning'); return; }
+    d._m.vote = v;
+    if (chatMode === 'battle') {
+      currentChat.revealed = true;
+      (j.messages || []).forEach(function (sm, i) {
+        var cm = currentChat.messages[i];
+        if (sm && sm.compare && cm && cm.compare && sm.answers) {
+          ['a', 'b'].forEach(function (s) { if (sm.answers[s] && cm.answers[s]) { cm.answers[s].label = sm.answers[s].label; cm.answers[s].model_id = sm.answers[s].model_id; } });
+        }
+      });
+      if (d._m.answers.a && !d._m.answers.a.label && j.messages && j.messages[Number(d.dataset.turn)]) {
+        var sm2 = j.messages[Number(d.dataset.turn)];
+        d._m.answers.a.label = sm2.answers.a.label; d._m.answers.b.label = sm2.answers.b.label;
+      }
+    }
+    $$('.cmp-turn').forEach(updateCompareTurn);
+    toast(j.counted ? 'Vote counted — models revealed!' : 'Thanks for your vote', 'check');
+  });
+}
+
+/* ── leaderboard (from anonymous Battle votes) ── */
+function openLeaderboard() {
+  var body = $('#lbBody');
+  $('#lbModal').classList.remove('hidden');
+  body.innerHTML = '<div class="lbempty">Loading leaderboard…</div>';
+  api('battle_leaderboard').then(function (j) {
+    if (!j.ok) { body.innerHTML = '<div class="lbempty"></div>'; body.firstChild.textContent = j.error || 'Could not load the leaderboard.'; return; }
+    var total = j.total || 0;
+    $('#lbNote').textContent = total ? ('Based on ' + total + ' anonymous Battle Mode vote' + (total > 1 ? 's' : '') + ' · Elo score (every model starts at 1000)') : 'No battle votes yet — start a battle and vote to build the leaderboard.';
+    var rank = 0;
+    var rows = (j.models || []).map(function (m) {
+      var has = m.votes > 0; if (has) { rank++; }
+      return '<tr class="' + (has && rank === 1 ? 'top1' : '') + '"><td class="r">' + (has ? rank : '—') + '</td><td class="n"><span style="display:inline-flex;align-items:center;gap:8px"><span class="oi" style="display:inline-flex;color:var(--dim)">' + battleIcon(m.id) + '</span>' + esc(m.label) + '</span></td>' +
+        '<td class="s">' + (has ? m.score : '—') + '</td><td class="d">' + m.votes + '</td><td class="d">' + (m.win_rate === null || m.win_rate === undefined ? '—' : m.win_rate + '%') + '</td></tr>';
+    }).join('');
+    body.innerHTML = '<table class="lbtable"><thead><tr><th>Rank</th><th>Model</th><th>Score</th><th>Votes</th><th>Win rate</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  });
+}
+['sbBoard', 'railBoard'].forEach(function (id) { var el = document.getElementById(id); if (el) { el.addEventListener('click', openLeaderboard); } });
+(function () { var lb = $('#lbBattle'); if (lb) { lb.addEventListener('click', function () { window.location.href = 'battle'; }); } })();
+
+/* ── scroll-to-latest button (all modes) ── */
+(function () {
+  var tb = $('#toBottom'); if (!tb || !scroller) { return; }
+  function upd() { tb.classList.toggle('show', scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 320); }
+  scroller.addEventListener('scroll', upd, { passive: true });
+  window.addEventListener('resize', upd);
+  tb.addEventListener('click', function () { scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' }); });
+})();
+
 /* ── open / delete / rename chats ── */
 function openChat(id, variant) {
   if (busy) { return; }
@@ -2455,7 +2920,13 @@ function openChat(id, variant) {
     currentChat = j.chat;
     currentChat.temp = false;
     currentChat.branch_groups = j.branch_groups || currentChat.branch_groups || {};
-    agentMode = currentChat.mode === 'agent';
+    setChatMode(currentChat.mode || 'ai');
+    if (chatMode === 'sbs') {
+      (currentChat.messages || []).forEach(function (m) {
+        if (m && m.compare && m.answers) { if (m.answers.a && m.answers.a.model_id) { cmpA = m.answers.a.model_id; } if (m.answers.b && m.answers.b.model_id) { cmpB = m.answers.b.model_id; } cmpFromChat = true; }
+      });
+      renderCmpPickers();
+    }
     syncModeUI();
     replaceChatUrl();
     renderCurrentMessages();
@@ -2682,6 +3153,15 @@ api('bootstrap').then(function (j) {
   renderModelMenu();
   renderCustomModelMenu('');
   agentEnabled = j.agent_enabled !== false;
+  BATTLE_POOL = j.battle_models || [];
+  battleById = {};
+  BATTLE_POOL.forEach(function (m) { battleById[m.id] = m; });
+  if (!cmpFromChat) {
+    var sa = read('devil_sbs_a'), sb2 = read('devil_sbs_b');
+    if (sa && battleById[sa]) { cmpA = sa; }
+    if (sb2 && battleById[sb2]) { cmpB = sb2; }
+  }
+  renderCmpPickers();
   syncModeUI();
 });
 syncModeUI();
