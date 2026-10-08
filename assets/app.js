@@ -1462,7 +1462,14 @@ function updateSendButton() {
 function resize() { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 190) + 'px'; updateSendButton(); }
 function compactHistoryForTemp() {
   if (!currentChat || !currentChat.messages) { return []; }
-  return currentChat.messages.slice(-18).map(function (m) { return { role: m.role, content: m.content || '' }; }).filter(function (m) { return m.content; });
+  /* agent turns carry a short work log (tool, input, result) so a follow-up continues where the agent stopped */
+  return currentChat.messages.slice(-18).map(function (m) {
+    var o = { role: m.role, content: m.content || '' };
+    if (m.role === 'assistant' && m.agent_steps && m.agent_steps.length) {
+      o.steps = m.agent_steps.slice(-40).map(function (s) { return { tool: s.tool, ok: !!s.ok, input: String(s.input || '').slice(0, 300), output: String(s.output || '').slice(0, 200) }; });
+    }
+    return o;
+  }).filter(function (m) { return m.content; });
 }
 function startTempChat(forceOn) {
   if (busy) { return; }
@@ -3073,21 +3080,67 @@ function agtAppend(el, node) {
 /* ask_user → Battle clarification card: radio options, "write your own", Skip */
 function renderAskChips(el, ask) {
   if (!el || !ask) { return; }
-  var opts = ask.options || [];
+  var opts = ask.options || [], needs = ask.needs || [];
   var w = document.createElement('div');
-  w.className = 'agt-ask';
-  w.setAttribute('role', 'radiogroup');
-  w.setAttribute('aria-label', 'question');
-  w.innerHTML = '<div class="agt-askh"><span>' + (opts.length ? 'Pick an option' : 'Your answer') + '</span><button type="button" class="agt-skip">Skip</button></div>' +
-    opts.map(function (o, i) { return '<button type="button" role="radio" aria-checked="false" class="agt-opt" data-i="' + i + '"><span class="rd"></span><span class="ol"></span></button>'; }).join('') +
-    '<form class="agt-askc"><input type="text" maxlength="2000" placeholder="Revise options or write your own..." aria-label="Write your own answer"><button type="submit" aria-label="Submit custom response" title="Send">' + AGT.send + '</button></form>';
-  Array.prototype.forEach.call(w.querySelectorAll('.agt-opt'), function (b) { b.querySelector('.ol').textContent = opts[Number(b.dataset.i)]; });
+  w.className = 'agt-ask' + (needs.length ? ' needs' : '');
   function answer(text) {
     if (busy || !text) { return; }
     Array.prototype.forEach.call(w.querySelectorAll('button,input'), function (x) { x.disabled = true; });
     w.classList.add('done');
     inp.value = text; resize(); send();
   }
+  /* the agent needs secrets (API keys, tokens, passwords): secure fields, saved straight into the sandbox */
+  if (needs.length) {
+    w.innerHTML = '<div class="agt-askh"><span>' + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>' + ' Needed to continue</span><button type="button" class="agt-skip">Skip</button></div>' +
+      '<form class="agt-need">' + needs.map(function (n, i) {
+        return '<label class="agt-nf"><span class="nl"></span><span class="nn"></span><input type="password" autocomplete="off" spellcheck="false" data-i="' + i + '" required></label>';
+      }).join('') +
+      '<div class="agt-nb"><span class="agt-nnote">Saved only inside your sandbox — never shown in the chat.</span><button type="submit" class="agt-nsave">Save &amp; continue</button></div><div class="agt-nerr" hidden></div></form>';
+    Array.prototype.forEach.call(w.querySelectorAll('.agt-nf'), function (lb, i) {
+      lb.querySelector('.nl').textContent = needs[i].label || needs[i].name;
+      lb.querySelector('.nn').textContent = needs[i].name;
+      lb.querySelector('input').setAttribute('aria-label', needs[i].label || needs[i].name);
+    });
+    var fm = w.querySelector('form'), er = w.querySelector('.agt-nerr'), sv = w.querySelector('.agt-nsave');
+    fm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (busy) { return; }
+      var ins = Array.prototype.slice.call(fm.querySelectorAll('input'));
+      var vals = ins.map(function (x) { return x.value.trim(); });
+      if (vals.some(function (v) { return !v; })) { er.hidden = false; er.textContent = 'Fill in every field.'; return; }
+      sv.disabled = true; sv.textContent = 'Saving…'; er.hidden = true;
+      var i = 0;
+      (function next() {
+        if (i >= needs.length) {
+          ins.forEach(function (x) { x.value = ''; });
+          sv.textContent = 'Saved ✓';
+          answer('✅ Provided securely: ' + needs.map(function (n) { return n.name; }).join(', ') + ' (saved in the sandbox as environment variables). Please continue.');
+          return;
+        }
+        api('agent_secret', { id: isTempChat ? '' : rootChatId(), temp: isTempChat ? 1 : 0, name: needs[i].name, value: vals[i] }).then(function (j) {
+          if (!j || !j.ok) { sv.disabled = false; sv.textContent = 'Save & continue'; er.hidden = false; er.textContent = (j && j.error) || 'Could not save — try again.'; return; }
+          i++; next();
+        });
+      })();
+    });
+    w.querySelector('.agt-skip').addEventListener('click', function () { answer("I don't have " + needs.map(function (n) { return n.name; }).join(', ') + ' right now. Continue without it if you can (use a clearly marked placeholder or a free alternative), otherwise tell me exactly what is blocked.'); });
+    var c0 = el.querySelector('.content');
+    c0.parentNode.insertBefore(w, c0.nextSibling);
+    setTimeout(function () { var f = w.querySelector('input'); if (f && !busy) { try { f.focus({ preventScroll: true }); } catch (e) {} } }, 60);
+    return;
+  }
+  w.setAttribute('role', 'radiogroup');
+  w.setAttribute('aria-label', 'question');
+  w.innerHTML = '<div class="agt-askh"><span>' + (opts.length ? 'Pick an option' : 'Your answer') + '</span><button type="button" class="agt-skip">Skip</button></div>' +
+    opts.map(function (o, i) { return '<button type="button" role="radio" aria-checked="false" class="agt-opt" data-i="' + i + '"><span class="rd"></span><span class="ol"><span class="olt"></span><span class="old"></span></span></button>'; }).join('') +
+    '<form class="agt-askc"><input type="text" maxlength="2000" placeholder="' + (opts.length ? 'Revise options or write your own...' : 'Write your answer...') + '" aria-label="Write your own answer"><button type="submit" aria-label="Submit custom response" title="Send">' + AGT.send + '</button></form>';
+  /* "Label — short explanation" → bold label + muted description (like the reference agent) */
+  var parts = opts.map(function (o) { var p = String(o).split(/\s+[—–]\s+/); return { l: p[0], d: p.slice(1).join(' — ') }; });
+  Array.prototype.forEach.call(w.querySelectorAll('.agt-opt'), function (b) {
+    var p = parts[Number(b.dataset.i)];
+    b.querySelector('.olt').textContent = p.l;
+    var d = b.querySelector('.old'); if (p.d) { d.textContent = p.d; } else { d.remove(); }
+  });
   w.addEventListener('click', function (e) {
     var b = e.target.closest('.agt-opt');
     if (b) { b.setAttribute('aria-checked', 'true'); answer(opts[Number(b.dataset.i)]); return; }

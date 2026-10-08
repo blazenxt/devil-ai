@@ -2719,7 +2719,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+    if (in_array($action, ['chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -3352,7 +3352,7 @@ try {
 
     /* ═════════ Agent Mode v2: step-driven jobs + per-chat sandbox ═════════ */
 
-    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         $cfgAll = load_config();
         $sbxOn = sbx_enabled($cfgAll);
         $GLOBALS['DEVIL_SCRUB_SBX'] = $cfgAll + ['_' => 1];
@@ -3459,6 +3459,9 @@ try {
                     if (!is_array($hm)) { continue; }
                     $r = (string)($hm['role'] ?? '');
                     $c = trim((string)($hm['content'] ?? ''));
+                    if ($r === 'assistant' && !empty($hm['steps']) && is_array($hm['steps'])) {
+                        $c = agent_history_content(['role' => 'assistant', 'content' => $c, 'agent_steps' => array_slice($hm['steps'], 0, 60)], MAX_INPUT);
+                    }
                     if (($r === 'user' || $r === 'assistant') && $c !== '') { $history[] = ['role' => $r, 'content' => mb_substr($c, 0, MAX_INPUT)]; }
                 }
             } else {
@@ -3541,7 +3544,7 @@ try {
                 foreach (array_slice((array)($dc['messages'] ?? []), -20) as $m) {
                     $role = (string)($m['role'] ?? '');
                     if ($role !== 'user' && $role !== 'assistant') { continue; }
-                    $history[] = ['role' => $role, 'content' => mb_substr((string)($m['content'] ?? ''), 0, 8000)];
+                    $history[] = ['role' => $role, 'content' => agent_history_content($m, 8000)];
                 }
                 if ($history && $userContent !== $msg) { $history[count($history) - 1]['content'] = $userContent; }
             } else {
@@ -3625,6 +3628,10 @@ try {
         $q = $method === 'GET' ? $_GET : input_json();
         $sid = $sbxSidFor((string)($q['id'] ?? ''), !empty($q['temp']));
 
+        if ($action === 'agent_secret' && $method === 'POST') {
+            $r = sbx_secret_set($cfgAll, $sid, (string)($q['name'] ?? ''), (string)($q['value'] ?? ''));
+            json_out($r + ['ok' => false], !empty($r['ok']) ? 200 : 400);
+        }
         if ($action === 'sbx_info') {
             $h = sbx_health($cfgAll);
             $p = !empty($h['ok']) ? sbx_ports($cfgAll, $sid) : ['ports' => []];

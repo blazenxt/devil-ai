@@ -365,7 +365,7 @@ function sbx_agent_tools_all(): array {
         'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors and saves a screenshot. INPUT: URL.',
         'generate_image' => 'Generate an image from a text prompt and save it in the workspace. INPUT: first line = output path (e.g. images/hero.png), second line = the prompt.',
         'full_internet'  => 'Move this chat to a sandbox with FULL internet (2 CPU, 4 GB RAM). Use it only when the task needs websites/APIs that the current sandbox cannot reach. Your /home/user/work files are copied (node_modules / venvs are not); running servers must be restarted. INPUT: one short reason.',
-        'ask_user'       => 'Ask the user a clarifying question and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- ".',
+        'ask_user'       => 'Ask the user a clarifying question (or for something you need) and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- " (optional " — explanation"). For secrets add lines "need: ENV_NAME | label" instead of options.',
     ];
 }
 
@@ -424,7 +424,7 @@ function sbx_run_tool(array $ctx, string $name, string $input): array {
         $input = str_replace('/home/sandbox', $real, $input);
     }
     $r = sbx_run_tool_raw($ctx, $name, $input);
-    return sbx_scrub_any($r, (array)$ctx['cfg']);
+    return sbx_secret_mask(sbx_scrub_any($r, (array)$ctx['cfg']), sbx_secret_values((string)$ctx['sid']));
 }
 function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
     $cfg = $ctx['cfg']; $sid = $ctx['sid'];
@@ -439,6 +439,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
                agent step well under Cloudflare's 100s request limit. */
             $wait = max(10, min(55, (int)($cfg['agent_bash_wait'] ?? 25)));
             $job = '/home/user/.bg/cmd-' . bin2hex(random_bytes(4));
+            $cmd = '[ -f ' . SBX_SECRETS_FILE . ' ] && . ' . SBX_SECRETS_FILE . "\n" . $cmd;
             $wrapper = 'mkdir -p /home/user/.bg; J=' . $job . '; echo ' . base64_encode($cmd) . ' | base64 -d > "$J.sh"; '
                 . 'nohup setsid bash -c \'bash -l "$1" > >(tee "$1.out" >> "$1.log") 2> >(tee "$1.err" >> "$1.log"); r=$?; sleep 0.2; echo $r > "$1.rc"\' _ "$J.sh" > /dev/null 2>&1 < /dev/null & P=$!; '
                 . 'i=0; while [ ! -f "$J.sh.rc" ] && [ $i -lt ' . ($wait * 5) . ' ]; do sleep 0.2; i=$((i+1)); done; '
@@ -517,7 +518,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
             $cmd = trim((string)($lines[1] ?? ''));
             if ($port < 1024 || $port > 65535 || $cmd === '') { return ['ok' => false, 'text' => 'start_server: first line = port (1024-65535), second line = command.']; }
             sbx_exec($cfg, $sid, 'fuser -k ' . $port . '/tcp >/dev/null 2>&1; true', 15);
-            $r = sbx_exec($cfg, $sid, $cmd, 30, true, 6.0);
+            $r = sbx_exec($cfg, $sid, '[ -f ' . SBX_SECRETS_FILE . ' ] && . ' . SBX_SECRETS_FILE . '; ' . $cmd, 30, true, 6.0);
             if (empty($r['ok'])) { return ['ok' => false, 'text' => 'Could not start: ' . (string)($r['error'] ?? '')]; }
             $listening = false; $url = '';
             for ($i = 0; $i < 6 && !$listening; $i++) {
@@ -655,15 +656,56 @@ PY;
 function sbx_parse_ask(string $input): array {
     $lines = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', trim($input))), 'strlen'));
     $q = (string)array_shift($lines);
-    $opts = [];
+    $opts = []; $needs = [];
     foreach ($lines as $l) {
         $l = trim(preg_replace('/^([-*•]|\d+[.)])\s*/u', '', $l));
-        if ($l !== '' && count($opts) < 4) { $opts[] = mb_substr($l, 0, 120); }
+        if (preg_match('/^(?:need|secret|require[sd]?)\s*:\s*([A-Za-z_][A-Za-z0-9_]{0,63})\s*(?:\|\s*(.*))?$/i', $l, $nm)) {
+            if (count($needs) < 4) { $needs[] = ['name' => strtoupper($nm[1]), 'label' => mb_substr(trim((string)($nm[2] ?? '')) ?: strtoupper($nm[1]), 0, 80)]; }
+            continue;
+        }
+        if ($l !== '' && count($opts) < 4) { $opts[] = mb_substr($l, 0, 160); }
     }
     if (strpos($q, '|') !== false && !$opts) {
         $parts = array_map('trim', explode('|', $q));
         $q = (string)array_shift($parts);
         $opts = array_slice(array_values(array_filter($parts, 'strlen')), 0, 4);
     }
-    return [mb_substr($q, 0, 600), $opts];
+    return [mb_substr($q, 0, 600), $opts, $needs];
+}
+
+/* ── secrets the user typed into a "need:" field: kept inside the sandbox (never in chat history) ── */
+const SBX_SECRETS_FILE = '/home/user/.secrets/env';
+function sbx_secret_store_path(string $sid): string { return dirname(__DIR__) . '/data/agent_secrets/' . hash('sha256', $sid) . '.json'; }
+function sbx_secret_values(string $sid): array {
+    $f = sbx_secret_store_path($sid);
+    if (!is_file($f)) { return []; }
+    $j = json_decode((string)@file_get_contents($f), true);
+    return is_array($j) ? $j : [];
+}
+function sbx_secret_set(array $cfg, string $sid, string $name, string $value): array {
+    $name = strtoupper(trim($name));
+    if (!preg_match('/^[A-Z_][A-Z0-9_]{0,63}$/', $name)) { return ['ok' => false, 'error' => 'Invalid name.']; }
+    if ($value === '' || strlen($value) > 8000 || strpos($value, "\n") !== false || strpos($value, "\0") !== false) { return ['ok' => false, 'error' => 'Invalid value (one line, up to 8000 characters).']; }
+    $line = 'export ' . $name . '=' . "'" . str_replace("'", "'\\''", $value) . "'\n";
+    $F = SBX_SECRETS_FILE;
+    $cmd = 'umask 077; mkdir -p ' . dirname($F) . '; touch ' . $F . '; chmod 600 ' . $F . '; '
+        . 'grep -v "^export ' . $name . '=" ' . $F . ' > ' . $F . '.t 2>/dev/null; echo ' . base64_encode($line) . ' | base64 -d >> ' . $F . '.t; mv ' . $F . '.t ' . $F . '; echo ok';
+    $r = sbx_exec($cfg, $sid, $cmd, 40);
+    if (empty($r['ok']) || strpos((string)($r['stdout'] ?? ''), 'ok') === false) { return ['ok' => false, 'error' => sbx_scrub((string)($r['error'] ?? ($r['stderr'] ?? 'could not save the secret')), $cfg)]; }
+    /* remember the value (server side only) so it can be masked if a tool ever prints it */
+    $vals = sbx_secret_values($sid); $vals[$name] = $value;
+    $dir = dirname(sbx_secret_store_path($sid));
+    if (!is_dir($dir)) { @mkdir($dir, 0700, true); @file_put_contents($dir . '/.htaccess', "Require all denied\n"); }
+    @file_put_contents(sbx_secret_store_path($sid), json_encode($vals), LOCK_EX);
+    @chmod(sbx_secret_store_path($sid), 0600);
+    return ['ok' => true, 'name' => $name];
+}
+function sbx_secret_mask($v, array $vals) {
+    if (!$vals) { return $v; }
+    if (is_string($v)) {
+        foreach ($vals as $sv) { $sv = (string)$sv; if (strlen($sv) >= 6) { $v = str_replace($sv, '••••••', $v); } }
+        return $v;
+    }
+    if (is_array($v)) { foreach ($v as $k => $x) { $v[$k] = sbx_secret_mask($x, $vals); } }
+    return $v;
 }
