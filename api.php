@@ -2918,7 +2918,7 @@ try {
         $safeRating = htmlspecialchars(strtoupper($rating), ENT_QUOTES);
         $safeUser = htmlspecialchars(($entry['user']['name'] ?? '') . ' <' . ($entry['user']['email'] ?? '') . '>', ENT_QUOTES);
         $safeChat = htmlspecialchars($chatId, ENT_QUOTES);
-        $link = $chatId ? app_base_url() . '/app.php?chat=' . rawurlencode($chatId) : '';
+        $link = $chatId ? app_base_url() . '/chat?chat=' . rawurlencode($chatId) : '';
         $safeLink = htmlspecialchars($link, ENT_QUOTES);
         $html = '<div style="font-family:Segoe UI,Arial,sans-serif;line-height:1.6">'
               . '<h2>Devil AI feedback: ' . $safeRating . '</h2>'

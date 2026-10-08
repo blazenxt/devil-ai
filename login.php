@@ -13,7 +13,7 @@ devil_session_boot();
 if (isset($_SESSION['devil_uid'])) {
     $users = json_decode((string)@file_get_contents(__DIR__ . '/data/users.json'), true);
     if (is_array($users) && isset($users[$_SESSION['devil_uid']])) {
-        header('Location: app.php'); exit;
+        header('Location: chat'); exit;
     }
     unset($_SESSION['devil_uid'], $_SESSION['devil_name']); /* stale — clean it up */
 }
@@ -105,7 +105,7 @@ if (isset($_GET['token']) && is_string($_GET['token'])) {
             }
         }
     }
-    if ($ok) { header('Location: app.php'); exit; }
+    if ($ok) { header('Location: chat'); exit; }
     if ($tokenNote === null) { $tokenNote = 'This magic link is invalid or has expired. Enter your email below to get a fresh code.'; }
 }
 ?><!DOCTYPE html>
@@ -337,7 +337,7 @@ $('#codeForm').addEventListener('submit', async function (e) {
   busy($('#e2btn'), true);
   var j = await post('otp_verify', { email: email, code: code });
   busy($('#e2btn'), false);
-  if (j.ok) { window.location.href = 'app.php'; }
+  if (j.ok) { window.location.href = 'chat'; }
   else { showErr($('#e2err'), j.error || 'Wrong or expired code.'); }
 });
 

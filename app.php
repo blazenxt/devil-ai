@@ -24,6 +24,18 @@ if (isset($_SESSION['devil_uid'])) {
 }
 $APP_BASE_PATH = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/app.php'))), '/');
 if ($APP_BASE_PATH === '.' || $APP_BASE_PATH === '/') { $APP_BASE_PATH = ''; }
+/* AI Mode lives at /chat — /app.php must never show up in the address bar */
+$REQ_PATH = (string)parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+if (in_array(($_SERVER['REQUEST_METHOD'] ?? 'GET'), ['GET', 'HEAD'], true) && preg_match('~/app\.php$~i', $REQ_PATH)) {
+    $q = $_GET;
+    $seg = ['agent' => 'agent', 'battle' => 'battle', 'sbs' => 'side-by-side'][(string)($q['mode'] ?? '')] ?? 'chat';
+    unset($q['mode']);
+    $chatId = (string)($q['chat'] ?? '');
+    $to = ($APP_BASE_PATH ?: '') . '/' . $seg;
+    if ($seg !== 'chat' && preg_match('/^[a-f0-9]{128}$/', $chatId)) { $to .= '/' . $chatId; unset($q['chat']); }
+    header('Location: ' . $to . ($q ? '?' . http_build_query($q) : ''), true, 301);
+    exit;
+}
 if (!$me) { header('Location: ' . ($APP_BASE_PATH ?: '') . '/login.php'); exit; }
 /* /agent and /agent/{slug} are rewritten to app.php?mode=agent */
 $ROUTE_MODE = in_array((string)($_GET['mode'] ?? ''), ['agent', 'battle', 'sbs'], true) ? (string)$_GET['mode'] : 'ai';
@@ -615,7 +627,7 @@ body.devil-ui:not(.agent-mode) #modelBtn{order:3}
 body.devil-ui:not(.agent-mode) #customWrap{order:4}
 body.devil-ui:not(.agent-mode) #promptBtn{order:5}
 body.devil-ui:not(.agent-mode) #voiceBtn{order:6}
-body.devil-ui #modelBtn,body.devil-ui #customModelBtn{border-color:transparent;color:var(--text);font-weight:500;padding:6px 9px;border-radius:8px}
+body.devil-ui #modelBtn,body.devil-ui #customModelBtn{border-color:transparent;color:var(--text);font-weight:500;padding:6px 9px;border-radius:8px;background:transparent}
 body.agent-mode #modelBtn,body.agent-mode #customModelBtn{color:var(--dim)}
 body.devil-ui #modelBtn:hover,body.devil-ui #customModelBtn:hover{background:var(--ag-hover);border-color:transparent;color:var(--text)}
 body.devil-ui #sendBtn[hidden]{display:flex!important}
@@ -842,6 +854,7 @@ body.devil-ui .userbtn.open,body.devil-ui #userBtn[aria-expanded=true]{backgroun
 body.devil-ui .btn.primary{background:var(--text);color:var(--bg);box-shadow:none}
 body.devil-ui .btn.primary:hover{filter:none;opacity:.9}
 body.devil-ui #toast svg{color:var(--text)}
+#modelMenu,#customModelMenu,#promptMenu,.modemenu2,.cmpmenu,#modeSw .modemenu,.cmlist{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
 /* scroll-to-latest always floats just above the composer */
 #toBottom{bottom:calc(var(--compH,130px) + 10px)}
@@ -896,6 +909,17 @@ body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
 }
 @media (max-width:400px){
   body.cmp-mode #modeChip .mcc:last-child{display:none}
+}
+@media (max-width:480px){
+  /* Agent Mode on phones: compact "Add files" + chip so the model names stay readable */
+  body.agent-mode #attachBtn{width:32px;padding:0;justify-content:center}
+  body.agent-mode #attachBtn .atxt{display:none}
+  body.agent-mode #modeChip .mcc:last-child{display:none}
+  body.devil-ui.custom-on #modeChip .mcc:last-child{display:none}
+  body.devil-ui.custom-on #modelBtn{padding:6px 7px;gap:0}
+  body.devil-ui.custom-on #modelBtn .lb,body.devil-ui.custom-on #modelBtn > svg:last-child{display:none}
+  body.devil-ui.custom-on #customModelBtn{min-width:0;flex:0 1 auto}
+  body.devil-ui.custom-on #promptBtn{display:none!important}
 }
 @media (max-width:340px){
   body.cmp-mode .cmpbtn .cmpab{display:none}
@@ -1161,7 +1185,7 @@ var MODE_INFO = {
   battle: { label: 'Battle Mode', chip: 'Battle', icon: 'swordsM', chipIcon: 'swords', path: 'battle', seg: 'battle' },
   agent:  { label: 'Agent Mode', chip: 'Agent', icon: 'sparkM', chipIcon: 'spark', path: 'agent', seg: 'agent' },
   sbs:    { label: 'Side by Side', chip: 'Side by Side', icon: 'columnsM', chipIcon: 'columns', path: 'side-by-side', seg: 'side-by-side' },
-  ai:     { label: 'AI Mode', chip: 'Direct', icon: 'messageM', chipIcon: 'messageM', path: 'app.php', seg: '' }
+  ai:     { label: 'AI Mode', chip: 'Direct', icon: 'messageM', chipIcon: 'messageM', path: 'chat', seg: 'chat' }
 };
 var MODE_WELCOME = {
   ai:     { h: 'What shall we <mark>summon</mark> today?', p: 'Pick a model in the chat box and ask me anything.' },
@@ -1264,6 +1288,44 @@ function chooseMode(mode) {
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setModeMenu(false); setChip(false); closeCmpPickers(); } });
   window.__devilCloseModeChip = function () { setChip(false); };
 })();
+
+/* ── keep every popover inside the viewport: pick the side with more room, cap height, scroll inside ── */
+var FIT_MENUS = ['#modelMenu', '#customModelMenu', '#promptMenu', '#modeChipWrap .modemenu2', '.cmppick .cmpmenu', '#modeSw .modemenu'];
+function fitMenu(m) {
+  var st = m.style;
+  ['top', 'bottom', 'max-height', 'overflow-y'].forEach(function (k) { st.removeProperty(k); });
+  var list = m.querySelector('.cmlist');
+  if (list) { list.style.removeProperty('max-height'); st.setProperty('max-height', 'none', 'important'); }
+  if (getComputedStyle(m).display === 'none') { return; }
+  var par = m.offsetParent || m.parentNode, pr = par.getBoundingClientRect(), r = m.getBoundingClientRect();
+  var vh = window.innerHeight || document.documentElement.clientHeight, pad = 8, gap = 8;
+  var up = r.top < pr.top - 1;
+  var spaceUp = pr.top - gap - pad, spaceDown = vh - pr.bottom - gap - pad;
+  var need = m.scrollHeight;
+  if (m.closest('#modeSw')) { up = false; spaceDown = vh - r.top - pad; }
+  else if (up ? need > spaceUp && spaceDown > spaceUp : need > spaceDown && spaceUp > spaceDown) {
+    up = !up;
+    st.setProperty('top', up ? 'auto' : 'calc(100% + ' + gap + 'px)', 'important');
+    st.setProperty('bottom', up ? 'calc(100% + ' + gap + 'px)' : 'auto', 'important');
+  }
+  var room = Math.max(140, Math.floor(up ? spaceUp : spaceDown));
+  if (list) {
+    /* custom engines: keep the search box fixed, only the list scrolls */
+    var chrome = m.offsetHeight - list.offsetHeight;
+    list.style.setProperty('max-height', Math.max(90, Math.min(360, room - chrome)) + 'px', 'important');
+    st.setProperty('overflow-y', 'hidden', 'important');
+    st.setProperty('max-height', 'none', 'important');
+    return;
+  }
+  st.setProperty('max-height', room + 'px', 'important');
+  st.setProperty('overflow-y', 'auto', 'important');
+}
+function fitOpenMenus() { FIT_MENUS.forEach(function (sel) { $$(sel).forEach(fitMenu); }); }
+document.addEventListener('click', function () { setTimeout(fitOpenMenus, 0); }, true);
+document.addEventListener('keydown', function () { setTimeout(fitOpenMenus, 0); }, true);
+document.addEventListener('input', function (e) { if (e.target.closest && e.target.closest('#customModelMenu')) { setTimeout(fitOpenMenus, 0); } }, true);
+window.addEventListener('resize', fitOpenMenus);
+if (window.visualViewport) { window.visualViewport.addEventListener('resize', fitOpenMenus); }
 
 /* ── Side by Side model pickers ── */
 function battleLabel(id) { return (battleById[id] || {}).label || (id === 'flash' ? 'Devil Flash' : (id === 'pro' ? 'Devil Pro' : 'Devil AI')); }
@@ -3124,6 +3186,7 @@ function setModelBtn() {
   $('#modelLbl').textContent = m.label;
   $('#modelIco').innerHTML = I[m.icon] || I.sparkles;
   $('#customWrap').classList.toggle('show', currentModel === 'custom');
+  document.body.classList.toggle('custom-on', currentModel === 'custom');
   setCustomBtn();
   syncModelMenu();
 }

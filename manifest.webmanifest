@@ -2,7 +2,7 @@
   "name": "Devil AI",
   "short_name": "Devil AI",
   "description": "Devil AI chat assistant by BlazeNXT.",
-  "start_url": "./app.php",
+  "start_url": "./chat",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0c0709",

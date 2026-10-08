@@ -1,10 +1,10 @@
 /* Devil AI service worker: lightweight PWA shell support. */
-const DEVIL_CACHE = 'devil-ai-shell-v5';
+const DEVIL_CACHE = 'devil-ai-shell-v6';
 const SHELL = [
   './',
   './index.php',
   './login.php',
-  './app.php',
+  './chat',
   './assets/logo.svg',
   './manifest.webmanifest'
 ];

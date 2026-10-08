@@ -122,10 +122,10 @@ a{text-decoration:none;color:inherit}button,input,select{font:inherit}button{cur
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="app.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
+  <a class="brand" href="chat"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
   <div class="topnav">
     <button class="tb" id="themeBtn" type="button" title="Switch theme"><?= icon('sun', 16) ?></button>
-    <a class="back" href="app.php"><?= icon('chevron-right', 14) ?> <span>Back to chat</span></a>
+    <a class="back" href="chat"><?= icon('chevron-right', 14) ?> <span>Back to chat</span></a>
   </div>
 </header>
 

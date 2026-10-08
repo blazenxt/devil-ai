@@ -173,7 +173,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
       <button class="btn ghost" id="themeBtn" title="Switch theme" style="padding:10px 12px" type="button"><?= icon('sun', 16) ?></button>
       <?php if ($me): ?>
         <span class="userchip"><span class="av"><?= htmlspecialchars(strtoupper(mb_substr($me['name'], 0, 1))) ?></span><?= htmlspecialchars($me['name']) ?></span>
-        <a class="btn primary" href="app.php">Open app <?= icon('arrow-right', 15) ?></a>
+        <a class="btn primary" href="chat">Open app <?= icon('arrow-right', 15) ?></a>
       <?php else: ?>
         <a class="btn ghost hide-sm" href="login.php">Sign in</a>
         <a class="btn primary" href="login.php">Get started <?= icon('arrow-right', 15) ?></a>
@@ -187,7 +187,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
   <h1>Meet Devil AI.<br>Sinfully smart.</h1>
   <p class="sub">A one-of-a-kind AI assistant developed by BlazeNXT. Real answers, real privacy, zero tracking by default.</p>
   <div class="cta">
-    <a class="btn primary big" href="<?= $me ? 'app.php' : 'login.php' ?>"><?= icon('message', 17) ?> Start chatting</a>
+    <a class="btn primary big" href="<?= $me ? 'chat' : 'login.php' ?>"><?= icon('message', 17) ?> Start chatting</a>
     <a class="btn ghost big" href="#features">See what's inside</a>
   </div>
 
@@ -252,7 +252,7 @@ footer{padding:50px 0 40px;border-top:1px solid var(--border)}
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <a class="btn ghost" href="cookies.php"><?= icon('cookie', 16) ?> Cookie Policy</a>
-      <a class="btn primary" href="<?= $me ? 'app.php' : 'login.php' ?>">Create free account</a>
+      <a class="btn primary" href="<?= $me ? 'chat' : 'login.php' ?>">Create free account</a>
     </div>
   </div>
 </section>
