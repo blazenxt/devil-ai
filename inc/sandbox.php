@@ -285,16 +285,16 @@ function sbx_env_text(array $cfg, string $sid = ''): string {
     $be = sbx_is_cloud($cfg) ? sbx_backend($cfg, $sid) : 'devil';
     if ($be === 'vercel') {
         $why = $sid !== '' ? sbx_route_get($sid . '~why') : '';
-        return 'Your sandbox: Ubuntu Linux, user "ubuntu" with passwordless sudo (apt-get works), working folder /home/user/work (relative paths are relative to it). Installed: Python 3.14 (pip, uv), Node.js 24 (npm, pnpm, bun), git, curl, jq, zip, sqlite3; the browser tool sets up Chromium by itself on first use. '
+        return 'Your sandbox (the Devil AI sandbox): Linux with passwordless sudo (apt-get works), working folder /home/user/work (relative paths are relative to it). Installed: Python 3.14 (pip, uv), Node.js 24 (npm, pnpm, bun), git, curl, jq, zip, sqlite3; the browser tool sets up Chromium by itself on first use. '
              . 'FULL internet access: any website or API can be reached from the sandbox. Machine: 2 CPU, 4 GB RAM, plenty of disk. '
-             . 'Preview URLs are on *.vercel.run — for Vite set server.allowedHosts: true (or [".vercel.run"]) and host 0.0.0.0. '
+             . 'Previews are served through a proxy on a different hostname — for Vite set server.allowedHosts: true and host 0.0.0.0 (other dev servers: allow any host). '
              . 'The sandbox sleeps when idle and keeps its files, but running servers stop — restart them with start_server when needed.'
              . ($why === 'internet' ? ' (This chat was moved here for full internet: the earlier files were copied; node_modules / virtualenvs were not — reinstall them.)' : '')
              . ($why === 'failover' ? ' (This chat runs on the backup sandbox; files made earlier on the main sandbox may be missing — recreate them if needed.)' : '');
     }
     if ($be === 'daytona') {
         $more = sbx_dual($cfg) ? ' If the task truly needs the open internet INSIDE the sandbox (scraping a site, calling an outside API from code, downloading from a normal website), call the full_internet tool once — the chat moves to a bigger sandbox with full internet and your files are copied.' : '';
-        return 'Your sandbox: Debian Linux, user "daytona" with passwordless sudo, working folder /home/user/work (relative paths are relative to it). Installed: Python 3 (pip), Node.js (npm), git, curl, jq, zip, Chromium. '
+        return 'Your sandbox (the Devil AI sandbox): Linux with passwordless sudo, working folder /home/user/work (relative paths are relative to it). Installed: Python 3 (pip), Node.js (npm), git, curl, jq, zip, Chromium. '
              . 'Internet is LIMITED to package registries and code hosts (npm, pip/PyPI, GitHub and similar) — npm/pip install and git clone work, but other websites cannot be opened from the sandbox (use web_search / read_url for the web; generate_image works). '
              . 'The machine is small (1 CPU, 1 GB RAM, 3 GB disk): prefer light tools (Vite, plain HTML/JS, Flask/FastAPI) over heavy builds. The sandbox sleeps when idle and keeps its files, but running servers stop — restart them with start_server when needed.' . $more;
     }
@@ -394,7 +394,39 @@ function sbx_unfence(string $s): string {
  * Run one sandbox tool. $ctx = ['cfg'=>…, 'sid'=>…, 'step'=>int]
  * Returns ['ok'=>bool, 'text'=>string, 'meta'=>array]  (meta goes to the UI only)
  */
+/* ── never reveal which cloud runs the sandbox ──
+   Every tool result (text + meta) and every sandbox error shown to the user or the model goes through
+   sbx_scrub(): provider names become "sandbox" and raw provider preview links become our own preview links. */
+function sbx_scrub(string $t, array $cfg = []): string {
+    if ($t === '' || !preg_match('/daytona|vercel/i', $t)) { return $t; }
+    $t = (string)preg_replace_callback('#https?://[a-z0-9.-]+\.(?:vercel\.run|daytonaproxy\d*\.net)(?::\d+)?[^\s"\'<>)\]]*#i', static function ($m) use ($cfg) {
+        $u = $cfg ? sbx_public_url($cfg, $m[0]) : $m[0];
+        return $u !== $m[0] ? $u : 'the preview link';
+    }, $t);
+    $t = (string)preg_replace('#[a-z0-9.-]+\.(?:vercel\.run|daytonaproxy\d*\.net)#i', 'preview-host', $t);
+    $t = (string)preg_replace('#[a-z0-9.-]*\bdaytona\.(?:io|work|app)\b[^\s"\'<>)]*#i', 'sandbox-api', $t);
+    $t = (string)preg_replace('#/home/(?:daytona|vercel-sandbox)\b#', '/home/sandbox', $t);
+    $t = (string)preg_replace('/\b(?:VERCEL|DAYTONA)_[A-Z0-9_]*/', 'SANDBOX_ENV', $t);
+    $t = (string)preg_replace('/vercel[-_ ]?sandbox(?:es)?/i', 'sandbox', $t);
+    $t = (string)preg_replace('/\bvercel(?=\s+sandbox|\s+session|\s+api\b)/i', 'the', $t);
+    $t = (string)preg_replace('/daytona(?:proxy\d*)?/i', 'sandbox', $t);
+    return $t;
+}
+function sbx_scrub_any($v, array $cfg = []) {
+    if (is_string($v)) { return sbx_scrub($v, $cfg); }
+    if (is_array($v)) { foreach ($v as $k => $x) { $v[$k] = sbx_scrub_any($x, $cfg); } }
+    return $v;
+}
 function sbx_run_tool(array $ctx, string $name, string $input): array {
+    /* the model only ever sees /home/sandbox (scrubbed) — map it back to the real home folder */
+    if (strpos($input, '/home/sandbox') !== false && sbx_is_cloud((array)$ctx['cfg'])) {
+        $real = sbx_backend((array)$ctx['cfg'], (string)$ctx['sid']) === 'vercel' ? '/home/vercel-sandbox' : '/home/daytona';
+        $input = str_replace('/home/sandbox', $real, $input);
+    }
+    $r = sbx_run_tool_raw($ctx, $name, $input);
+    return sbx_scrub_any($r, (array)$ctx['cfg']);
+}
+function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
     $cfg = $ctx['cfg']; $sid = $ctx['sid'];
     switch ($name) {
         case 'bash': {
@@ -577,9 +609,9 @@ PY;
             $m = sbx_move_to_vercel($cfg, $sid);
             if (empty($m['ok'])) { return ['ok' => false, 'text' => 'Could not switch to the full-internet sandbox: ' . (string)($m['error'] ?? '') . '. Continue on the current sandbox (use web_search / read_url for the web).']; }
             if (!empty($m['already'])) { return ['ok' => true, 'text' => 'This chat already has full internet access.']; }
-            return ['ok' => true, 'text' => 'Switched: this chat now runs on a sandbox with FULL internet (Ubuntu, user "ubuntu", 2 CPU, 4 GB RAM, Python 3.14, Node 24). '
+            return ['ok' => true, 'text' => 'Switched: this chat now has FULL internet access (bigger machine: 2 CPU, 4 GB RAM, Python 3.14, Node 24). '
                 . ($m['copied'] ? 'Your files in /home/user/work were copied (' . (int)$m['bytes'] . ' bytes zipped). Reinstall dependencies (npm install / pip install) before running. ' : 'There were no files to copy. ')
-                . 'Restart any servers with start_server. Preview URLs are now on *.vercel.run (for Vite set server.allowedHosts: true).', 'meta' => ['provider' => 'vercel']];
+                . 'Restart any servers with start_server (for Vite keep server.allowedHosts: true).', 'meta' => ['internet' => true]];
         }
         case 'generate_image': {
             $lines = preg_split('/\r?\n/', trim($input), 2);

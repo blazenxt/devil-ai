@@ -126,7 +126,7 @@ function vcl_get(array $cfg, string $sid, bool $wake): array {
             if (!$wake) { return ['ok' => false, 'asleep' => true, 'error' => 'sandbox is asleep']; }
             if (in_array($sst, ['failed', 'aborted'], true) && microtime(true) - $t0 > 5) { return ['ok' => false, 'down' => true, 'error' => 'sandbox session ' . $sst]; }
         } elseif ($st === 0 || $st === 401 || $st === 402 || $st === 403 || $st >= 500) {
-            return ['ok' => false, 'down' => true, 'error' => $err ?: 'Vercel sandbox unavailable'];
+            return ['ok' => false, 'down' => true, 'error' => $err ?: 'sandbox unavailable'];
         } elseif ($st !== 409 && $st !== 423 && $st !== 429) {
             return ['ok' => false, 'down' => true, 'error' => $err ?: ('sandbox error ' . $st . ' ' . $code)];
         }

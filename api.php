@@ -92,6 +92,10 @@ function devil_persona(): string {
 /* ══════════════ helpers ══════════════ */
 
 function json_out(array $data, int $code = 200): void {
+    if (!empty($GLOBALS['DEVIL_SCRUB_SBX']) && function_exists('sbx_scrub')) {
+        foreach (['error', 'hint', 'note'] as $k) { if (isset($data[$k]) && is_string($data[$k])) { $data[$k] = sbx_scrub($data[$k], (array)$GLOBALS['DEVIL_SCRUB_SBX']); } }
+        foreach (['event', 'agent', 'reply'] as $k) { if (isset($data[$k])) { $data[$k] = sbx_scrub_any($data[$k], (array)$GLOBALS['DEVIL_SCRUB_SBX']); } }
+    }
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
     header('X-Robots-Tag: noindex');
@@ -2953,6 +2957,13 @@ try {
     if ($action === 'chat_load' && $method === 'GET') {
         $payload = chat_load_payload($uid, (string)($_GET['id'] ?? ''), (string)($_GET['variant'] ?? ''));
         if ($payload === null) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+        /* older agent turns may still mention the sandbox provider: scrub them on the way out */
+        if (function_exists('sbx_scrub_any') && !empty($payload['chat']['messages']) && is_array($payload['chat']['messages'])) {
+            $cfgL = load_config();
+            foreach ($payload['chat']['messages'] as $i => $mm) {
+                if (is_array($mm) && !empty($mm['agent_steps'])) { $payload['chat']['messages'][$i]['agent_steps'] = sbx_scrub_any($mm['agent_steps'], $cfgL); }
+            }
+        }
         json_out($payload);
     }
 
@@ -3344,6 +3355,7 @@ try {
     if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         $cfgAll = load_config();
         $sbxOn = sbx_enabled($cfgAll);
+        $GLOBALS['DEVIL_SCRUB_SBX'] = $cfgAll + ['_' => 1];
         $tzA = (string)($cfgAll['timezone'] ?? '');
         if ($tzA !== '' && in_array($tzA, timezone_identifiers_list(), true)) { date_default_timezone_set($tzA); }
 
