@@ -40,6 +40,8 @@ $JS_ICONS = [
     'message' => icon('message', 16), 'menu' => icon('menu', 18), 'flame' => icon('flame', 15),
     'lightbulb' => icon('lightbulb', 17), 'shield' => icon('shield', 16), 'code' => icon('code', 16), 'gauge' => icon('gauge', 16),
     'sun' => icon('sun', 17), 'moon' => icon('moon', 17), 'play' => icon('play', 13),
+    'globe' => icon('globe', 14), 'spark' => icon('spark', 15), 'calc' => icon('calculator', 14), 'clock' => icon('clock', 14),
+    'link' => icon('link', 14), 'fileText' => icon('file-text', 14), 'brainS' => icon('brain', 14), 'chevR' => icon('chevron-right', 13),
     'layers' => icon('layers', 15), 'brain' => icon('brain', 15), 'server' => icon('server', 15),
 ];
 ?><!DOCTYPE html>
@@ -473,6 +475,163 @@ body.voice-open{overflow:hidden}
 .pvFrame{border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-top:14px;background:#fff;height:58vh}
 .pvFrame iframe{width:100%;height:100%;border:none;display:block;background:#fff}
 #previewModal .sheet{max-width:880px;width:94vw}
+
+/* ═══════════ AGENT MODE — Pro-style workspace UI ═══════════ */
+body.agent-mode{
+  --bg:#181715; --bg2:#1d1c19; --sb:#1b1a18; --panel:#22211e; --panel2:#282723; --panel3:#302e2a;
+  --border:rgba(255,255,255,.09); --border-hi:rgba(255,255,255,.2);
+  --text:#ece9e3; --dim:#a39e94; --dim2:#7f7a71; --soft:#e7e2d9; --pink:#e7e2d9;
+  --ag-accent:#f43f5e; --ag-head:#d9d4ca; --ag-line:rgba(255,255,255,.1); --ag-hover:rgba(255,255,255,.05); --ag-user:#2a2925;
+  background:var(--bg)
+}
+[data-theme=light] body.agent-mode{
+  --bg:#faf9f6; --bg2:#f5f4f0; --sb:#f6f5f1; --panel:#ffffff; --panel2:#f3f1ec; --panel3:#ebe8e2;
+  --border:#e6e3dc; --border-hi:#cfcac0;
+  --text:#2f2d29; --dim:#77726a; --dim2:#9a958c; --soft:#3d3a35; --pink:#3d3a35;
+  --ag-accent:#e11d48; --ag-head:#615c54; --ag-line:#e6e3dc; --ag-hover:rgba(0,0,0,.035); --ag-user:#f0eee9;
+  background:var(--bg)
+}
+body.agent-mode main{background:var(--bg)}
+body.agent-mode ::-webkit-scrollbar-thumb{background:var(--border-hi)}
+body.agent-mode #sidebar{background:var(--sb);border-right-color:var(--border)}
+body.agent-mode .newchat{background:var(--panel);border-color:var(--border);color:var(--text)}
+body.agent-mode .newchat:hover{background:var(--panel2);border-color:var(--border-hi)}
+body.agent-mode .chatitem:hover{background:var(--ag-hover)}
+body.agent-mode .chatitem.on{background:var(--panel3)}
+
+/* top bar */
+body.agent-mode .m-top{display:flex;height:52px;padding:0 14px;background:var(--bg)!important;border-bottom:1px solid var(--border);backdrop-filter:none}
+body.agent-mode .m-top .brand{visibility:hidden}
+@media (min-width:901px){ body.agent-mode #sbOpen,body.agent-mode #themeBtnM{display:none} }
+body.agent-mode .modesw{top:8px;left:14px}
+body.agent-mode .modebtn{height:36px;gap:7px;padding:0 10px;border-radius:9px;border:1px solid transparent;background:transparent!important;box-shadow:none!important;backdrop-filter:none;font-weight:500;font-size:.95rem;color:var(--text)}
+body.agent-mode .modebtn:hover,body.agent-mode .modesw.open .modebtn{background:var(--ag-hover)!important;border-color:transparent}
+body.agent-mode .modebtn img,body.agent-mode .modebtn .mname,body.agent-mode .modebtn .mtag{display:none}
+.modebtn .aglabel{display:none;align-items:center;gap:7px}
+body.agent-mode .modebtn .aglabel{display:inline-flex}
+.aglabel .agspark{display:inline-flex;color:var(--ag-accent)}
+body.agent-mode .modebtn .mchev{color:var(--dim)}
+@media (max-width:900px){ body.agent-mode .modesw{left:52px} }
+body.agent-mode .modemenu{background:var(--panel);border-color:var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.18)}
+body.agent-mode .modeopt:hover{background:var(--ag-hover)}
+body.agent-mode .modeopt.on{background:var(--panel2)}
+body.agent-mode .modeopt .mic{background:var(--panel2);color:var(--text)}
+body.agent-mode .modeopt.on .mic{background:var(--text);color:var(--bg)}
+body.agent-mode .modeopt .mck{color:var(--text)}
+
+/* right header tools */
+body.agent-mode .chattools{top:8px;right:12px;padding:0;gap:2px;border:none;background:transparent!important;box-shadow:none!important;backdrop-filter:none}
+body.agent-mode .ctbtn{height:36px;min-width:36px;padding:0 9px;border-radius:9px;color:var(--dim)!important;background:transparent!important;border-color:transparent!important;box-shadow:none!important}
+body.agent-mode .ctbtn:hover{background:var(--ag-hover)!important;color:var(--text)!important}
+body.agent-mode .ctbtn.on{background:var(--panel3)!important;color:var(--text)!important}
+body.agent-mode .ctbtn .txt{display:none}
+#wsBtn{display:none}
+body.agent-mode #wsBtn{display:inline-flex}
+@media (max-width:900px){ body.agent-mode .chattools{right:52px} }
+
+/* icon rail (sidebar collapsed, desktop) */
+#agentRail{display:none}
+@media (min-width:901px){
+  body.agent-mode.sb-closed #agentRail{display:flex;flex-direction:column;align-items:center;gap:6px;width:56px;flex-shrink:0;padding:10px 0;border-right:1px solid var(--border);background:var(--bg)}
+}
+#agentRail .rbtn{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--dim);transition:.12s}
+#agentRail .rbtn:hover{background:var(--ag-hover);color:var(--text)}
+#agentRail .rsp{flex:1}
+#agentRail .rav{width:30px;height:30px;border-radius:50%;background:var(--panel3);color:var(--text);font-size:.78rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+#agentRail .rtop{margin-bottom:10px}
+
+/* welcome / empty state: heading + centered composer */
+body.agent-mode #welcome img.big,body.agent-mode #welcome .cards,body.agent-mode #welcome .sub{display:none}
+body.agent-mode #welcome h2{text-wrap:balance;font-family:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;font-weight:400;font-size:clamp(2rem,4.6vw,3rem);letter-spacing:-.025em;color:var(--ag-head);line-height:1.15}
+body.agent-mode.agent-empty #scroller{flex:0 0 auto;margin-top:auto;overflow:visible}
+body.agent-mode.agent-empty #thread{padding-top:0;padding-bottom:0}
+body.agent-mode.agent-empty #welcome{padding:0 10px 22px}
+body.agent-mode.agent-empty #composer{margin-bottom:auto;padding-bottom:12vh;background:none}
+body.agent-mode.agent-empty .hint{visibility:hidden}
+body.agent-mode.agent-empty #inp{min-height:64px}
+
+/* composer */
+body.agent-mode #composer{background:linear-gradient(transparent,var(--bg) 30%)}
+body.agent-mode .compbox{max-width:680px;border-radius:14px;background:var(--panel);border-color:var(--border);box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.05)}
+body.agent-mode .compbox:focus-within{border-color:var(--border-hi);box-shadow:0 1px 2px rgba(0,0,0,.04),0 10px 32px rgba(0,0,0,.08)}
+body.agent-mode #inp{color:var(--text)}
+body.agent-mode #inp::placeholder{color:var(--dim2)}
+body.agent-mode .comprow{padding:8px 8px 8px 8px}
+#attachBtn .atxt{display:none}
+body.agent-mode #attachBtn{width:auto;height:32px;padding:0 10px;gap:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:.82rem}
+body.agent-mode #attachBtn .atxt{display:inline}
+body.agent-mode #attachBtn:hover{background:var(--ag-hover);color:var(--text)}
+body.agent-mode #voiceBtn,body.agent-mode #promptBtn,body.agent-mode #quickVoiceBtn{display:none!important}
+body.agent-mode #modelBtn,body.agent-mode #customModelBtn{border-color:transparent;color:var(--dim);font-weight:500;padding:6px 9px;border-radius:8px}
+body.agent-mode #modelBtn:hover,body.agent-mode #customModelBtn:hover{background:var(--ag-hover);border-color:transparent;color:var(--text)}
+body.agent-mode #sendBtn[hidden]{display:flex!important}
+body.agent-mode #sendBtn{width:32px;height:32px;border-radius:8px;background:transparent;color:var(--dim);border:1px solid var(--border);box-shadow:none}
+body.agent-mode #sendBtn:not(:disabled){background:var(--text);color:var(--bg);border-color:var(--text)}
+body.agent-mode #sendBtn:hover{transform:none}
+body.agent-mode #sendBtn.stopmode{background:var(--panel3);color:var(--text);border-color:var(--border-hi)}
+body.agent-mode #modelMenu,body.agent-mode #customModelMenu{background:var(--panel);border-color:var(--border);border-radius:12px}
+body.agent-mode .hint{color:var(--dim2)}
+
+/* messages */
+body.agent-mode #thread{max-width:740px}
+body.agent-mode .msg-user .bub{background:var(--ag-user);border-color:transparent;border-radius:14px;color:var(--text)}
+body.agent-mode .msg-ai .ava,body.agent-mode .msg-ai .who{display:none}
+body.agent-mode .msg-ai .content{color:var(--text)}
+body.agent-mode .content a{color:var(--ag-accent)}
+
+/* activity timeline (agent steps) */
+.agx{margin:0 0 12px;font-size:.84rem;color:var(--dim)}
+.agx-head{display:inline-flex;align-items:center;gap:7px;padding:4px 8px 4px 2px;border-radius:8px;color:var(--dim);font-weight:500;transition:.12s}
+.agx-head:hover{color:var(--text)}
+.agx-head .agx-chev{display:inline-flex;transition:transform .16s}
+.agx.open .agx-head .agx-chev{transform:rotate(90deg)}
+.agx-spark{display:inline-flex;color:var(--ag-accent,#f43f5e)}
+.agx-list{display:none;position:relative;margin:6px 0 2px 9px;padding-left:18px;border-left:1px solid var(--ag-line,var(--border))}
+.agx.open .agx-list{display:block}
+.agx-step{position:relative;padding:3px 0}
+.agx-row{width:100%;display:flex;align-items:center;gap:8px;text-align:left;padding:5px 8px;margin-left:-8px;border-radius:8px;color:var(--dim);transition:.12s;min-width:0}
+.agx-row:hover{background:var(--ag-hover,rgba(255,255,255,.05));color:var(--text)}
+.agx-ic{position:absolute;left:-28px;top:7px;width:19px;height:19px;border-radius:50%;background:var(--bg);border:1px solid var(--ag-line,var(--border));display:flex;align-items:center;justify-content:center;color:var(--dim)}
+.agx-ic svg{width:11px;height:11px}
+.agx-verb{color:var(--text);font-weight:500;white-space:nowrap}
+.agx-arg{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim)}
+.agx-row .agx-chev{display:inline-flex;color:var(--dim2);transition:transform .16s}
+.agx-step.open .agx-row .agx-chev{transform:rotate(90deg)}
+.agx-out{display:none;margin:4px 0 6px;padding:10px 12px;border:1px solid var(--ag-line,var(--border));border-radius:10px;background:var(--panel2);font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dim);white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto}
+.agx-step.open .agx-out{display:block}
+.agx-step.fail .agx-verb{color:#e05d6f}
+.agx-done{display:flex;align-items:center;gap:8px;padding:5px 0 2px;color:var(--dim2);font-size:.8rem}
+.agx-live{display:inline-flex;align-items:center;gap:9px;color:var(--dim);font-size:.88rem}
+.agx-live .agx-spark svg{animation:agspin 2.4s linear infinite}
+.agx-live .agx-time{color:var(--dim2);font-variant-numeric:tabular-nums}
+.agx-shimmer{background:linear-gradient(90deg,var(--dim) 0%,var(--text) 50%,var(--dim) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:agshim 1.8s linear infinite}
+@keyframes agspin{to{transform:rotate(360deg)}}
+@keyframes agshim{from{background-position:200% 0}to{background-position:-200% 0}}
+body.agent-mode .msg-ai.thinking .content{display:block}
+
+/* workspace panel */
+#wsPanel{position:absolute;top:0;right:0;bottom:0;width:340px;max-width:100%;z-index:45;background:var(--panel);border-left:1px solid var(--border);box-shadow:none;transform:translateX(102%);visibility:hidden;transition:transform .22s ease,visibility 0s linear .22s;display:flex;flex-direction:column}
+#wsPanel.open{transform:none;visibility:visible;box-shadow:-20px 0 50px rgba(0,0,0,.12);transition:transform .22s ease,visibility 0s}
+.ws-head{height:52px;display:flex;align-items:center;gap:8px;padding:0 10px 0 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:.92rem;color:var(--text)}
+.ws-head .sp{flex:1}
+.ws-head button{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--dim)}
+.ws-head button:hover{background:var(--ag-hover);color:var(--text)}
+.ws-body{flex:1;overflow:auto;padding:14px 12px 20px}
+.ws-sec{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim2);padding:6px 6px 8px}
+.ws-item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:9px;color:var(--text);font-size:.82rem;min-width:0}
+a.ws-item:hover{background:var(--ag-hover)}
+.ws-item .wi{width:28px;height:28px;flex-shrink:0;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--dim)}
+.ws-item .wt{flex:1;min-width:0;display:flex;flex-direction:column}
+.ws-item .wt b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-item .wt small{color:var(--dim2);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-empty{margin:30px 10px;text-align:center;color:var(--dim2);font-size:.82rem;line-height:1.6}
+.ws-empty .wi{width:44px;height:44px;margin:0 auto 10px;border-radius:12px;border:1px dashed var(--border-hi);display:flex;align-items:center;justify-content:center;color:var(--dim)}
+.ws-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 4px 16px}
+.ws-stat{border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.ws-stat b{display:block;font-size:1.1rem;color:var(--text);font-weight:600}
+.ws-stat span{font-size:.72rem;color:var(--dim2)}
+@media (max-width:900px){ #wsPanel{width:100%} }
+@media (max-width:600px){ body.agent-mode #welcome h2{font-size:1.85rem} body.agent-mode.agent-empty #composer{padding-bottom:18vh} }
 </style>
 </head>
 <body class="<?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? 'loading-chat' : '' ?>">
@@ -508,6 +667,16 @@ body.voice-open{overflow:hidden}
   </aside>
   <div id="backdrop"></div>
 
+  <!-- Agent Mode icon rail (shown when the sidebar is collapsed) -->
+  <nav id="agentRail" aria-label="Quick navigation">
+    <button class="rbtn rtop" id="railOpen" type="button" title="Open sidebar"><?= icon('panel-left', 18) ?></button>
+    <button class="rbtn" id="railNew" type="button" title="New agent chat"><?= icon('square-pen', 17) ?></button>
+    <button class="rbtn" id="railHistory" type="button" title="Chat history"><?= icon('list', 17) ?></button>
+    <span class="rsp"></span>
+    <button class="rbtn" id="railTheme" type="button" title="Switch theme"><?= icon('sun', 17) ?></button>
+    <button class="rbtn" id="railUser" type="button" title="Account"><span class="rav"><?= htmlspecialchars(strtoupper(mb_substr($me['name'], 0, 1))) ?></span></button>
+  </nav>
+
   <!-- ═══ MAIN ═══ -->
   <main>
     <header class="m-top">
@@ -518,7 +687,7 @@ body.voice-open{overflow:hidden}
 
     <div class="modesw<?= $ROUTE_MODE === 'agent' ? ' agent' : '' ?>" id="modeSw">
       <button class="modebtn" id="modeBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="Switch between AI Mode and Agent Mode">
-        <img src="assets/logo.svg" alt=""><span class="mname">Devil AI</span><span class="mtag" id="modeTag"><?= $ROUTE_MODE === 'agent' ? 'Agent' : 'AI' ?></span><span class="mchev"><?= icon('chevron-down', 15) ?></span>
+        <img src="assets/logo.svg" alt=""><span class="mname">Devil AI</span><span class="mtag" id="modeTag"><?= $ROUTE_MODE === 'agent' ? 'Agent' : 'AI' ?></span><span class="aglabel"><span class="agspark"><?= icon('spark', 17) ?></span>Agent Mode</span><span class="mchev"><?= icon('chevron-down', 15) ?></span>
       </button>
       <div class="modemenu" id="modeMenu" role="menu" aria-label="Chat mode">
         <div class="mhead">Choose mode</div>
@@ -538,7 +707,13 @@ body.voice-open{overflow:hidden}
     <div class="chattools" id="chatTools" aria-label="Chat actions">
       <button class="ctbtn primary" id="tempChatBtn" type="button" title="Start temporary chat"><?= icon('ghost', 17) ?><span class="txt">Temp</span></button>
       <button class="ctbtn" id="topNewChatBtn" type="button" title="New chat"><?= icon('square-pen', 17) ?><span class="txt">New</span></button>
+      <button class="ctbtn" id="wsBtn" type="button" title="Workspace — sources and tool activity" aria-expanded="false"><?= icon('folder', 18) ?><span class="txt">Workspace</span></button>
     </div>
+
+    <aside id="wsPanel" aria-label="Agent workspace" aria-hidden="true">
+      <div class="ws-head"><?= icon('folder', 17) ?><span>Workspace</span><span class="sp"></span><button type="button" id="wsClose" title="Close workspace"><?= icon('x', 16) ?></button></div>
+      <div class="ws-body" id="wsBody"></div>
+    </aside>
 
     <div id="scroller"><div id="thread">
       <div id="welcome">
@@ -563,7 +738,7 @@ body.voice-open{overflow:hidden}
         <textarea id="inp" rows="1" maxlength="4000" placeholder="Message Devil AI…"></textarea>
         <div class="comprow">
           <div class="modelwrap">
-            <button id="attachBtn" title="Attach files" type="button"><?= icon('paperclip', 16) ?></button>
+            <button id="attachBtn" title="Attach files" type="button"><?= icon('paperclip', 16) ?><span class="atxt">Add files</span></button>
             <button id="voiceBtn" title="Live voice chat" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
             <button id="promptBtn" title="Prompt library" type="button"><?= icon('lightbulb', 16) ?></button>
             <div id="promptMenu"></div>
@@ -679,11 +854,27 @@ function syncModeUI() {
   var h = $('#welcome h2'), p = $('#welcome .sub'), ta = $('#inp');
   if (h && p && !WELCOME_TEXT) { WELCOME_TEXT = { h: h.textContent, p: p.textContent, ph: ta ? ta.placeholder : '' }; }
   if (WELCOME_TEXT) {
-    h.textContent = agentMode ? 'Agent Mode is ready' : WELCOME_TEXT.h;
-    p.textContent = agentMode ? 'Give me a task — I can search the web, read pages and calculate before I answer.' : WELCOME_TEXT.p;
-    if (ta) { ta.placeholder = agentMode ? 'Give Devil Agent a task…' : WELCOME_TEXT.ph; }
+    h.textContent = agentMode ? 'What would you like to do?' : WELCOME_TEXT.h;
+    p.textContent = agentMode ? 'Devil Agent searches the web, reads pages and calculates before answering.' : WELCOME_TEXT.p;
+    if (ta) { ta.placeholder = agentMode ? 'Ask anything…' : WELCOME_TEXT.ph; }
   }
   document.body.classList.toggle('agent-mode', agentMode);
+  if (!agentMode) { setWorkspace(false); }
+  syncEmptyState();
+  if (typeof renderWorkspace === 'function') { renderWorkspace(); }
+}
+function syncEmptyState() {
+  var m = document.getElementById('msgs');
+  var empty = !!m && !m.children.length && !document.body.classList.contains('loading-chat');
+  document.body.classList.toggle('agent-empty', empty);
+}
+function setWorkspace(open) {
+  var p = document.getElementById('wsPanel'), b = document.getElementById('wsBtn');
+  if (!p) { return; }
+  p.classList.toggle('open', open);
+  p.setAttribute('aria-hidden', open ? 'false' : 'true');
+  if (b) { b.classList.toggle('on', open); b.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  if (open) { renderWorkspace(); }
 }
 function setModeMenu(open) {
   var sw = $('#modeSw'); if (!sw) { return; }
@@ -1048,6 +1239,7 @@ function shareCurrentChat(btn) {
 var sb = $('#sidebar'), bd = $('#backdrop');
 function setSb(open) {
   sb.classList.toggle('closed', !open);
+  document.body.classList.toggle('sb-closed', !open);
   bd.classList.toggle('show', open && window.innerWidth <= 900);
   store('devil_sb', open ? '1' : '0');
 }
@@ -1261,18 +1453,88 @@ function addAiMsg(opts) {
   return d;
 }
 
-function renderAgentTrace(el, steps) {
-  if (!el || !steps || !steps.length) { return; }
+var AGX_TOOLS = {
+  web_search: { verb: 'Searched the web', icon: 'globe' },
+  fetch_url:  { verb: 'Read page', icon: 'fileText' },
+  calculator: { verb: 'Calculated', icon: 'calc' },
+  datetime:   { verb: 'Checked the time', icon: 'clock' }
+};
+function agxArg(s) {
+  var inp = String(s.input || '').trim();
+  if (s.tool === 'fetch_url') { try { var u = new URL(inp); return u.hostname.replace(/^www\./, '') + (u.pathname !== '/' ? u.pathname : ''); } catch (e) {} }
+  if (s.tool === 'datetime' && !inp) { return 'server clock'; }
+  return inp;
+}
+function fmtDur(ms) {
+  if (!ms && ms !== 0) { return ''; }
+  var sec = Math.max(1, Math.round(ms / 1000));
+  return sec < 60 ? sec + 's' : Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
+}
+function renderAgentTrace(el, steps, ms) {
+  steps = steps || [];
+  if (!el || (!steps.length && !ms)) { return; }
   var box = document.createElement('div');
-  box.className = 'agent-trace';
-  var rows = steps.map(function (s) {
-    return '<div class="agent-step"><span class="agent-tool">' + (I.brain || '') + ' ' + esc(s.tool || 'tool') + '</span>' +
-      '<span class="agent-io">' + esc(s.input || '') + '</span>' +
-      (s.ok ? '' : '<span class="agent-err">step failed</span>') + '</div>';
+  box.className = 'agx' + (steps.length ? ' open' : '');
+  var label = (ms ? 'Worked for ' + fmtDur(ms) : 'Worked') + (steps.length ? ' · ' + steps.length + ' step' + (steps.length > 1 ? 's' : '') : '');
+  var rows = steps.map(function (s, i) {
+    var t = AGX_TOOLS[s.tool] || { verb: 'Used ' + (s.tool || 'tool'), icon: 'brainS' };
+    var out = String(s.output || '').trim();
+    return '<div class="agx-step' + (s.ok ? '' : ' fail') + '" data-i="' + i + '">' +
+      '<span class="agx-ic">' + (I[t.icon] || '') + '</span>' +
+      '<button type="button" class="agx-row"><span class="agx-verb">' + esc(s.ok ? t.verb : t.verb + ' — failed') + '</span>' +
+      '<span class="agx-arg">' + esc(agxArg(s)) + '</span>' + (out ? '<span class="agx-chev">' + (I.chevR || '') + '</span>' : '') + '</button>' +
+      (out ? '<div class="agx-out">' + esc(out) + '</div>' : '') + '</div>';
   }).join('');
-  box.innerHTML = '<div class="agent-head">' + esc('Agent mode · ' + steps.length + ' step' + (steps.length > 1 ? 's' : '')) + '</div>' + rows;
+  box.innerHTML = '<button type="button" class="agx-head"><span class="agx-spark">' + (I.spark || '') + '</span><span>' + esc(label) + '</span>' +
+    (steps.length ? '<span class="agx-chev">' + (I.chevR || '') + '</span>' : '') + '</button>' +
+    (steps.length ? '<div class="agx-list">' + rows + '<div class="agx-done">' + (I.check || '') + ' Done</div></div>' : '');
+  box.querySelector('.agx-head').addEventListener('click', function () { if (steps.length) { box.classList.toggle('open'); } });
+  Array.prototype.forEach.call(box.querySelectorAll('.agx-step'), function (st) {
+    var r = st.querySelector('.agx-row');
+    if (st.querySelector('.agx-out')) { r.addEventListener('click', function () { st.classList.toggle('open'); }); }
+  });
   var body = el.querySelector('.body');
   if (body) { body.insertBefore(box, el.querySelector('.content')); }
+}
+
+/* workspace panel: sources + tool activity gathered from this chat's agent steps */
+function workspaceData() {
+  var steps = [], seen = {}, sources = [];
+  ((currentChat && currentChat.messages) || []).forEach(function (m) {
+    if (!m || m.role !== 'assistant' || !m.agent_steps) { return; }
+    m.agent_steps.forEach(function (s) {
+      steps.push(s);
+      var urls = [];
+      if (s.tool === 'fetch_url' && s.input) { urls.push(String(s.input).trim()); }
+      String(s.output || '').replace(/https?:\/\/[^\s<>"')\]]+/g, function (u) { urls.push(u.replace(/[.,;:]+$/, '')); return u; });
+      urls.forEach(function (u) {
+        if (seen[u]) { return; }
+        try { var p = new URL(u); if (!/^https?:$/.test(p.protocol)) { return; } seen[u] = 1; sources.push({ url: u, host: p.hostname.replace(/^www\./, ''), path: p.pathname, read: s.tool === 'fetch_url' }); } catch (e) {}
+      });
+    });
+  });
+  return { steps: steps, sources: sources };
+}
+function renderWorkspace() {
+  var box = document.getElementById('wsBody');
+  if (!box) { return; }
+  var d = workspaceData();
+  if (!d.steps.length) {
+    box.innerHTML = '<div class="ws-empty"><div class="wi">' + (I.spark || '') + '</div>Nothing here yet.<br>Sources the agent searches and reads will appear here.</div>';
+    return;
+  }
+  var reads = d.sources.filter(function (x) { return x.read; }).length;
+  var html = '<div class="ws-stats"><div class="ws-stat"><b>' + d.steps.length + '</b><span>tool steps</span></div><div class="ws-stat"><b>' + d.sources.length + '</b><span>sources' + (reads ? ' · ' + reads + ' read' : '') + '</span></div></div>';
+  if (d.sources.length) {
+    html += '<div class="ws-sec">Sources</div>' + d.sources.slice(0, 40).map(function (x) {
+      return '<a class="ws-item" href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer"><span class="wi">' + (x.read ? I.fileText : I.link) + '</span><span class="wt"><b>' + esc(x.host) + '</b><small>' + esc(x.path && x.path !== '/' ? x.path : x.url) + '</small></span></a>';
+    }).join('');
+  }
+  html += '<div class="ws-sec" style="margin-top:12px">Activity</div>' + d.steps.slice(-30).reverse().map(function (s) {
+    var t = AGX_TOOLS[s.tool] || { verb: 'Used ' + (s.tool || 'tool'), icon: 'brainS' };
+    return '<div class="ws-item"><span class="wi">' + (I[t.icon] || '') + '</span><span class="wt"><b>' + esc(t.verb) + '</b><small>' + esc(agxArg(s)) + '</small></span></div>';
+  }).join('');
+  box.innerHTML = html;
 }
 
 function aiContent(el, text, meta) {
@@ -1307,7 +1569,7 @@ function renderCurrentMessages() {
   arr.forEach(function (m, idx) {
     if (!m || !m.role) { return; }
     if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited, branchGroup: branchGroupFor(idx), attachments: m.attachments || [] }); }
-    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx }); if (m.agent_steps && m.agent_steps.length) { renderAgentTrace(el, m.agent_steps); } }
+    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx }); if ((m.agent_steps && m.agent_steps.length) || m.agent_ms) { renderAgentTrace(el, m.agent_steps || [], m.agent_ms); } }
   });
   refreshMessageActions();
   scrollDown();
@@ -1398,6 +1660,20 @@ function optsCanRetry(el) { return el === msgs.lastElementChild || el.nextElemen
 function addThinking() {
   var d = addAiMsg({ modelTag: activeModelLabel() });
   d.classList.add('thinking');
+  if (agentMode) {
+    var t0 = Date.now();
+    d.querySelector('.content').innerHTML = '<span class="agx-live"><span class="agx-spark">' + (I.spark || '') + '</span><span class="agx-shimmer">Planning the task…</span><span class="agx-time">0s</span></span>';
+    var lab = d.querySelector('.agx-shimmer'), tm = d.querySelector('.agx-time');
+    var iv = setInterval(function () {
+      if (!document.body.contains(d)) { clearInterval(iv); return; }
+      var sec = Math.round((Date.now() - t0) / 1000);
+      tm.textContent = fmtDur(sec * 1000 || 1);
+      lab.textContent = sec < 4 ? 'Planning the task…' : (sec < 14 ? 'Working with tools…' : 'Putting the answer together…');
+    }, 1000);
+    refreshMessageActions();
+    scrollDown();
+    return d;
+  }
   d.querySelector('.content').innerHTML = '<span class="dots"><span></span><span></span><span></span></span> thinking…';
   refreshMessageActions();
   scrollDown();
@@ -2075,12 +2351,13 @@ function runSend(payload) {
       }
       var am = { role: 'assistant', content: j.reply, model_label: (j.model && j.model.label) || activeModelLabel() };
       if (j.agent && j.agent.steps && j.agent.steps.length) { am.agent_steps = j.agent.steps; }
+      if (j.agent && j.agent.ms) { am.agent_ms = j.agent.ms; }
       if (currentChat && j.mode) { currentChat.mode = j.mode; }
       currentChat.messages.push(am);
       var aiIndex = currentChat.messages.length - 1;
       var el = addAiMsg({ modelTag: (j.model && j.model.label) || activeModelLabel() });
       aiContent(el, j.reply, { index: aiIndex });
-      if (j.agent && j.agent.steps && j.agent.steps.length) { renderAgentTrace(el, j.agent.steps); }
+      if (j.agent) { renderAgentTrace(el, j.agent.steps || [], j.agent.ms); renderWorkspace(); }
       if (voiceMode) { speakText(j.reply); }
       if (!isTempChat) { loadChats(); }
       updateChatActions();
@@ -2299,6 +2576,26 @@ $('#delAccGo').addEventListener('click', function () {
 $$('[data-close]').forEach(function (b) { b.addEventListener('click', function () { $('#' + b.dataset.close).classList.add('hidden'); }); });
 $$('.modal').forEach(function (m) { m.addEventListener('click', function (e) { if (e.target === m) { m.classList.add('hidden'); } }); });
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { $$('.modal').forEach(function (m) { m.classList.add('hidden'); }); } });
+
+/* ── agent workspace UI wiring ── */
+(function () {
+  var wb = $('#wsBtn'), wc = $('#wsClose');
+  if (wb) { wb.addEventListener('click', function () { setWorkspace(!$('#wsPanel').classList.contains('open')); }); }
+  if (wc) { wc.addEventListener('click', function () { setWorkspace(false); }); }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { setWorkspace(false); } });
+  var on = function (id, fn) { var el = document.getElementById(id); if (el) { el.addEventListener('click', fn); } };
+  on('railOpen', function () { setSb(true); });
+  on('railUser', function () { setSb(true); });
+  on('railHistory', function () { setSb(true); setTimeout(function () { var si = $('#searchInp'); if (si) { si.focus(); } }, 240); });
+  on('railNew', function () { if (busy) { pauseSend(); } window.location.href = newChatPath(); });
+  on('railTheme', function () { var tb = $('#themeBtn'); if (tb) { tb.click(); } });
+  document.body.classList.toggle('sb-closed', sb.classList.contains('closed'));
+  if (window.MutationObserver) {
+    new MutationObserver(syncEmptyState).observe($('#msgs'), { childList: true });
+    new MutationObserver(syncEmptyState).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  }
+  syncEmptyState();
+})();
 
 /* ── boot ── */
 api('bootstrap').then(function (j) {

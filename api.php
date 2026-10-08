@@ -3149,11 +3149,13 @@ try {
         $providerMsgs = array_merge([['role' => 'system', 'content' => PREXZY_PERSONA]], $hist);
         $aiModel = ($model === 'custom') ? ('custom:' . $customModel) : $model;
         $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
+        $agentT0 = microtime(true);
         $agent = agent_respond($cfgAll, $aiModel, $providerMsgs, static function ($c, $m, $msgs, $im) { return ai_respond($c, $m, $msgs, $im); }, $img, ['max_steps' => (int)($cfgAll['agent_max_steps'] ?? 6)]);
         if (!$agent['ok']) { json_out(['ok' => false, 'error' => (string)$agent['error']], 502); }
         $reply = (string)$agent['reply'];
+        $agentMs = (int)round((microtime(true) - $agentT0) * 1000);
 
-        $assistantMsg = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => $displayLabel, 'agent' => 1];
+        $assistantMsg = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => $displayLabel, 'agent' => 1, 'agent_ms' => $agentMs];
         if ($customModel !== '') { $assistantMsg['custom_model'] = $customModel; }
         if (!empty($agent['trace'])) { $assistantMsg['agent_steps'] = $agent['trace']; }
         $chat['messages'][] = $assistantMsg;
@@ -3169,7 +3171,7 @@ try {
         if ($customModel !== '') { $modelOut['custom'] = $customModel; }
 
         if ($temp) {
-            json_out(['ok' => true, 'id' => null, 'temp' => true, 'title' => 'Temporary chat', 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace']]]);
+            json_out(['ok' => true, 'id' => null, 'temp' => true, 'title' => 'Temporary chat', 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace'], 'ms' => $agentMs]]);
         }
         if ($rootChatForSend) {
             update_root_variant_messages($rootChatForSend, $responseVariant !== '' ? $responseVariant : (string)$responseRootId, $chat);
@@ -3189,7 +3191,7 @@ try {
             $outModel = (string)($chat['url_model'] ?? 'flash');
             $outType = (string)($chat['url_type'] ?? 'chat');
         }
-        json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'mode' => 'agent', 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace']]]);
+        json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'mode' => 'agent', 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace'], 'ms' => $agentMs]]);
     }
 
     json_out(['ok' => false, 'error' => 'Unknown action.'], 404);
