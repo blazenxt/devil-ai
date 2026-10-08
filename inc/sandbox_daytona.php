@@ -90,7 +90,7 @@ function dyt_create(array $cfg, string $sid): array {
     ];
     if (!empty($cfg['daytona_snapshot'])) { $body['snapshot'] = (string)$cfg['daytona_snapshot']; }
     [$st, $j, , $err] = dyt_http($cfg, 'POST', dyt_api($cfg) . '/sandbox', (string)json_encode($body), 60);
-    if ($st < 200 || $st >= 300 || empty($j['id'])) { return ['ok' => false, 'error' => $err ?: 'could not create the sandbox']; }
+    if ($st < 200 || $st >= 300 || empty($j['id'])) { return ['ok' => false, 'error' => $err ?: 'could not create the sandbox', 'down' => true]; }
     return ['ok' => true, 'sb' => $j, 'new' => true];
 }
 
@@ -101,7 +101,7 @@ function dyt_wait_started(array $cfg, string $id, int $maxSec = 45, bool $wake =
     while (true) {
         [$st, $j, , $err] = dyt_http($cfg, 'GET', dyt_api($cfg) . '/sandbox/' . rawurlencode($id), null, 15);
         if ($st === 404) { return ['ok' => false, 'gone' => true, 'error' => 'sandbox not found']; }
-        if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => $err ?: 'sandbox state unknown']; }
+        if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => $err ?: 'sandbox state unknown', 'down' => $st === 0 || $st === 401 || $st === 402 || $st === 403 || $st >= 500]; }
         $state = (string)($j['state'] ?? '');
         if ($state === 'started') { return ['ok' => true, 'sb' => $j]; }
         if (in_array($state, ['destroyed', 'destroying', 'error', 'build_failed'], true)) { return ['ok' => false, 'gone' => true, 'error' => 'sandbox ' . $state]; }
@@ -143,7 +143,7 @@ function dyt_ensure(array $cfg, string $sid, bool $create = true, bool $wake = t
         dyt_map_set($sid, $id);
         $w = dyt_wait_started($cfg, $id, 60);
     }
-    if (empty($w['ok'])) { return ['ok' => false, 'error' => (string)($w['error'] ?? 'sandbox unavailable')]; }
+    if (empty($w['ok'])) { return ['ok' => false, 'error' => (string)($w['error'] ?? 'sandbox unavailable'), 'down' => !empty($w['down'])]; }
     /* first start: the working folder lives at /home/user/work (same layout the agent prompt describes) */
     $init = 'test -d ' . DYT_WORK . ' || { sudo mkdir -p ' . DYT_WORK . ' /home/user/.bg && sudo chown -R "$(id -u):$(id -g)" /home/user; }; '
           . 'python3 -c "import playwright" 2>/dev/null || (nohup pip install -q playwright >/dev/null 2>&1 &) ; true';
@@ -215,15 +215,19 @@ function dyt_exec(array $cfg, string $sid, string $cmd, int $timeout = 80, bool 
 }
 
 function dyt_files(array $cfg, string $sid, string $path = '.', int $depth = 4): array {
+    return sbx_files_via(static function (string $sh, int $t) use ($cfg, $sid) { return dyt_exec($cfg, $sid, $sh, $t); }, DYT_WORK, dyt_abs($path), $depth);
+}
+
+/** file listing through any provider's exec: $exec(string $sh, int $timeout) → exec result */
+function sbx_files_via(callable $exec, string $work, string $abs, int $depth = 4): array {
     $depth = max(1, min($depth, 8));
-    $abs = dyt_abs($path);
     $prune = [];
     foreach (DYT_SKIP_DIRS as $d) { $prune[] = '-name ' . escapeshellarg($d); }
     /* one line per entry: type \t size \t mtime \t path-relative-to-workdir \t skipped */
-    $sh = 'cd ' . escapeshellarg(DYT_WORK) . ' 2>/dev/null || exit 3; test -d ' . escapeshellarg($abs) . ' || { echo __NOTDIR; exit 0; }; '
+    $sh = 'cd ' . escapeshellarg($work) . ' 2>/dev/null || exit 3; test -d ' . escapeshellarg($abs) . ' || { echo __NOTDIR; exit 0; }; '
         . 'find ' . escapeshellarg($abs) . ' -mindepth 1 -maxdepth ' . $depth . ' -type d \( ' . implode(' -o ', $prune) . ' \) -printf "d\t0\t%T@\t%p\t1\n" -prune '
         . '-o \( -type d -printf "d\t0\t%T@\t%p\t0\n" \) -o \( -type f -printf "f\t%s\t%T@\t%p\t0\n" \) -o \( -type l -printf "f\t0\t%T@\t%p\t0\n" \) 2>/dev/null | head -n 3001';
-    $r = dyt_exec($cfg, $sid, $sh, 30);
+    $r = $exec($sh, 30);
     if (empty($r['ok'])) { return ['ok' => false, 'error' => (string)($r['error'] ?? 'list failed'), 'entries' => []]; }
     $out = (string)($r['stdout'] ?? '');
     if (strpos($out, '__NOTDIR') !== false) { return ['ok' => false, 'error' => 'not a directory', 'entries' => []]; }
@@ -232,12 +236,12 @@ function dyt_files(array $cfg, string $sid, string $path = '.', int $depth = 4):
         $c = explode("\t", $line);
         if (count($c) < 5) { continue; }
         $p = $c[3];
-        if (strpos($p, DYT_WORK . '/') === 0) { $p = substr($p, strlen(DYT_WORK) + 1); }
+        if (strpos($p, $work . '/') === 0) { $p = substr($p, strlen($work) + 1); }
         if ($c[0] === 'd') { $entries[] = ['path' => $p, 'type' => 'dir', 'skipped' => $c[4] === '1']; }
         else { $entries[] = ['path' => $p, 'type' => 'file', 'size' => (int)$c[1], 'mtime' => (int)$c[2]]; }
     }
     usort($entries, static function ($a, $b) { return strcmp($a['path'], $b['path']); });
-    return ['ok' => true, 'root' => DYT_WORK, 'entries' => array_slice($entries, 0, 3000), 'truncated' => count($entries) > 3000];
+    return ['ok' => true, 'root' => $work, 'entries' => array_slice($entries, 0, 3000), 'truncated' => count($entries) > 3000];
 }
 
 function dyt_mime(string $path): string {

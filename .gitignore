@@ -18,3 +18,5 @@ data/security_datacenter_cidrs.json
 data/mail.log
 inc/origin_key.php
 data/sbx_daytona.json
+data/sbx_vercel.json
+data/sbx_route.json

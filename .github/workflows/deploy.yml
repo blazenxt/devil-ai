@@ -165,9 +165,12 @@ jobs:
           SFTP_TARGET: ${{ secrets.SFTP_TARGET }}
           DEVIL_SANDBOX_SECRET: ${{ secrets.DEVIL_SANDBOX_SECRET }}
           DEVIL_DAYTONA_API_KEY: ${{ secrets.DEVIL_DAYTONA_API_KEY }}
+          DEVIL_VERCEL_TOKEN: ${{ secrets.DEVIL_VERCEL_TOKEN }}
+          DEVIL_VERCEL_TEAM_ID: ${{ secrets.DEVIL_VERCEL_TEAM_ID }}
+          DEVIL_VERCEL_PROJECT_ID: ${{ secrets.DEVIL_VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
-          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ]; then
+          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ] && [ -z "${DEVIL_VERCEL_TOKEN:-}" ]; then
             echo "No sandbox secrets set; skipping sandbox config patch."
             exit 0
           fi
@@ -193,12 +196,22 @@ jobs:
           if os.environ.get('DEVIL_SANDBOX_SECRET'):
               # also used to derive the per-chat sandbox ids, so keep it stable
               cfg['sandbox_secret'] = os.environ['DEVIL_SANDBOX_SECRET']
-          if os.environ.get('DEVIL_DAYTONA_API_KEY'):
+          has_d = bool(os.environ.get('DEVIL_DAYTONA_API_KEY'))
+          has_v = all(os.environ.get(k) for k in ('DEVIL_VERCEL_TOKEN', 'DEVIL_VERCEL_TEAM_ID', 'DEVIL_VERCEL_PROJECT_ID'))
+          if has_d:
+              cfg.update({'daytona_api_key': os.environ['DEVIL_DAYTONA_API_KEY'], 'daytona_target': 'us'})
+          if has_v:
               cfg.update({
-                  'sandbox_provider': 'daytona',
-                  'daytona_api_key': os.environ['DEVIL_DAYTONA_API_KEY'],
-                  'daytona_target': 'us',
+                  'vercel_token': os.environ['DEVIL_VERCEL_TOKEN'],
+                  'vercel_team_id': os.environ['DEVIL_VERCEL_TEAM_ID'],
+                  'vercel_project_id': os.environ['DEVIL_VERCEL_PROJECT_ID'],
               })
+          else:
+              for k in ('vercel_token', 'vercel_team_id', 'vercel_project_id'):
+                  cfg.pop(k, None)
+          if has_d or has_v:
+              # Daytona first, Vercel Sandbox as the automatic backup (or whichever one is configured)
+              cfg['sandbox_provider'] = 'auto' if (has_d and has_v) else ('daytona' if has_d else 'vercel')
           else:
               cfg.update({
                   'sandbox_provider': 'devil',

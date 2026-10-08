@@ -15,16 +15,112 @@ declare(strict_types=1);
 
 const SBX_WORKDIR = '/home/user/work';
 require_once __DIR__ . '/sandbox_daytona.php';
+require_once __DIR__ . '/sandbox_vercel.php';
 
+/**
+ * Providers: "daytona" | "vercel" | "auto" (Daytona first, Vercel Sandbox as the automatic backup) | "devil" (old gateway).
+ * In "auto" every chat is pinned to one backend (data/sbx_route.json) so its files never jump around:
+ *  - new chats go to Daytona, unless Daytona failed recently (credit used up, auth/quota error, outage) → Vercel
+ *  - a chat whose Daytona sandbox cannot be created/started is moved to Vercel
+ *  - the agent can move a chat to Vercel (full internet) with the full_internet tool; its files are copied over
+ */
 function sbx_provider(array $cfg): string {
-    return strtolower(trim((string)($cfg['sandbox_provider'] ?? ''))) === 'daytona' ? 'daytona' : 'devil';
+    $p = strtolower(trim((string)($cfg['sandbox_provider'] ?? '')));
+    return in_array($p, ['daytona', 'vercel', 'auto'], true) ? $p : 'devil';
 }
-function sbx_is_daytona(array $cfg): bool { return sbx_provider($cfg) === 'daytona'; }
+function sbx_has_daytona(array $cfg): bool { return trim((string)($cfg['daytona_api_key'] ?? '')) !== ''; }
+function sbx_is_cloud(array $cfg): bool { return sbx_provider($cfg) !== 'devil'; }
+/** true when this deployment can use both clouds (auto fail-over / full_internet possible) */
+function sbx_dual(array $cfg): bool { return sbx_provider($cfg) === 'auto' && sbx_has_daytona($cfg) && vcl_configured($cfg); }
 
 function sbx_enabled(array $cfg): bool {
     if (empty($cfg['sandbox_enabled'])) { return false; }
-    if (sbx_is_daytona($cfg)) { return trim((string)($cfg['daytona_api_key'] ?? '')) !== ''; }
+    switch (sbx_provider($cfg)) {
+        case 'daytona': return sbx_has_daytona($cfg);
+        case 'vercel':  return vcl_configured($cfg);
+        case 'auto':    return sbx_has_daytona($cfg) || vcl_configured($cfg);
+    }
     return trim((string)($cfg['sandbox_url'] ?? '')) !== '' && trim((string)($cfg['sandbox_secret'] ?? '')) !== '';
+}
+
+/* ── chat → backend pins (data/sbx_route.json): {sid: "daytona"|"vercel", "sid~why": "failover"|"internet", "_dyt_down": ts} ── */
+function sbx_route_path(): string { return dirname(__DIR__) . '/data/sbx_route.json'; }
+function sbx_route_all(): array {
+    static $cache = null;
+    if ($cache !== null && empty($GLOBALS['__sbx_route_dirty'])) { return $cache; }
+    $m = is_file(sbx_route_path()) ? json_decode((string)@file_get_contents(sbx_route_path()), true) : [];
+    $GLOBALS['__sbx_route_dirty'] = false;
+    return $cache = is_array($m) ? $m : [];
+}
+function sbx_route_get(string $key): string { $m = sbx_route_all(); return isset($m[$key]) ? (string)$m[$key] : ''; }
+function sbx_route_set(array $pairs): void {
+    $f = sbx_route_path();
+    @mkdir(dirname($f), 0755, true);
+    $fh = @fopen($f, 'c+');
+    if (!$fh) { return; }
+    flock($fh, LOCK_EX);
+    $m = json_decode((string)stream_get_contents($fh), true);
+    if (!is_array($m)) { $m = []; }
+    foreach ($pairs as $k => $v) { if ($v === null) { unset($m[$k]); } else { $m[$k] = $v; } }
+    ftruncate($fh, 0); rewind($fh); fwrite($fh, (string)json_encode($m, JSON_UNESCAPED_SLASHES));
+    flock($fh, LOCK_UN); fclose($fh);
+    $GLOBALS['__sbx_route_dirty'] = true;
+}
+function sbx_daytona_down(): bool { return (int)sbx_route_get('_dyt_down') > time(); }
+
+/** which backend serves this chat right now (no network calls) */
+function sbx_backend(array $cfg, string $sid): string {
+    $p = sbx_provider($cfg);
+    if ($p !== 'auto') { return $p; }
+    if (!vcl_configured($cfg)) { return 'daytona'; }
+    if (!sbx_has_daytona($cfg)) { return 'vercel'; }
+    $r = $sid !== '' ? sbx_route_get($sid) : '';
+    if ($r === 'daytona' || $r === 'vercel') { return $r; }
+    return sbx_daytona_down() ? 'vercel' : 'daytona';
+}
+
+/**
+ * backend for an operation that needs a running sandbox; does the Daytona → Vercel fail-over in "auto" mode.
+ * $create=false: the operation must not create a sandbox (reading a file).
+ */
+function sbx_use(array $cfg, string $sid, bool $create = true): string {
+    $be = sbx_backend($cfg, $sid);
+    if (!sbx_dual($cfg)) { return $be; }
+    if ($be === 'vercel') {
+        if ($create && sbx_route_get($sid) === '') { sbx_route_set([$sid => 'vercel', $sid . '~why' => 'failover']); }
+        return 'vercel';
+    }
+    $e = dyt_ensure($cfg, $sid, $create);
+    if (!empty($e['ok']) || !empty($e['none']) || !empty($e['asleep']) || empty($e['down'])) { return 'daytona'; }
+    /* Daytona cannot serve this chat (credit used up, quota/auth error, outage): use the backup for a while */
+    $mins = max(2, min(240, (int)($cfg['sandbox_failover_minutes'] ?? 15)));
+    sbx_route_set(['_dyt_down' => time() + $mins * 60, '_dyt_down_why' => mb_substr((string)($e['error'] ?? ''), 0, 200), $sid => 'vercel', $sid . '~why' => 'failover']);
+    if (function_exists('devil_log')) { @devil_log('sandbox', 'daytona down, using vercel: ' . (string)($e['error'] ?? '')); }
+    return 'vercel';
+}
+
+/** move a chat from Daytona to Vercel (full internet), copying its workspace. */
+function sbx_move_to_vercel(array $cfg, string $sid): array {
+    if (sbx_backend($cfg, $sid) === 'vercel') { return ['ok' => true, 'already' => true]; }
+    if (!vcl_configured($cfg)) { return ['ok' => false, 'error' => 'the full-internet sandbox is not configured']; }
+    $zip = '';
+    $e = sbx_has_daytona($cfg) ? dyt_ensure($cfg, $sid, false) : ['ok' => false];
+    if (!empty($e['ok'])) {
+        $z = dyt_zip($cfg, $sid);
+        if (empty($z['ok'])) { return ['ok' => false, 'error' => 'could not pack the current files: ' . (string)($z['error'] ?? '')]; }
+        $zip = (string)$z['data'];
+    }
+    $o = vcl_open($cfg, $sid);
+    if (empty($o['ok'])) { return ['ok' => false, 'error' => 'the full-internet sandbox did not start: ' . (string)($o['error'] ?? '')]; }
+    $copied = false;
+    if (strlen($zip) > 22) {
+        $u = vcl_unzip($cfg, $sid, $zip);
+        if (empty($u['ok'])) { return ['ok' => false, 'error' => 'could not copy the files: ' . (string)($u['error'] ?? '')]; }
+        $copied = true;
+    }
+    sbx_route_set([$sid => 'vercel', $sid . '~why' => 'internet']);
+    if (!empty($e['ok'])) { dyt_purge($cfg, $sid); }   /* the old copy is no longer used */
+    return ['ok' => true, 'copied' => $copied, 'bytes' => strlen($zip)];
 }
 
 /** stable, unguessable sandbox id for (user, chat) */
@@ -93,66 +189,90 @@ function sbx_request(array $cfg, string $method, string $path, string $body = ''
 function sbx_q(array $params): string { return http_build_query($params, '', '&', PHP_QUERY_RFC3986); }
 
 function sbx_health(array $cfg): array {
-    if (sbx_is_daytona($cfg)) { return dyt_health($cfg); }
+    if (sbx_is_cloud($cfg)) {
+        $p = sbx_provider($cfg);
+        $ok = $p === 'daytona' ? sbx_has_daytona($cfg) : ($p === 'vercel' ? vcl_configured($cfg) : (sbx_has_daytona($cfg) || vcl_configured($cfg)));
+        return ['ok' => $ok, 'provider' => $p, 'daytona' => sbx_has_daytona($cfg), 'vercel' => vcl_configured($cfg), 'daytona_down' => sbx_daytona_down()];
+    }
     $r = sbx_request($cfg, 'GET', '/v1/health', '', 10);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'offline'];
 }
 function sbx_open(array $cfg, string $sid): array {
-    if (sbx_is_daytona($cfg)) { return dyt_open($cfg, $sid); }
+    if (sbx_is_cloud($cfg)) { return sbx_use($cfg, $sid) === 'vercel' ? vcl_open($cfg, $sid) : dyt_open($cfg, $sid); }
     $r = sbx_request($cfg, 'POST', '/v1/s/' . $sid, '', 60);
     return $r['ok'] ? (array)$r['json'] : ['ok' => false, 'error' => $r['error']];
 }
 function sbx_exec(array $cfg, string $sid, string $cmd, int $timeout = 80, bool $background = false, float $wait = 3.0, string $cwd = ''): array {
-    if (sbx_is_daytona($cfg)) { return dyt_exec($cfg, $sid, $cmd, $timeout, $background, $wait, $cwd); }
+    if (sbx_is_cloud($cfg)) { return sbx_use($cfg, $sid) === 'vercel' ? vcl_exec($cfg, $sid, $cmd, $timeout, $background, $wait, $cwd) : dyt_exec($cfg, $sid, $cmd, $timeout, $background, $wait, $cwd); }
     $payload = ['cmd' => $cmd, 'timeout' => $timeout, 'background' => $background, 'wait' => $wait];
     if ($cwd !== '') { $payload['cwd'] = $cwd; }
     $r = sbx_request($cfg, 'POST', '/v1/s/' . $sid . '/exec', (string)json_encode($payload), $timeout + 12);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'exec failed'];
 }
 function sbx_files(array $cfg, string $sid, string $path = '.', int $depth = 4): array {
-    if (sbx_is_daytona($cfg)) { return dyt_files($cfg, $sid, $path, $depth); }
+    if (sbx_is_cloud($cfg)) { return sbx_use($cfg, $sid) === 'vercel' ? vcl_files($cfg, $sid, $path, $depth) : dyt_files($cfg, $sid, $path, $depth); }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/files?' . sbx_q(['path' => $path, 'depth' => $depth]), '', 30);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'list failed', 'entries' => []];
 }
 function sbx_read(array $cfg, string $sid, string $path): array {
-    if (sbx_is_daytona($cfg)) { return dyt_read($cfg, $sid, $path); }
+    if (sbx_is_cloud($cfg)) { return sbx_use($cfg, $sid, false) === 'vercel' ? vcl_read($cfg, $sid, $path) : dyt_read($cfg, $sid, $path); }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/file?' . sbx_q(['path' => $path]), '', 60);
     return $r['ok'] ? ['ok' => true, 'data' => $r['body'], 'type' => (string)($r['headers']['content-type'] ?? 'application/octet-stream')] : ['ok' => false, 'error' => $r['error'] ?: 'read failed', 'status' => $r['status']];
 }
 function sbx_write(array $cfg, string $sid, string $path, string $data): array {
-    if (sbx_is_daytona($cfg)) { return dyt_write($cfg, $sid, $path, $data); }
+    if (sbx_is_cloud($cfg)) { return sbx_use($cfg, $sid) === 'vercel' ? vcl_write($cfg, $sid, $path, $data) : dyt_write($cfg, $sid, $path, $data); }
     $r = sbx_request($cfg, 'PUT', '/v1/s/' . $sid . '/file?' . sbx_q(['path' => $path]), $data, 120, ['Content-Type: application/octet-stream']);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'] ?: 'write failed'];
 }
 function sbx_delete(array $cfg, string $sid, string $path): array {
-    if (sbx_is_daytona($cfg)) { return dyt_delete($cfg, $sid, $path); }
+    if (sbx_is_cloud($cfg)) { return sbx_use($cfg, $sid) === 'vercel' ? vcl_delete($cfg, $sid, $path) : dyt_delete($cfg, $sid, $path); }
     $r = sbx_request($cfg, 'DELETE', '/v1/s/' . $sid . '/file?' . sbx_q(['path' => $path]), '', 30);
     return $r['ok'] ? ['ok' => true] : ['ok' => false, 'error' => $r['error']];
 }
 function sbx_ports(array $cfg, string $sid): array {
-    if (sbx_is_daytona($cfg)) { return dyt_ports($cfg, $sid); }
+    if (sbx_is_cloud($cfg)) { return sbx_backend($cfg, $sid) === 'vercel' ? vcl_ports($cfg, $sid) : dyt_ports($cfg, $sid); }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/ports', '', 20);
     return $r['ok'] && is_array($r['json']) ? $r['json'] : ['ok' => false, 'error' => $r['error'], 'ports' => []];
 }
 function sbx_zip(array $cfg, string $sid): array {
-    if (sbx_is_daytona($cfg)) { return dyt_zip($cfg, $sid); }
+    if (sbx_is_cloud($cfg)) { return sbx_use($cfg, $sid) === 'vercel' ? vcl_zip($cfg, $sid) : dyt_zip($cfg, $sid); }
     $r = sbx_request($cfg, 'GET', '/v1/s/' . $sid . '/zip', '', 120);
     return $r['ok'] ? ['ok' => true, 'data' => $r['body']] : ['ok' => false, 'error' => $r['error']];
 }
 
 /** delete a chat's sandbox for good (chat deleted) */
 function sbx_purge(array $cfg, string $sid): array {
-    if (sbx_is_daytona($cfg)) { return dyt_purge($cfg, $sid); }
+    if (sbx_is_cloud($cfg)) {
+        $r = ['ok' => true];
+        $p = sbx_provider($cfg); $pin = sbx_route_get($sid); $why = sbx_route_get($sid . '~why');
+        $onV = $p === 'vercel' || ($p === 'auto' && ($pin === 'vercel' || !sbx_has_daytona($cfg)));
+        $onD = $p === 'daytona' || ($p === 'auto' && sbx_has_daytona($cfg) && ($pin !== 'vercel' || $why === 'failover'));
+        if ($onD && sbx_has_daytona($cfg)) { $r = dyt_purge($cfg, $sid); }
+        if ($onV && vcl_configured($cfg)) { $v = vcl_purge($cfg, $sid); if (empty($v['ok'])) { $r = $v; } }
+        if (sbx_route_get($sid) !== '') { sbx_route_set([$sid => null, $sid . '~why' => null]); }
+        return $r;
+    }
     $r = sbx_request($cfg, 'DELETE', '/v1/s/' . $sid . '?purge=1', '', 8);
     return $r['ok'] ? ['ok' => true] : ['ok' => false, 'error' => $r['error']];
 }
 
 /** one line for the agent prompt describing the sandbox computer */
-function sbx_env_text(array $cfg): string {
-    if (sbx_is_daytona($cfg)) {
+function sbx_env_text(array $cfg, string $sid = ''): string {
+    $be = sbx_is_cloud($cfg) ? sbx_backend($cfg, $sid) : 'devil';
+    if ($be === 'vercel') {
+        $why = $sid !== '' ? sbx_route_get($sid . '~why') : '';
+        return 'Your sandbox: Ubuntu Linux, user "ubuntu" with passwordless sudo (apt-get works), working folder /home/user/work (relative paths are relative to it). Installed: Python 3.14 (pip, uv), Node.js 24 (npm, pnpm, bun), git, curl, jq, zip, sqlite3; the browser tool sets up Chromium by itself on first use. '
+             . 'FULL internet access: any website or API can be reached from the sandbox. Machine: 2 CPU, 4 GB RAM, plenty of disk. '
+             . 'Preview URLs are on *.vercel.run — for Vite set server.allowedHosts: true (or [".vercel.run"]) and host 0.0.0.0. '
+             . 'The sandbox sleeps when idle and keeps its files, but running servers stop — restart them with start_server when needed.'
+             . ($why === 'internet' ? ' (This chat was moved here for full internet: the earlier files were copied; node_modules / virtualenvs were not — reinstall them.)' : '')
+             . ($why === 'failover' ? ' (This chat runs on the backup sandbox; files made earlier on the main sandbox may be missing — recreate them if needed.)' : '');
+    }
+    if ($be === 'daytona') {
+        $more = sbx_dual($cfg) ? ' If the task truly needs the open internet INSIDE the sandbox (scraping a site, calling an outside API from code, downloading from a normal website), call the full_internet tool once — the chat moves to a bigger sandbox with full internet and your files are copied.' : '';
         return 'Your sandbox: Debian Linux, user "daytona" with passwordless sudo, working folder /home/user/work (relative paths are relative to it). Installed: Python 3 (pip), Node.js (npm), git, curl, jq, zip, Chromium. '
              . 'Internet is LIMITED to package registries and code hosts (npm, pip/PyPI, GitHub and similar) — npm/pip install and git clone work, but other websites cannot be opened from the sandbox (use web_search / read_url for the web; generate_image works). '
-             . 'The machine is small (1 CPU, 1 GB RAM, 3 GB disk): prefer light tools (Vite, plain HTML/JS, Flask/FastAPI) over heavy builds. The sandbox sleeps when idle and keeps its files, but running servers stop — restart them with start_server when needed.';
+             . 'The machine is small (1 CPU, 1 GB RAM, 3 GB disk): prefer light tools (Vite, plain HTML/JS, Flask/FastAPI) over heavy builds. The sandbox sleeps when idle and keeps its files, but running servers stop — restart them with start_server when needed.' . $more;
     }
     return 'Your sandbox: Ubuntu 24.04, user "user" with passwordless sudo, working folder /home/user/work (relative paths are relative to it). Installed: Python 3.12 (pip), Node 22 (npm, pnpm, yarn), PHP 8.3, git, curl, ffmpeg, imagemagick, pandoc, sqlite3, Playwright Chromium. Internet access is available (pip/npm install work).';
 }
@@ -204,7 +324,14 @@ function sbx_rel(string $p): string {
 
 /* ═════════════ agent tools that use the sandbox ═════════════ */
 
-function sbx_agent_tools(): array {
+function sbx_agent_tools(array $cfg = [], string $sid = ''): array {
+    $t = sbx_agent_tools_all();
+    /* full_internet only when this chat is on the limited-internet sandbox and the backup exists */
+    if ($cfg !== [] && !(sbx_dual($cfg) && sbx_backend($cfg, $sid) === 'daytona')) { unset($t['full_internet']); }
+    return $t;
+}
+
+function sbx_agent_tools_all(): array {
     return [
         'bash'           => 'Run a shell command in your Linux sandbox (cwd /home/user/work). Output and exit code come back. A command that is still running after ~25s keeps running in the background and you get its pid and log file — check it later with tail. Use start_server (not bash) for servers. INPUT: the command(s); several lines are fine.',
         'write_file'     => 'Create or overwrite a file. INPUT: first line = path (relative to /home/user/work), then the full file content on the following lines.',
@@ -213,6 +340,7 @@ function sbx_agent_tools(): array {
         'start_server'   => 'Start a long-running app/dev server in the background and get its public preview URL. INPUT: first line = port, second line = command (bind to 0.0.0.0).',
         'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors and saves a screenshot. INPUT: URL.',
         'generate_image' => 'Generate an image from a text prompt and save it in the workspace. INPUT: first line = output path (e.g. images/hero.png), second line = the prompt.',
+        'full_internet'  => 'Move this chat to a sandbox with FULL internet (2 CPU, 4 GB RAM). Use it only when the task needs websites/APIs that the current sandbox cannot reach. Your /home/user/work files are copied (node_modules / venvs are not); running servers must be restarted. INPUT: one short reason.',
         'ask_user'       => 'Ask the user a clarifying question and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- ".',
     ];
 }
@@ -393,6 +521,13 @@ async def main(url, shot):
 asyncio.run(main(sys.argv[1], sys.argv[2]))
 PY;
             $cmd = "python3 -c 'import playwright' 2>/dev/null || pip install -q playwright >/dev/null 2>&1; mkdir -p .devil && cat > .devil/browse.py <<'DEVILPY'\n" . $py . "\nDEVILPY\npython3 .devil/browse.py " . escapeshellarg($url) . ' ' . escapeshellarg($shot) . ' 2>&1 | tail -c 12000';
+            if (sbx_is_cloud($cfg) && sbx_backend($cfg, $sid) === 'vercel') {
+                /* Vercel image has no browser: set Playwright Chromium up once (in the background, ~40 s) and wait for it */
+                $ready = 'ls -d ~/.cache/ms-playwright/chromium* >/dev/null 2>&1 && test -f /home/user/.bg/.pwdeps';
+                $cmd = 'mkdir -p /home/user/.bg; if ! { ' . $ready . '; }; then (nohup setsid bash -c ' . escapeshellarg(VCL_PW_SETUP) . ' >/dev/null 2>&1 < /dev/null &); '
+                    . 'for i in $(seq 1 45); do sleep 1; ' . $ready . ' && break; done; fi; '
+                    . 'if ! { ' . $ready . '; }; then echo \'{"errors": ["Chromium is still being installed in the sandbox (first use). Wait ~30 seconds and run the browser tool again."]}\'; exit 0; fi; ' . $cmd;
+            }
             $r = sbx_exec($cfg, $sid, $cmd, 70);
             if (empty($r['ok'])) { return ['ok' => false, 'text' => 'Browser error: ' . (string)($r['error'] ?? '')]; }
             $raw = trim((string)($r['stdout'] ?? ''));
@@ -406,6 +541,14 @@ PY;
             if (!empty($j['screenshot'])) { $t .= "\n\nScreenshot saved: " . $j['screenshot']; }
             return ['ok' => empty($j['errors']), 'text' => $t, 'meta' => ['screenshot' => (string)($j['screenshot'] ?? ''), 'url' => $url]];
         }
+        case 'full_internet': {
+            $m = sbx_move_to_vercel($cfg, $sid);
+            if (empty($m['ok'])) { return ['ok' => false, 'text' => 'Could not switch to the full-internet sandbox: ' . (string)($m['error'] ?? '') . '. Continue on the current sandbox (use web_search / read_url for the web).']; }
+            if (!empty($m['already'])) { return ['ok' => true, 'text' => 'This chat already has full internet access.']; }
+            return ['ok' => true, 'text' => 'Switched: this chat now runs on a sandbox with FULL internet (Ubuntu, user "ubuntu", 2 CPU, 4 GB RAM, Python 3.14, Node 24). '
+                . ($m['copied'] ? 'Your files in /home/user/work were copied (' . (int)$m['bytes'] . ' bytes zipped). Reinstall dependencies (npm install / pip install) before running. ' : 'There were no files to copy. ')
+                . 'Restart any servers with start_server. Preview URLs are now on *.vercel.run (for Vite set server.allowedHosts: true).', 'meta' => ['provider' => 'vercel']];
+        }
         case 'generate_image': {
             $lines = preg_split('/\r?\n/', trim($input), 2);
             $path = sbx_rel((string)($lines[0] ?? ''));
@@ -413,7 +556,7 @@ PY;
             if ($prompt === '' && !preg_match('/\.(png|jpe?g|webp)$/i', $path)) { $prompt = trim($input); $path = 'images/image-' . date('His') . '.png'; }
             if (!preg_match('/\.(png|jpe?g|webp)$/i', $path)) { $path = rtrim($path === '.' ? 'images' : $path, '/') . '/image-' . date('His') . '.png'; }
             if ($prompt === '') { return ['ok' => false, 'text' => 'generate_image: second line must be the prompt.']; }
-            if (sbx_is_daytona($cfg)) {
+            if (sbx_is_cloud($cfg)) {
                 $img = sbx_fetch_image($prompt);
                 if (empty($img['ok'])) { return ['ok' => false, 'text' => 'Image generation failed: ' . (string)($img['error'] ?? '')]; }
                 if (preg_match('/\.png$/i', $path) && strncmp($img['data'], "\xFF\xD8\xFF", 3) === 0) { $path = (string)preg_replace('/\.png$/i', '.jpg', $path); }
