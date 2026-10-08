@@ -334,6 +334,13 @@ function api(action, body, method, signal) {
      are already encodeURIComponent'd by the caller — so don't re-encode here */
   return fetch('api.php' + (action ? '?action=' + action : ''), opt).then(function (r) {
     if (r.status === 401) { window.location.href = 'login.php'; throw new Error('signed out'); }
+    /* Cloudflare wants a quick "are you human" check again (VPN / datacenter networks only):
+       reload once so the check page shows, instead of failing with a network error */
+    if (r.status === 403 && r.headers.get('cf-mitigated') === 'challenge') {
+      var last = 0; try { last = Number(sessionStorage.getItem('devil_cf_reload') || 0); } catch (e) {}
+      if (Date.now() - last > 60000) { try { sessionStorage.setItem('devil_cf_reload', String(Date.now())); } catch (e) {} window.location.reload(); }
+      return { ok: false, error: 'Security check needed — please reload the page.' };
+    }
     return r.json();
   }).catch(function (e) {
     if (e && e.name === 'AbortError') { return { ok: false, aborted: true, error: 'Paused.' }; }

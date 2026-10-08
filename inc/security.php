@@ -109,10 +109,18 @@ function devil_sec_rate(string $bucket, string $key, int $max, int $window): boo
     }
     return $ok;
 }
+/* v2: the old file held bans made by the URL-probe check that also matched query strings
+   (e.g. opening .gitignore in the agent workspace) — starting a fresh file drops all of those. */
+function devil_sec_bans_file(): string { return 'security_bans_v2.json'; }
 function devil_sec_ban_ip(string $ip, int $seconds, string $reason): void {
-    $bans = devil_sec_json('security_bans.json');
-    $bans[$ip] = ['until' => time() + $seconds, 'reason' => $reason, 'ts' => time()];
-    devil_sec_save('security_bans.json', $bans);
+    $bans = devil_sec_json(devil_sec_bans_file());
+    $now = time();
+    foreach ($bans as $k => $b) { if (!is_array($b) || (int)($b['until'] ?? 0) <= $now) { unset($bans[$k]); } }
+    $bans[$ip] = ['until' => $now + $seconds, 'reason' => $reason, 'ts' => $now];
+    devil_sec_save(devil_sec_bans_file(), $bans);
+}
+function devil_sec_ban_message(): string {
+    return 'Too many suspicious requests came from your network, so access is paused for a little while. Please try again later.';
 }
 function devil_sec_ip_in_cidr(string $ip, string $cidr): bool {
     if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) { return false; }
@@ -197,18 +205,15 @@ function devil_security_boot(): void {
     $ua = trim((string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
     $uaLow = strtolower($ua);
 
-    $bans = devil_sec_json('security_bans.json');
+    $bans = devil_sec_json(devil_sec_bans_file());
     if (isset($bans[$ip]) && is_array($bans[$ip]) && (int)($bans[$ip]['until'] ?? 0) > time()) {
-        $banReason = strtolower((string)($bans[$ip]['reason'] ?? ''));
-        if (preg_match('/(rate|scraper|proxy|vpn|tor|datacenter|cloud|vps)/i', $banReason)) {
-            unset($bans[$ip]);
-            devil_sec_save('security_bans.json', $bans);
-        } else {
-            devil_sec_block(devil_sec_vpn_proxy_message(), 403);
-        }
+        devil_sec_block(devil_sec_ban_message(), 403);
     }
 
-    if (preg_match('/(\.env|wp-login|xmlrpc\.php|phpmyadmin|adminer|\.git|composer\.(json|lock)|vendor\/|config\.php|backup|\.sql|passwd|\.DS_Store)/i', $uri)) {
+    /* scanner probes: look at the URL PATH only. The query string carries user data — e.g. the agent
+       workspace opens api.php?action=sbx_file&path=.gitignore — and must never trigger a ban. */
+    $path = (string)(parse_url($uri, PHP_URL_PATH) ?? '');
+    if (!$isApi && preg_match('#(/\.env|/wp-login|/wp-admin|xmlrpc\.php|phpmyadmin|adminer|/\.git(/|$)|/composer\.(json|lock)|/vendor/|/config\.php|\.sql$|/etc/passwd|\.DS_Store)#i', $path)) {
         devil_sec_ban_ip($ip, 3600, 'probe');
         devil_sec_block('Security probe blocked.', 403);
     }
@@ -222,9 +227,9 @@ function devil_security_boot(): void {
     $hasApiKey = preg_match('/Bearer\s+(?:devil_blazenxt_|dv_live_)/i', (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ''))
         || !empty($_SERVER['HTTP_X_DEVIL_API_KEY']) || !empty($_GET['key']) || !empty($_GET['api_key']) || !empty($_GET['apikey']);
     $trustedDeveloperApi = (str_contains($uri, '/v1/') || preg_match('#/v1$#', $uri) === 1) && $hasApiKey;
-    if (($proxyVpnReason = devil_sec_proxy_vpn_reason($ip, $trustedDeveloperApi)) !== '') {
-        devil_sec_block(devil_sec_vpn_proxy_message(), 403);
-    }
+    /* VPN / proxy / datacenter screening now happens at Cloudflare's edge as a Managed Challenge
+       (a real person passes it in a second, bots do not). The old IP-reputation hard block here
+       produced false positives on normal home and mobile networks, so it is off. */
     $badUa = $ua === '' || preg_match('/(python-requests|scrapy|curl|wget|httpclient|libwww|go-http-client|java\/|okhttp|node-fetch|axios|phantomjs|headless|selenium|playwright|puppeteer|nikto|sqlmap|nmap|masscan|zgrab|crawler|spider|\bbot\b)/i', $ua) === 1;
     $noBrowserHints = empty($_SERVER['HTTP_ACCEPT_LANGUAGE']) && empty($_SERVER['HTTP_SEC_CH_UA']) && !$hasApiKey;
 
@@ -233,7 +238,7 @@ function devil_security_boot(): void {
         devil_sec_block('Automated scraping is blocked.', 403);
     }
     if (!$isApi && $noBrowserHints && devil_sec_datacenter_like($ip, true)) {
-        devil_sec_block(devil_sec_vpn_proxy_message(), 403);
+        devil_sec_block('Automated access is blocked.', 403);
     }
     if ($isApi && !$hasApiKey && $badUa && preg_match('/(python-requests|scrapy|wget|nikto|sqlmap|nmap|masscan|zgrab)/i', $ua) === 1) {
         devil_sec_block('Automated API probing is blocked.', 403);
