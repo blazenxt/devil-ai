@@ -75,6 +75,8 @@ jobs:
             --exclude-glob vendor/** \
             --exclude-glob .DS_Store \
             ./ "$SFTP_TARGET"
+          # retired files (removed from the repo; mirror does not delete)
+          rm -f "$SFTP_TARGET/inc/migrate_battle.php"
           bye
           EOF
 
