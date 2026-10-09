@@ -1,0 +1,56 @@
+name: Live diagnostics (encrypted)
+
+# Manual only. Collects runtime logs from the live server and prints them ENCRYPTED
+# (AES-256, key = DIAG_KEY secret) — nothing readable lands in the public log.
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install SFTP client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp >/dev/null
+      - name: Collect + encrypt
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_TARGET: ${{ secrets.SFTP_TARGET }}
+          DIAG_KEY: ${{ secrets.DIAG_KEY }}
+        run: |
+          set -uo pipefail
+          [ -n "${DIAG_KEY:-}" ] || { echo "DIAG_KEY missing"; exit 1; }
+          mkdir -p d && cd d
+          lftp -u "$SFTP_USERNAME","$SFTP_PASSWORD" -p "$SFTP_PORT" "sftp://$SFTP_HOST" > listing.txt 2>&1 <<LF
+          set sftp:auto-confirm yes
+          set net:timeout 30
+          set net:max-retries 2
+          cls -l "$SFTP_TARGET/"
+          cls -l "$SFTP_TARGET/data/"
+          cls -l "$SFTP_TARGET/data/security/"
+          lcd .
+          get -e "$SFTP_TARGET/data/mail.log" -o mail.log
+          get -e "$SFTP_TARGET/data/authrl.json" -o authrl.json
+          get -e "$SFTP_TARGET/data/otps.json" -o otps.json
+          get -e "$SFTP_TARGET/data/users.json" -o users.json
+          get -e "$SFTP_TARGET/data/config.json" -o config.json
+          get -e "$SFTP_TARGET/data/sbx_route.json" -o sbx_route.json
+          get -e "$SFTP_TARGET/data/sbx_e2b.json" -o sbx_e2b.json
+          get -e "$SFTP_TARGET/data/sbx_vercel.json" -o sbx_vercel.json
+          get -e "$SFTP_TARGET/data/sbx_daytona.json" -o sbx_daytona.json
+          get -e "$SFTP_TARGET/data/devil.log" -o devil.log
+          get -e "$SFTP_TARGET/data/error.log" -o error.log
+          get -e "$SFTP_TARGET/error_log" -o php_error_log
+          mirror -e --no-recursion "$SFTP_TARGET/data/security/" security
+          mirror -e --no-recursion "$SFTP_TARGET/data/logs/" logs
+          bye
+          LF
+          for f in mail.log devil.log error.log php_error_log; do [ -f "$f" ] && tail -n 1500 "$f" > "$f.t" && mv "$f.t" "$f"; done
+          cd .. && tar czf diag.tgz d
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:DIAG_KEY -in diag.tgz | base64 -w0 > diag.b64
+          echo "BYTES $(wc -c < diag.b64)"
+          echo "::group::encrypted"
+          fold -w 4000 diag.b64 | sed 's/^/DIAG:/'
+          echo "::endgroup::"
