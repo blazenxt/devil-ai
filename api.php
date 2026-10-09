@@ -3614,7 +3614,7 @@ try {
                 'model' => $model, 'custom_model' => $customModel, 'ai_model' => ($model === 'custom') ? ('custom:' . $customModel) : $model,
                 'model_label' => $displayLabel, 'model_out' => ['id' => $model, 'label' => $displayLabel] + ($customModel !== '' ? ['custom' => $customModel] : []),
                 'sandbox' => $sbxOn, 'sid' => $sid, 'image' => $img, 'history' => $history, 'trace' => [], 'state' => 'model',
-                'max_steps' => max(3, min(100, (static function ($v) { return ($v === 30 || $v <= 0) ? 50 : $v; })((int)($cfgAll['agent_sandbox_max_steps'] ?? 50)))), 't0' => microtime(true), 'created' => time(), 'updated' => time(),
+                'max_steps' => max(3, min(100, (static function ($v) { return ($v === 30 || $v === 50 || $v <= 0) ? 80 : $v; })((int)($cfgAll['agent_sandbox_max_steps'] ?? 80)))), 't0' => microtime(true), 'created' => time(), 'updated' => time(),
             ];
             if (!$sbxOn) { $job['max_steps'] = max(1, (int)($cfgAll['agent_max_steps'] ?? 6)); }
             if (!save_json_atomic($jobPath($jid), $job)) { json_out(['ok' => false, 'error' => 'Could not create the agent job — check data/ permissions.'], 500); }

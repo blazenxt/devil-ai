@@ -240,8 +240,8 @@ jobs:
               cfg['preview_key'] = os.environ['DEVIL_PREVIEW_KEY']
           else:
               cfg.pop('preview_key', None)
-          if int(cfg.get('agent_sandbox_max_steps', 0) or 0) <= 30:
-              cfg['agent_sandbox_max_steps'] = 50
+          if int(cfg.get('agent_sandbox_max_steps', 0) or 0) <= 50:
+              cfg['agent_sandbox_max_steps'] = 80
           path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
           print('sandbox config patched; provider:', cfg.get('sandbox_provider'), '| keys:', len(cfg))
           PY

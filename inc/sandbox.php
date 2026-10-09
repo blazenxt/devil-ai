@@ -435,7 +435,7 @@ function sbx_agent_tools_all(): array {
         'list_files'     => 'List files in the workspace. INPUT: a folder path, or "." for everything.',
         'start_server'   => 'Start a long-running app/dev server in the background and get its public preview URL. INPUT: first line = port, second line = command (bind to 0.0.0.0).',
         'deploy_site'    => 'Publish a finished website to the USER\'S OWN hosting server (their FTP/SFTP account from Settings → Hosting) and get its live URL. Use only when the user wants the site hosted/published/deployed on their server. INPUT: first line = folder inside /home/user/work to upload (e.g. site or app/dist — for React/Vite run the build first and deploy dist), optional second line = site name (letters, numbers, dashes; it becomes the sub-folder and URL path).',
-        'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors and saves a screenshot. INPUT: URL.',
+        'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors, failed files, BROKEN IMAGES, sideways overflow and saves a screenshot. INPUT: line 1 = URL; optional next lines = actions run in order to TEST the page like a user: "mobile" (phone screen 390px), "click <css selector>", "fill <css selector> = <text>", "select <css selector> = <value>", "check <css selector>", "press Enter", "wait 1000", "goto <url>". Example — test a form: line 2 "fill #name = Ravi", line 3 "click button[type=submit]".',
         'generate_image' => 'Generate an image from a text prompt and save it in the workspace. INPUT: first line = output path (e.g. images/hero.png), second line = the prompt.',
         'full_internet'  => 'Move this chat to a sandbox with FULL internet (2 CPU, 4 GB RAM). Use it only when the task needs websites/APIs that the current sandbox cannot reach. Your /home/user/work files are copied (node_modules / venvs are not); running servers must be restarted. INPUT: one short reason.',
         'ask_user'       => 'Ask the user a clarifying question (or for something you need) and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- " (optional " — explanation"). For secrets add lines "need: ENV_NAME | label" instead of options.',
@@ -513,6 +513,165 @@ function sbx_file_check(string $path, string $content, bool $cut = false): strin
         . "\nYour replies are cut at about 5,000 characters. Add the missing rest with append_file (only the missing part, continuing exactly from that point) before moving on.";
 }
 
+/**
+ * Static check of the web files the agent built (runs inside the sandbox, no model call):
+ * missing local files referenced by HTML/CSS, cut-off HTML/CSS, JavaScript syntax errors, placeholder text.
+ * $roots: folders relative to the work folder ('.' = top level). Returns a list of problems (max 30).
+ */
+function sbx_site_doctor(array $cfg, string $sid, array $roots): array {
+    $roots = array_values(array_unique(array_filter(array_map('strval', $roots), static function ($r) { return $r !== '' && strpos($r, '..') === false; })));
+    if (!$roots) { return []; }
+    $py = <<<'PY'
+import os, re, sys, json, shutil, subprocess
+W = os.getcwd()
+roots = json.load(open(sys.argv[1]))
+SKIP = {"node_modules", ".git", ".devil", "dist", "build", ".next", "venv", ".venv", "__pycache__", "uploads", ".cache"}
+ATTR = re.compile(r"""\s(?:src|href|poster|data-src)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'>]+))""", re.I)
+CSSU = re.compile(r"""url\(\s*["']?([^"')]+)["']?\s*\)""", re.I)
+SCRIPT = re.compile(r"""<script[^>]+src\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'>]+))""", re.I)
+PLACE = re.compile(r"lorem ipsum|coming soon|\bTODO\b|your content here|placeholder text", re.I)
+issues, seen, jsfiles = [], set(), set()
+node = shutil.which("node")
+def local(ref):
+    r = ref.strip()
+    if not r or r.startswith(("http:", "https:", "//", "data:", "mailto:", "tel:", "javascript:", "#", "blob:")) or "{" in r or "$" in r:
+        return None
+    return r.split("#")[0].split("?")[0]
+def resolve(base_dir, site_root, ref):
+    ref = ref.replace("%20", " ")
+    return os.path.normpath(os.path.join(site_root, ref.lstrip("/"))) if ref.startswith("/") else os.path.normpath(os.path.join(base_dir, ref))
+def exists(base_dir, site_root, ref):
+    c = resolve(base_dir, site_root, ref)
+    return os.path.exists(c) or os.path.exists(os.path.join(c, "index.html"))
+for root in roots:
+    top = os.path.normpath(os.path.join(W, root))
+    if not os.path.isdir(top):
+        continue
+    framework = os.path.exists(os.path.join(top, "package.json"))
+    depth0 = top.count(os.sep)
+    for dp, dn, fn in os.walk(top):
+        dn[:] = [d for d in dn if d not in SKIP and not d.startswith(".")]
+        if root == "." or dp.count(os.sep) - depth0 >= 4:
+            dn[:] = []
+        for f in sorted(fn):
+            p = os.path.join(dp, f)
+            if p in seen or len(seen) > 400:
+                continue
+            seen.add(p)
+            ext = f.rsplit(".", 1)[-1].lower() if "." in f else ""
+            if ext not in ("html", "htm", "css"):
+                continue
+            try:
+                t = open(p, encoding="utf-8", errors="replace").read()
+            except Exception:
+                continue
+            rel = os.path.relpath(p, W)
+            refs = []
+            if ext in ("html", "htm"):
+                low = t.lower()
+                if "<html" in low and "</html>" not in low:
+                    issues.append(rel + ": UNFINISHED - no closing </html> (the file was cut off; append the missing end)")
+                if not framework:
+                    cnt = {}
+                    for i in re.findall(r'\bid\s*=\s*["\']([^"\']+)["\']', t):
+                        cnt[i] = cnt.get(i, 0) + 1
+                    dups = [k for k, v in cnt.items() if v > 1]
+                    if dups:
+                        issues.append(rel + ": DUPLICATE id(s) " + ", ".join("#" + k for k in dups[:8]) + " - a section/form was written twice (write_file + append_file overlap?); keep ONE copy")
+                    m = PLACE.search(re.sub(r"<[^>]+>", " ", t))
+                    if m:
+                        issues.append(rel + ": contains placeholder text (" + m.group(0) + ") - write the real content")
+                    refs = ["".join(g) for g in ATTR.findall(t)] + CSSU.findall(t)
+                    for sref in ["".join(g) for g in SCRIPT.findall(t)]:
+                        l = local(sref)
+                        if l and exists(dp, top, l):
+                            jsfiles.add(resolve(dp, top, l))
+            else:
+                o = t.count("{") - t.count("}")
+                if o:
+                    issues.append(rel + ": " + str(abs(o)) + " unbalanced { } brace(s) - the CSS is probably cut off")
+                if not framework:
+                    refs = CSSU.findall(t)
+            missing = []
+            for r in refs:
+                l = local(r)
+                if l and l not in missing and not exists(dp, top, l):
+                    missing.append(l)
+            if missing:
+                issues.append(rel + ": " + str(len(missing)) + " missing file(s): " + ", ".join(missing[:12]) + (" ..." if len(missing) > 12 else ""))
+if node:
+    for jp in sorted(jsfiles)[:30]:
+        if not os.path.isfile(jp):
+            continue
+        try:
+            src = open(jp, encoding="utf-8", errors="replace").read()
+            mod = re.search(r"^\s*(import|export)\s", src, re.M) is not None
+            r = subprocess.run([node, "--input-type=module" if mod else "--input-type=commonjs", "--check"], input=src, capture_output=True, text=True, timeout=20)
+            if r.returncode != 0:
+                lines = [x for x in r.stderr.splitlines() if x.strip()]
+                where = next((x for x in lines if x.startswith("[stdin]:")), "")
+                err = next((x for x in lines if "Error" in x), lines[-1] if lines else "syntax error")
+                issues.append(os.path.relpath(jp, W) + ": JavaScript syntax error " + where.replace("[stdin]", "line") + ": " + err[:160])
+        except Exception:
+            pass
+print(json.dumps(issues[:30]))
+PY;
+    $cmd = "mkdir -p .devil && cat > .devil/doctor.py <<'DEVILPY'\n" . $py . "\nDEVILPY\ncat > .devil/doctor.json <<'DEVILJS'\n" . json_encode($roots, JSON_UNESCAPED_SLASHES) . "\nDEVILJS\npython3 .devil/doctor.py .devil/doctor.json 2>/dev/null | tail -c 8000";
+    $r = sbx_exec($cfg, $sid, $cmd, 45);
+    if (empty($r['ok'])) { return []; }
+    $raw = trim((string)($r['stdout'] ?? ''));
+    $j = json_decode(trim((string)substr($raw, (int)strrpos("\n" . $raw, "\n"))), true);
+    return is_array($j) ? array_values(array_map('strval', $j)) : [];
+}
+
+/** generated photos come as big JPEG/PNG files (1–2 MB): resize to ≤1600 px and re-encode (JPEG q80 / WebP) so sites load fast */
+function sbx_compress_image(string $data, string &$path): string {
+    if (strlen($data) < 200000 || !function_exists('imagecreatefromstring') || !function_exists('imagejpeg')) { return $data; }
+    $im = @imagecreatefromstring($data);
+    if (!$im) { return $data; }
+    $w = imagesx($im); $h = imagesy($im);
+    $max = 1600;
+    if ($w > $max || $h > $max) {
+        $r = min($max / $w, $max / $h); $nw = max(1, (int)round($w * $r)); $nh = max(1, (int)round($h * $r));
+        $dst = imagecreatetruecolor($nw, $nh);
+        imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        imagedestroy($im); $im = $dst;
+    }
+    $newPath = $path;
+    ob_start();
+    if (preg_match('/\.webp$/i', $path) && function_exists('imagewebp')) { imagewebp($im, null, 80); }
+    else {
+        if (preg_match('/\.png$/i', $path)) { $newPath = (string)preg_replace('/\.png$/i', '.jpg', $path); }
+        imageinterlace($im, true);
+        imagejpeg($im, null, 80);
+    }
+    $out = (string)ob_get_clean();
+    imagedestroy($im);
+    if ($out === '' || strlen($out) >= strlen($data)) { return $data; }
+    $path = $newPath;
+    return $out;
+}
+
+/** browser tool action lines → [[kind, selector, value], …] (max 25) */
+function sbx_browser_actions(array $lines): array {
+    $out = [];
+    foreach ($lines as $ln) {
+        $ln = trim((string)$ln);
+        if ($ln === '' || count($out) >= 25) { continue; }
+        $ln = (string)preg_replace('/^(?:[-*•]|\d+[.)])\s+/', '', $ln);
+        if (!preg_match('/^(mobile|click|fill|type|select|check|press|wait|goto)\b\s*(.*)$/i', $ln, $m)) { continue; }
+        $k = strtolower($m[1]); if ($k === 'type') { $k = 'fill'; }
+        $rest = trim($m[2]); $val = '';
+        if (in_array($k, ['fill', 'select'], true)) {
+            $pos = strpos($rest, ' = ');
+            if ($pos === false) { $pos = strpos($rest, ' => '); $sepLen = 4; } else { $sepLen = 3; }
+            if ($pos !== false) { $val = trim(substr($rest, $pos + $sepLen)); $rest = trim(substr($rest, 0, $pos)); }
+            $val = (string)preg_replace('/^"(.*)"$|^\'(.*)\'$/s', '$1$2', $val);
+        }
+        $out[] = [$k, $rest, $val];
+    }
+    return $out;
+}
 function sbx_scrub(string $t, array $cfg = []): string {
     if ($t === '') { return $t; }
     /* provider billing text ("Hobby plan usage limit exceeded … upgrade …") never reaches the user */
@@ -632,7 +791,17 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
             if (substr($content, -1) !== "\n") { $content .= "\n"; }
             $r = sbx_write($cfg, $sid, $path, $content);
             if (empty($r['ok'])) { return ['ok' => false, 'text' => 'Could not write ' . $path . ': ' . (string)($r['error'] ?? '')]; }
-            return ['ok' => true, 'text' => 'Appended ' . strlen($add) . ' bytes to ' . $path . ' (now ' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . sbx_file_check($path, $content, !empty($ctx['cut'])), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
+            $dupWarn = '';
+            if ($prev !== '' && preg_match('/\.(html?|php|vue|jsx|tsx|svelte)$/i', $path)) {
+                preg_match_all('/\bid\s*=\s*["\']([^"\'{}$]+)["\']/i', $prev, $m1); preg_match_all('/\bid\s*=\s*["\']([^"\'{}$]+)["\']/i', $add, $m2);
+                $rep = array_values(array_unique(array_intersect($m2[1], $m1[1])));
+                $bits = [];
+                if ($rep) { $bits[] = 'it adds id ' . implode(', ', array_map(static function ($x) { return '#' . $x; }, array_slice($rep, 0, 6))) . ' which the file ALREADY had'; }
+                if (stripos($prev, '</html>') !== false && trim($add) !== '') { $bits[] = 'the file already ended with </html>, so this text landed AFTER the end of the page'; }
+                if (stripos($add, '<!doctype') !== false || stripos($add, '<head') !== false) { $bits[] = 'it starts a second <head>/<!DOCTYPE> page inside the same file'; }
+                if ($bits) { $dupWarn = "\n⚠ DUPLICATE CONTENT: " . implode('; ', $bits) . '. You probably repeated a part that was already written. Read the file (bash: grep -n \'id=\' ' . $path . ') and remove the repeated part, or rewrite the file cleanly with write_file.'; }
+            }
+            return ['ok' => true, 'text' => 'Appended ' . strlen($add) . ' bytes to ' . $path . ' (now ' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . $dupWarn . sbx_file_check($path, $content, !empty($ctx['cut'])), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
         }
         case 'read_file': {
             $path = sbx_rel(strtok(trim($input), "\n") ?: '');
@@ -693,20 +862,30 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
             return ['ok' => true, 'text' => "Server is running on port {$port} (home page HTTP {$code}). Preview URL: {$url}\n(The user sees it in the Preview tab.)\n\nLog:\n" . mb_substr($log, -1500), 'meta' => ['port' => $port, 'url' => $url]];
         }
         case 'browser': {
-            $url = trim(strtok(trim($input), "\n") ?: '');
+            $blines = preg_split('/\r?\n/', trim($input));
+            $url = trim((string)array_shift($blines));
             if (!preg_match('#^https?://#i', $url)) { $url = 'http://' . ltrim($url, '/'); }
+            $acts = sbx_browser_actions($blines);
             $shot = '.devil/screens/shot-' . date('His') . '-' . substr(bin2hex(random_bytes(3)), 0, 4) . '.png';
             $py = <<<'PY'
 import asyncio, json, sys, os
 from playwright.async_api import async_playwright
-async def main(url, shot):
-    out = {"url": url, "console": [], "errors": [], "failed": []}
+async def main(url, shot, acts):
+    out = {"url": url, "console": [], "errors": [], "failed": [], "actions": [], "dialogs": []}
+    mobile = any(a[0] == "mobile" for a in acts)
     async with async_playwright() as p:
         try:
             b = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
         except Exception:
             b = await p.chromium.launch(executable_path="/usr/bin/chromium", args=["--no-sandbox"])
-        pg = await b.new_page(viewport={"width": 1280, "height": 800})
+        pg = await b.new_page(viewport={"width": 390, "height": 844} if mobile else {"width": 1280, "height": 800}, is_mobile=mobile, has_touch=mobile)
+        async def _dlg(d):
+            out["dialogs"].append((d.type + ": " + d.message)[:200])
+            try:
+                await d.accept()
+            except Exception:
+                pass
+        pg.on("dialog", lambda d: asyncio.ensure_future(_dlg(d)))
         pg.on("console", lambda m: out["console"].append(f"{m.type}: {m.text}"[:300]) if m.type in ("error", "warning") else None)
         pg.on("pageerror", lambda e: out["errors"].append(str(e)[:300]))
         pg.on("requestfailed", lambda q: out["failed"].append((q.url[:160] + " (" + str(q.failure)[:60] + ")")) if len(out["failed"]) < 12 else None)
@@ -716,6 +895,80 @@ async def main(url, shot):
             out["status"] = r.status if r else None
         except Exception as e:
             out["errors"].append("navigation: " + str(e)[:300])
+        try:
+            # scroll through the page so lazy images and scroll animations load, then back to the top
+            await pg.evaluate("""async () => { const h = document.body ? document.body.scrollHeight : 0;
+                for (let y = 0; y < h; y += 700) { window.scrollTo(0, y); await new Promise(r => setTimeout(r, 60)); }
+                window.scrollTo(0, 0); }""")
+            await pg.wait_for_timeout(500)
+        except Exception:
+            pass
+        fails = 0
+        for a in acts:
+            kind, sel, val = a[0], a[1], a[2]
+            if kind == "mobile":
+                continue
+            if fails >= 3:
+                out["actions"].append("SKIP " + " ".join(x for x in a if x) + " (3 actions in a row failed)")
+                continue
+            try:
+                if kind == "click":
+                    await pg.click(sel, timeout=3000)
+                elif kind == "fill":
+                    await pg.fill(sel, val, timeout=3000)
+                elif kind == "select":
+                    try:
+                        await pg.select_option(sel, val, timeout=2000)
+                    except Exception:
+                        try:
+                            await pg.select_option(sel, label=val, timeout=1500)
+                        except Exception:
+                            opt = await pg.eval_on_selector(sel, """(el, v) => { v = v.toLowerCase(); const o = [...el.options].find(o => o.value.toLowerCase().includes(v) || o.text.toLowerCase().includes(v)); return o ? o.value : null; }""", val)
+                            if opt is None:
+                                raise Exception("no option matches '" + val + "'")
+                            await pg.select_option(sel, opt, timeout=1500)
+                elif kind == "check":
+                    await pg.check(sel, timeout=3000)
+                elif kind == "press":
+                    await pg.keyboard.press(sel or "Enter")
+                elif kind == "wait":
+                    await pg.wait_for_timeout(min(8000, int(sel or "1000")))
+                elif kind == "goto":
+                    await pg.goto(sel, wait_until="networkidle", timeout=20000)
+                await pg.wait_for_timeout(350)
+                out["actions"].append("OK   " + " ".join(x for x in a if x))
+                fails = 0
+            except Exception as e:
+                fails += 1
+                msg = str(e).splitlines()[0][:120]
+                if "Timeout" in msg:
+                    msg = "element not found or not visible/enabled (hidden, covered, or the selector is wrong)"
+                out["actions"].append("FAIL " + " ".join(x for x in a if x) + " -> " + msg)
+        if acts:
+            try:
+                await pg.wait_for_load_state("networkidle", timeout=5000)
+            except Exception:
+                pass
+        if any(x.startswith("FAIL") for x in out["actions"]):
+            try:
+                out["fields"] = await pg.evaluate("""() => [...document.querySelectorAll('input:not([type=hidden]), select, textarea, button, a.btn, [role=button]')].slice(0, 40).map(e => {
+                    let d = e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.name ? '[name=' + e.name + ']' : '') + (e.type && e.tagName !== 'BUTTON' ? ' type=' + e.type : '') + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
+                    if (e.tagName === 'SELECT') d += ' options: ' + [...e.options].slice(0, 8).map(o => o.value + (o.text && o.text !== o.value ? '="' + o.text.slice(0, 20) + '"' : '')).join(', ');
+                    const t = (e.innerText || e.value || e.placeholder || '').trim().slice(0, 30); if (t && e.tagName !== 'SELECT') d += ' "' + t + '"';
+                    if (!e.offsetParent && e.type !== 'checkbox' && e.type !== 'radio') d += ' (hidden)';
+                    return d; })""")
+            except Exception:
+                pass
+        try:
+            out["checks"] = await pg.evaluate("""() => {
+                const bad = [...document.images].filter(i => i.complete && i.naturalWidth === 0 && (i.getAttribute('src') || '').trim() !== '' && (i.currentSrc || i.src) !== location.href).map(i => (i.currentSrc || i.src).slice(0, 160));
+                const de = document.documentElement;
+                const ids = {}; document.querySelectorAll('[id]').forEach(e => { ids[e.id] = (ids[e.id] || 0) + 1; });
+                const dup = Object.keys(ids).filter(k => ids[k] > 1).map(k => '#' + k + ' x' + ids[k]).slice(0, 15);
+                return { dupIds: dup, badImages: [...new Set(bad)].slice(0, 20), images: document.images.length, overflow: de.scrollWidth > window.innerWidth + 2, scrollWidth: de.scrollWidth, width: window.innerWidth, url: location.href };
+            }""")
+        except Exception:
+            pass
         try:
             out["title"] = await pg.title()
             out["text"] = (await pg.inner_text("body"))[:5000]
@@ -735,9 +988,9 @@ async def main(url, shot):
             pass
         await b.close()
     print(json.dumps(out))
-asyncio.run(main(sys.argv[1], sys.argv[2]))
+asyncio.run(main(sys.argv[1], sys.argv[2], json.load(open(sys.argv[3])) if len(sys.argv) > 3 else []))
 PY;
-            $cmd = "python3 -c 'import playwright' 2>/dev/null || pip install -q playwright >/dev/null 2>&1; mkdir -p .devil && cat > .devil/browse.py <<'DEVILPY'\n" . $py . "\nDEVILPY\npython3 .devil/browse.py " . escapeshellarg($url) . ' ' . escapeshellarg($shot) . ' 2>&1 | tail -c 12000';
+            $cmd = "python3 -c 'import playwright' 2>/dev/null || pip install -q playwright >/dev/null 2>&1; mkdir -p .devil && cat > .devil/browse.py <<'DEVILPY'\n" . $py . "\nDEVILPY\ncat > .devil/acts.json <<'DEVILACT'\n" . json_encode($acts, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\nDEVILACT\npython3 .devil/browse.py " . escapeshellarg($url) . ' ' . escapeshellarg($shot) . ' .devil/acts.json 2>&1 | tail -c 14000';
             if (sbx_is_cloud($cfg) && sbx_backend($cfg, $sid) === 'e2b') {
                 /* small-RAM VM: Chromium needs memory overcommit; stock image (no custom template) gets Playwright on first use */
                 $ready = 'python3 -c "import playwright" 2>/dev/null && ls -d ${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}/chromium* >/dev/null 2>&1';
@@ -773,9 +1026,19 @@ PY;
                 $t .= 'Styling: ' . (int)($st['rules'] ?? 0) . ' CSS rules in ' . (int)($st['sheets'] ?? 0) . ' stylesheet(s); body background ' . ($st['bg'] ?? '?') . ', text ' . ($st['color'] ?? '?') . ', font ' . ($st['font'] ?? '?') . "\n";
                 if ($plain) { $t .= "⚠ The page looks UNSTYLED (default black-on-white HTML). The CSS is missing, not linked, or failed to load — check the <link href> paths against the real file names and the failed list above, then fix it before telling the user it is styled.\n"; }
             }
-            $t .= "Visible text:\n" . mb_substr((string)($j['text'] ?? ''), 0, 4000);
+            if (!empty($j['actions'])) { $t .= "Actions:\n- " . implode("\n- ", array_slice((array)$j['actions'], 0, 20)) . "\n"; }
+            if (!empty($j['fields'])) { $t .= "Form fields / buttons on this page (use these selectors):\n- " . implode("\n- ", array_slice((array)$j['fields'], 0, 40)) . "\n"; }
+            if (!empty($j['dialogs'])) { $t .= "Dialogs shown (auto-accepted):\n- " . implode("\n- ", array_slice((array)$j['dialogs'], 0, 6)) . "\n"; }
+            $ck = is_array($j['checks'] ?? null) ? $j['checks'] : [];
+            if ($acts && !empty($ck['url']) && $ck['url'] !== $url) { $t .= 'Now at: ' . $ck['url'] . "\n"; }
+            if (!empty($ck['badImages'])) { $t .= '⚠ BROKEN IMAGES (' . count((array)$ck['badImages']) . ' of ' . (int)($ck['images'] ?? 0) . " did not load) — fix the paths or create these files:\n- " . implode("\n- ", (array)$ck['badImages']) . "\n"; }
+            if (!empty($ck['dupIds'])) { $t .= '⚠ DUPLICATE IDs: ' . implode(', ', (array)$ck['dupIds']) . " — the same id is on several elements, so the page probably has a repeated section/form (often from write_file + append_file adding the same part twice). JavaScript only finds the FIRST one. Remove the duplicate part (rewrite the file cleanly).\n"; }
+            if (!empty($ck['overflow'])) { $t .= '⚠ HORIZONTAL OVERFLOW: the page is ' . (int)$ck['scrollWidth'] . 'px wide in a ' . (int)$ck['width'] . "px window (sideways scrolling" . (in_array('mobile', array_column($acts, 0), true) ? ' on mobile' : '') . "). Find the too-wide element (fixed widths, big images, long words, grids without wrap) and fix it.\n"; }
+            $t .= ($acts ? "Visible text (after the actions):\n" : "Visible text:\n") . mb_substr((string)($j['text'] ?? ''), 0, 4000);
             if (!empty($j['screenshot'])) { $t .= "\n\nScreenshot saved: " . $j['screenshot']; }
-            return ['ok' => empty($j['errors']), 'text' => $t, 'meta' => ['screenshot' => (string)($j['screenshot'] ?? ''), 'url' => $url]];
+            $failedActs = count(array_filter((array)($j['actions'] ?? []), static function ($x) { return strncmp((string)$x, 'FAIL', 4) === 0; }));
+            if ($failedActs > 0) { $t .= "\n\nNOTE: a FAILED action is almost never a 'timing issue of the test tool' — the tool already waits. Either the selector is wrong (use the exact selectors in the 'Form fields / buttons' list), or the element is (hidden) because the thing that should show it (menu, modal, lightbox) did NOT open — that is a REAL bug, usually caused by the Page errors above. Fix the cause, then test again."; }
+            return ['ok' => empty($j['errors']) && $failedActs === 0, 'text' => $t, 'meta' => ['screenshot' => (string)($j['screenshot'] ?? ''), 'url' => $url]];
         }
         case 'deploy_site': {
             if (empty($ctx['uid'])) { return ['ok' => false, 'text' => 'deploy_site is not available here.']; }
@@ -799,10 +1062,24 @@ PY;
             if (sbx_is_cloud($cfg)) {
                 $img = sbx_fetch_image($prompt);
                 if (empty($img['ok'])) { return ['ok' => false, 'text' => 'Image generation failed: ' . (string)($img['error'] ?? '')]; }
-                if (preg_match('/\.png$/i', $path) && strncmp($img['data'], "\xFF\xD8\xFF", 3) === 0) { $path = (string)preg_replace('/\.png$/i', '.jpg', $path); }
+                /* the file keeps the exact name the agent asked for (browsers detect JPEG/PNG by content), so links never break */
+                $asked = $path;
+                $img['data'] = sbx_compress_image((string)$img['data'], $path);
+                $path = $asked;
                 $w = sbx_write($cfg, $sid, $path, $img['data']);
                 if (empty($w['ok'])) { return ['ok' => false, 'text' => 'Could not save the image: ' . (string)($w['error'] ?? '')]; }
-                return ['ok' => true, 'text' => 'Image saved to ' . $path . ' (' . strlen($img['data']) . ' bytes).', 'meta' => ['image' => $path]];
+                $kb = (int)round(strlen($img['data']) / 1024);
+                if ($kb > 200 && preg_match('/\.(png|jpe?g)$/i', $path)) {
+                    /* PHP could not shrink it → do it inside the sandbox (ImageMagick, else Pillow) */
+                    $out = $path;
+                    $A = escapeshellarg($path); $B = escapeshellarg($out);
+                    $sh = 'if command -v convert >/dev/null 2>&1; then convert ' . $A . " -resize '1600x1600>' -strip -interlace Plane -quality 80 " . $B . '.tmp.jpg; '
+                        . 'elif python3 -c "import PIL" 2>/dev/null; then python3 -c ' . escapeshellarg('import sys;from PIL import Image;i=Image.open(sys.argv[1]).convert("RGB");i.thumbnail((1600,1600));i.save(sys.argv[2],"JPEG",quality=80,optimize=True,progressive=True)') . ' ' . $A . ' ' . $B . '.tmp.jpg; fi; '
+                        . 'if [ -s ' . $B . '.tmp.jpg ] && [ $(stat -c %s ' . $B . '.tmp.jpg) -lt $(stat -c %s ' . $A . ') ]; then mv -f ' . $B . '.tmp.jpg ' . $B . ' && { [ ' . $A . ' = ' . $B . ' ] || rm -f ' . $A . '; }; echo "OK $(stat -c %s ' . $B . ')"; else rm -f ' . $B . '.tmp.jpg; echo SKIP; fi';
+                    $cr = sbx_exec($cfg, $sid, $sh, 40);
+                    if (preg_match('/OK (\d+)/', (string)($cr['stdout'] ?? ''), $cm)) { $path = $out; $kb = (int)round((int)$cm[1] / 1024); }
+                }
+                return ['ok' => true, 'text' => 'Image saved to ' . $path . ' (' . $kb . ' KB, optimised for fast loading).', 'meta' => ['image' => $path]];
             }
             $body = (string)json_encode(['prompt' => mb_substr($prompt, 0, 1500), 'width' => '1024', 'height' => '1024']);
             $root = 'https://prexzyapis.com/ai/';

@@ -645,7 +645,8 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
         $L[] = 'THINK LIKE A REAL ENGINEER:';
         $L[] = '- First understand what the user really wants (goal, audience, must-haves). For a bigger task, start your first reply with a short plan (3-6 bullets), then make the first tool call.';
         $L[] = '- Before every tool call write 1-3 short sentences: what the last result told you and what you will do next and why. Notice surprises (errors, empty output, wrong versions) and adapt the plan instead of pushing on blindly.';
-        $L[] = '- Verify your work (run it, open it with the browser tool, check the output) before saying it is done.';
+        $L[] = '- Verify your work (run it, open it with the browser tool, check the output) before saying it is done. Test interactive parts like a user: the browser tool takes extra action lines after the URL ("fill #email = a@b.com", "click button[type=submit]", "mobile") — submit forms, click buttons/menus, check the phone layout.';
+        $L[] = '- When a tool lists several problems (missing files, broken images…), fix ALL of them, not just the first few.';
         $L[] = '';
         $L[] = 'ASK WHEN SOMETHING IS UNCLEAR (ask_user):';
         $L[] = '- If the request is vague or missing details that would clearly change the result (what the site/app is for, its content, style, framework, scope, which data to use), ask BEFORE building. If the intent is clear, do not ask — just do the work.';
@@ -767,7 +768,7 @@ function agent_tool_short(string $name, string $desc): string {
         'read_file' => 'Read a text file. INPUT: path.',
         'list_files' => 'List files. INPUT: folder or ".".',
         'start_server' => 'Start a dev server in the background and get its preview URL. INPUT: line 1 = port, line 2 = command (bind 0.0.0.0).',
-        'browser' => 'Open a URL (also http://localhost:PORT) in Chromium: returns text, errors, failed files and whether the page is styled.',
+        'browser' => 'Open a URL in Chromium: returns text, errors, failed files, broken images, sideways overflow, styling. INPUT: line 1 = URL; extra lines = actions to test like a user: mobile | click <css> | fill <css> = <text> | select <css> = <value> | check <css> | press Enter | wait 1000.',
         'generate_image' => 'Make an image. INPUT: line 1 = output path, line 2 = prompt.',
         'deploy_site' => 'Publish a finished site to the user\'s own FTP/SFTP hosting (Settings → Hosting). INPUT: line 1 = folder, line 2 = optional site name.',
         'full_internet' => 'Move to a sandbox with full internet (only when a needed website/API is blocked).',
@@ -789,6 +790,8 @@ function agent_system_prompt_compact(bool $sandbox, array $env = []): string {
         $L[] = '- Real, complete, good-looking work: full content, proper design (colors, spacing, typography, hover, responsive), working JS. No placeholders.';
         $L[] = '- Your replies are cut at ~5,000 characters: keep each write_file under ~4,000 characters and write big files in parts (write_file, then append_file continuing exactly where it ended). Read the tool result: if it says a file is UNFINISHED, append the missing rest — do NOT rewrite the whole file.';
         $L[] = '- Websites: styles in style.css / script.js linked with relative paths. Then start_server (python3 -m http.server PORT --bind 0.0.0.0 inside the site folder) and check pages with the browser tool; fix anything it reports as failed or UNSTYLED. Vite: server.allowedHosts = true.';
+        $L[] = '- TEST like a real user before finishing: forms (browser with fill … / click submit lines → check the success/error message), buttons, menus, tabs, and the mobile view (browser with a "mobile" line: no sideways overflow, menu works). Fix everything that fails, then test again.';
+        $L[] = '- When a tool lists several problems (missing files, broken images…), fix ALL of them — keep your own list and tick them off; never fix only some and move on.';
         $L[] = '- Keep one consistent brand name, nav menu, colors and class names across all pages — put them in your checklist, and read_file an earlier file when unsure instead of guessing.';
         $L[] = '- Create files with write_file, not shell heredocs. Run commands yourself. Never claim done/fixed/styled without a tool result showing it.';
         $L[] = '- Ask with ask_user only when the request is truly unclear or you need something only the user has (API key → "need: ENV_NAME | label"; files → ask them to use Add files).';
@@ -822,7 +825,7 @@ function agent_compact_messages(array $job, bool $sandbox, array $env, int $cap)
     $hist = array_values((array)($job['history'] ?? []));
     $isMeta = static function (array $h): bool {
         $c = (string)($h['content'] ?? '');
-        return strpos($c, 'TOOL RESULT (') === 0 || strpos($c, '[SELF-CHECK') === 0 || strpos($c, 'You have used all') === 0;
+        return strpos($c, 'TOOL RESULT (') === 0 || strpos($c, '[SELF-CHECK') === 0 || strpos($c, '[AUTO-CHECK') === 0 || strpos($c, 'You have used all') === 0;
     };
     $req = -1;
     foreach ($hist as $i => $h) { if (($h['role'] ?? '') === 'user' && !$isMeta($h)) { $req = $i; } }
@@ -877,6 +880,21 @@ function agent_compact_messages(array $job, bool $sandbox, array $env, int $cap)
     $P[] = $trace ? 'Continue from the newest result with the next unfinished checklist item (ONE tool call at the end), or give the final answer if everything is done and verified.'
                   : 'Start: write a short checklist of everything requested (bullets), then make the first tool call.';
     return [['role' => 'user', 'content' => implode("\n", $P)]];
+}
+
+/** top-level folders of the web files (html/css/js) the agent wrote in this run — what the auto-check scans */
+function agent_web_roots(array $trace): array {
+    $roots = [];
+    foreach ($trace as $st) {
+        if (!in_array((string)($st['tool'] ?? ''), ['write_file', 'append_file'], true)) { continue; }
+        $path = trim((string)strtok((string)($st['input'] ?? ''), "\n"));
+        $path = (string)preg_replace('#^(?:/home/(?:user|sandbox|daytona|vercel-sandbox)/work/|\./)#', '', $path);
+        if (!preg_match('/\.(html?|css|js)$/i', $path) || strpos($path, '..') !== false || $path[0] === '/') { continue; }
+        $seg = strpos($path, '/') !== false ? substr($path, 0, (int)strpos($path, '/')) : '.';
+        if (in_array($seg, ['node_modules', '.devil', 'uploads'], true)) { continue; }
+        $roots[$seg] = true;
+    }
+    return array_slice(array_keys($roots), 0, 6);
 }
 
 /* self-check is worth a model call only after real building, at most twice a run, and only if new work happened since the last check */
@@ -935,6 +953,23 @@ function agent_job_advance(array &$job, array $deps): array {
         }
         $job['fails'] = 0;
         $call = count((array)$job['trace']) >= $max ? null : agent_parse_tool_call_ml($txt, $tools);
+        /* Auto-check before finishing (no model call): scan the web files built in this run for missing images/CSS/JS,
+           cut-off files, JavaScript syntax errors and placeholder text. Problems go back to the model as a to-do list. */
+        if ($call === null && $sandbox && count((array)$job['trace']) < $max - 1 && (int)($job['autochecks'] ?? 0) < 3 && function_exists('sbx_site_doctor')) {
+            $roots = agent_web_roots((array)$job['trace']);
+            $sig = md5(json_encode([count((array)$job['trace']), $roots]));
+            if ($roots && ($job['autocheck_sig'] ?? '') !== $sig) {
+                $job['autocheck_sig'] = $sig;
+                $issues = sbx_site_doctor((array)($deps['sbx']['cfg'] ?? []), (string)($deps['sbx']['sid'] ?? ''), $roots);
+                if ($issues) {
+                    $job['autochecks'] = (int)($job['autochecks'] ?? 0) + 1;
+                    $job['history'][] = ['role' => 'assistant', 'content' => $txt];
+                    $job['history'][] = ['role' => 'user', 'content' => "[AUTO-CHECK — the user does not see this message]\nYou were about to finish, but an automatic scan of the files found these problems:\n- " . implode("\n- ", $issues)
+                        . "\n\nThe work is NOT done yet. Fix EVERY problem above now, one tool call per reply (create each missing file, e.g. generate_image for a missing image, or change the HTML to use files that exist; append the missing end of cut-off files; fix syntax errors; replace placeholders with real content). Then check the pages again with the browser tool and give the final answer (no TOOL line)."];
+                    return ['type' => 'retry', 'note' => 'Checking the work…'];
+                }
+            }
+        }
         /* Self-check before finishing (like a careful engineer re-reading the brief): once per batch of work,
            when real building happened, ask the model to verify every requested item before it may stop. */
         if ($call === null && $sandbox && agent_should_selfcheck($job, $max)) {
