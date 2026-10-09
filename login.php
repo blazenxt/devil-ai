@@ -131,7 +131,7 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Devil AI">
-<?php if ($recaptchaSiteKey !== '' || $recaptchaV2SiteKey !== ''): ?><script src="https://www.google.com/recaptcha/api.js?onload=devilCaptchaRecaptchaApiReady&render=explicit" async defer></script><?php endif; ?>
+<?php if ($recaptchaSiteKey !== '' || $recaptchaV2SiteKey !== ''): ?><script src="https://www.google.com/recaptcha/api.js?onload=devilCaptchaRecaptchaApiReady&render=explicit" async defer onerror="window.devilRecaptchaLoadFailed=1"></script><?php endif; ?>
 <?php if ($turnstileSiteKey !== ''): ?><script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=devilCaptchaTurnstileApiReady&render=explicit" async defer></script><?php endif; ?>
 <script src="assets/captcha.js"></script>
 <script>window.DEVIL_CAPTCHA_CFG = { turnstileSiteKey: <?= json_encode($turnstileSiteKey) ?>, recaptchaSiteKey: <?= json_encode($recaptchaSiteKey) ?>, recaptchaV2SiteKey: <?= json_encode($recaptchaV2SiteKey) ?> };</script>

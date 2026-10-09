@@ -37,7 +37,7 @@ dev_console_start('API Keys', 'keys');
 <?php endif; ?>
 <script>window.DEVIL_DEV_RECAPTCHA_SITE_KEY = <?= json_encode($recaptchaSiteKey) ?>; window.DEVIL_DEV_RECAPTCHA_V2_SITE_KEY = <?= json_encode($recaptchaV2SiteKey) ?>; window.DEVIL_DEV_TURNSTILE_SITE_KEY = <?= json_encode($turnstileSiteKey) ?>;</script>
 <?php if ($recaptchaSiteKey !== '' || $recaptchaV2SiteKey !== ''): ?>
-<script src="https://www.google.com/recaptcha/api.js?onload=devilCaptchaRecaptchaApiReady&render=explicit" async defer></script>
+<script src="https://www.google.com/recaptcha/api.js?onload=devilCaptchaRecaptchaApiReady&render=explicit" async defer onerror="window.devilRecaptchaLoadFailed=1"></script>
 <?php endif; ?>
 <?php
 dev_console_end(<<<'JS'
