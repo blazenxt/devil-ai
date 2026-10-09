@@ -637,7 +637,9 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
         $L[] = '- Do EVERYTHING the user asked in this run, not just a first part. Never stop after a "foundation", "skeleton" or "first version" and never end with "what should we add next?" while requested parts are still missing. "Like <some site>" means: rebuild its main pages and features properly.';
         $L[] = '- Make a checklist of every requested page/feature at the start and work through it item by item. Only give the final answer when every item is built AND checked.';
         $L[] = '- Build real, complete, good-looking work: full content (no lorem ipsum, no "coming soon"), a proper design (colors, spacing, typography, hover states, responsive layout), working JS for every interactive part.';
-        $L[] = '- Your replies are cut off at about 5,000 characters. Keep each write_file under ~4,000 characters: write a big file in parts — write_file the first part, then append_file the next parts (continue exactly where the last part ended). Split CSS/JS into several files when that is simpler.';
+        $L[] = agent_long_replies((array)($env['cfg'] ?? []))
+            ? '- You can write long replies: write each file COMPLETE in one write_file (up to ~40,000 characters). Use append_file only for files bigger than that.'
+            : '- Your replies are cut off at about 5,000 characters. Keep each write_file under ~4,000 characters: write a big file in parts — write_file the first part, then append_file the next parts (continue exactly where the last part ended). Split CSS/JS into several files when that is simpler.';
         $L[] = '- Websites: put the styles in real files (style.css, script.js) linked with relative paths (href="style.css"), and keep each page\'s links pointing at files that exist. After building, start_server and check EVERY page with the browser tool: it reports failed files and whether the page looks UNSTYLED — fix that before you say the design is done.';
         $L[] = '- Vite dev server: also set server: { host: true, allowedHosts: true } in vite.config (and preview: { allowedHosts: true }) so the preview link is not blocked.';
         $L[] = '- Never say something is done, styled, fixed or working unless a tool result in THIS run shows it.';
@@ -756,6 +758,10 @@ function agent_compact_history(array $history, int $budget = 60000): array {
    "forgets" what it just did and starts over). Here everything that matters is packed into a fixed
    budget: short rules, the request, the plan, a one-line-per-step work log, the last message and the
    newest tool result — in that order, newest last. */
+/* Gemini engine (Agent Mode): long answers, no ~5,000-character cut */
+function agent_long_replies(array $cfg): bool {
+    return function_exists('gemini_api_key') && gemini_api_key($cfg) !== '' && empty($cfg['agent_engine']);
+}
 function agent_engine_cap(array $cfg, string $aiModel): int {
     if (!function_exists('engine_for')) { return 0; }
     $e = engine_for($cfg, $aiModel);
@@ -944,7 +950,7 @@ function agent_job_advance(array &$job, array $deps): array {
             $cfg['_prompt_limits'] = ['user_text' => $cap, 'assistant_text' => 100, 'attachment_text' => 100, 'latest_text' => $cap, 'latest_attachment' => 100, 'turns' => 2, 'budget' => $cap];
         } else {
         /* long-context engine (Gemini) keeps far more of the transcript */
-        $histBudget = (int)($cfg['agent_history_budget'] ?? ((function_exists('gemini_api_key') && gemini_api_key($cfg) !== '' && empty($cfg['agent_engine'])) ? 300000 : 26000));
+        $histBudget = (int)($cfg['agent_history_budget'] ?? (agent_long_replies($cfg) ? 300000 : 26000));
         $prompt = agent_compact_history((array)$job['history'], $histBudget);
         array_unshift($prompt, ['role' => 'user', 'content' => agent_system_prompt_v2($sandbox, $envP) . "\n\n---\nNow work on the user's request below."]);
         /* the engines are single-turn and weigh the LAST message most: restate the protocol there */
@@ -1037,7 +1043,7 @@ function agent_job_advance(array &$job, array $deps): array {
         }
         if (empty($job['plan']) && preg_match_all('/^\s*(?:[-*•]|\d+[.)])\s+\S/m', (string)$call['thought']) >= 2) { $job['plan'] = mb_substr(trim((string)$call['thought']), 0, 900); }
         $job['pending'] = ['tool' => $call['name'], 'input' => $call['input'], 'thought' => mb_substr($call['thought'], 0, 600),
-            'cut' => strlen($txt) >= 4900, 'multi' => preg_match_all('/^[ \t]*(?:\*\*)?TOOL:?(?:\*\*)?[ \t]*`?[a-z_]+`?[ \t]*$/mi', $txt) > 1];
+            'cut' => strlen($txt) >= 4900 && !agent_long_replies($cfg), 'multi' => preg_match_all('/^[ \t]*(?:\*\*)?TOOL:?(?:\*\*)?[ \t]*`?[a-z_]+`?[ \t]*$/mi', $txt) > 1];
         $job['state'] = 'tool';
         return ['type' => 'tool_start', 'step' => count((array)$job['trace']) + 1, 'tool' => $call['name'], 'input' => mb_substr($call['input'], 0, 600), 'thought' => mb_substr($call['thought'], 0, 600)];
     }

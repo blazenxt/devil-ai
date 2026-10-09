@@ -1659,29 +1659,51 @@ function gemini_api_key(array $cfg): string {
 }
 /* best available models, newest stable Flash first — refreshed once a day from the models list */
 function gemini_models(array $cfg): array {
-    $fallback = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest'];
+    $fallback = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
     $cache = data_dir() . '/gemini_models.json';
     $c = is_readable($cache) ? json_decode((string)@file_get_contents($cache), true) : null;
     if (is_array($c) && !empty($c['models']) && (time() - (int)($c['at'] ?? 0)) < 86400) { return (array)$c['models']; }
     $key = gemini_api_key($cfg);
-    $list = [];
-    $raw = function_exists('curl_init') ? (function () use ($key) {
+    $raw = '';
+    if (function_exists('curl_init')) {
         $ch = curl_init(GEMINI_ROOT . '/models?pageSize=200');
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $key]]);
-        $r = curl_exec($ch); curl_close($ch); return is_string($r) ? $r : '';
-    })() : '';
+        $r = curl_exec($ch); curl_close($ch); $raw = is_string($r) ? $r : '';
+    }
     $j = json_decode($raw, true);
+    $list = [];
     foreach ((array)($j['models'] ?? []) as $m) {
         $name = preg_replace('~^models/~', '', (string)($m['name'] ?? ''));
         if (!in_array('generateContent', (array)($m['supportedGenerationMethods'] ?? []), true)) { continue; }
-        /* stable "gemini-X.Y-flash" only (no lite / preview / exp / tts / image variants) */
+        /* stable "gemini-X.Y-flash" only (no lite / preview / tts / image variants) */
         if (preg_match('/^gemini-(\d+(?:[.]\d+)?)-flash$/', $name, $mm)) { $list[$name] = (float)$mm[1]; }
     }
     arsort($list);
-    $models = array_slice(array_keys($list), 0, 2);
+    $models = array_slice(array_keys($list), 0, 4);
     foreach ($fallback as $f) { if (!in_array($f, $models, true)) { $models[] = $f; } }
     if ($list) { @file_put_contents($cache, json_encode(['at' => time(), 'models' => $models]), LOCK_EX); }
     return $models;
+}
+/* per-model health: busy models rest for a few minutes, the last model that answered goes first */
+function gemini_state(): array {
+    $f = data_dir() . '/gemini_state.json';
+    $s = is_readable($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    return is_array($s) ? $s : ['cool' => [], 'good' => ''];
+}
+function gemini_state_save(array $s): void { @file_put_contents(data_dir() . '/gemini_state.json', json_encode($s), LOCK_EX); }
+function gemini_order(array $models): array {
+    $st = gemini_state(); $now = time();
+    $ok = []; $cooling = [];
+    foreach ($models as $m) { if ((int)($st['cool'][$m] ?? 0) > $now) { $cooling[] = $m; } else { $ok[] = $m; } }
+    $good = (string)($st['good'] ?? '');
+    if ($good !== '' && in_array($good, $ok, true)) { $ok = array_values(array_unique(array_merge([$good], $ok))); }
+    return array_merge($ok, $cooling);   /* cooling ones only as a last resort */
+}
+function gemini_mark(string $model, bool $good): void {
+    $st = gemini_state();
+    if ($good) { $st['good'] = $model; unset($st['cool'][$model]); }
+    else { $st['cool'][$model] = time() + 180; if (($st['good'] ?? '') === $model) { $st['good'] = ''; } }
+    gemini_state_save($st);
 }
 /* chat messages → Gemini contents (roles user/model, same-role turns merged, image on the last user turn) */
 function gemini_contents(array $messages, string $image): array {
@@ -1706,25 +1728,50 @@ function gemini_contents(array $messages, string $image): array {
 function gemini_call(array $cfg, string $model, array $messages, string $image = ''): array {
     $key = gemini_api_key($cfg);
     if ($key === '') { return [false, 'The engine is not configured.', null, null]; }
-    $models = ($model === '' || $model === 'auto') ? gemini_models($cfg) : [$model];
-    $body = [
+    $models = ($model === '' || $model === 'auto') ? gemini_order(gemini_models($cfg)) : [$model];
+    $body = json_encode([
         'systemInstruction' => ['parts' => [['text' => devil_persona()]]],
         'contents' => gemini_contents($messages, $image),
-        'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => (int)($cfg['gemini_max_output'] ?? 32768)],
-    ];
-    $last = 'The engine failed while the agent was working.';
-    foreach (array_slice($models, 0, 3) as $mdl) {
-        list($ok, $raw, $status) = http_post_json(GEMINI_ROOT . '/models/' . rawurlencode($mdl) . ':generateContent', ['x-goog-api-key: ' . $key], $body);
-        if (!$ok) { $last = 'The engine is busy right now.'; if (strpos((string)$raw, 'ran out of time') !== false) { return [false, $raw, null, null]; } continue; }
-        $j = json_decode((string)$raw, true);
-        if ((int)$status === 404 || (int)$status === 429 || (int)$status >= 500) { $last = 'The engine is busy right now.'; continue; }
-        if ((int)$status >= 400 || !is_array($j)) { $last = 'The engine could not answer this request.'; continue; }
+        'generationConfig' => [
+            'temperature' => 0.4,
+            'maxOutputTokens' => (int)($cfg['gemini_max_output'] ?? 32768),
+            'thinkingConfig' => ['thinkingLevel' => (string)($cfg['gemini_thinking'] ?? 'low')],
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+    if ($body === false || !function_exists('curl_init')) { return [false, 'The engine failed while the agent was working.', null, null]; }
+    $last = 'The engine is busy right now.';
+    $tries = 0;
+    foreach ($models as $mdl) {
+        $tl = devil_time_left(85) - 3;   /* an agent step gets ~78 s: long files need most of it */
+        if ($tl < 8 || $tries >= 4) { break; }
+        $tries++;
+        $ch = curl_init(GEMINI_ROOT . '/models/' . rawurlencode($mdl) . ':generateContent');
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json; charset=utf-8', 'x-goog-api-key: ' . $key],
+            /* the first try may use most of the step; later tries must leave room for the reply */
+            CURLOPT_TIMEOUT => max(8, $tries === 1 ? $tl : min($tl, 45)), CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_ENCODING => '',
+        ]);
+        $t0 = microtime(true);
+        $raw = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $j = is_string($raw) ? json_decode($raw, true) : null;
+        if ($raw === false || $status === 0 || $status === 404 || $status === 429 || $status >= 500 || !is_array($j)) {
+            /* a long answer that ran out of time is not "busy" — only real busy/limit errors (or a quick failure) rest the model */
+            $slow = ($status === 0 || $raw === false) && (microtime(true) - $t0) > 30;
+            if (!$slow) { gemini_mark($mdl, false); }
+            $last = $slow ? 'This step ran out of time — retrying.' : 'The engine is busy right now.';
+            continue;
+        }
+        if ($status >= 400) { $last = 'The engine could not answer this request.'; break; }   /* bad request/key: other models won't differ */
         $txt = '';
         foreach ((array)($j['candidates'][0]['content']['parts'] ?? []) as $part) {
             if (!empty($part['thought'])) { continue; }   /* skip thinking summaries */
             $txt .= (string)($part['text'] ?? '');
         }
         if (trim($txt) === '') { $last = 'The engine returned an empty answer.'; continue; }
+        gemini_mark($mdl, true);
         return [true, $txt, null, 'gemini:' . $mdl];
     }
     return [false, $last, 'Devil AI will retry automatically — try again in a moment.', null];
@@ -1755,10 +1802,15 @@ function ai_respond(array $cfg, string $modelId, array $messages, string $image 
     }
 
     list($ok, $txt, $hint, $used) = call_engine($cfg, $engine, $messages);
-    if (!$ok && ($engine['kind'] ?? '') === 'gemini' && strpos((string)$txt, 'ran out of time') === false) {
-        $cfgNoG = $cfg; unset($cfgNoG['gemini_api_key']);
-        $engine = engine_for($cfgNoG, $modelId);
-        list($ok, $txt, $hint, $used) = call_engine($cfg, $engine, $messages);
+    if (!$ok && ($engine['kind'] ?? '') === 'gemini') {
+        /* Agent Mode: try the previous agent engine once if there is time; otherwise report the failure so the
+           agent step is retried — never answer with the chat fallbacks / offline text (they break the tool protocol) */
+        if (strpos((string)$txt, 'ran out of time') === false && devil_time_left(85) > 25) {
+            $cfgNoG = $cfg; unset($cfgNoG['gemini_api_key']);
+            list($ok, $txt, $hint, $used) = call_engine($cfg, engine_for($cfgNoG, $modelId), $messages);
+        }
+        if (!$ok) { return [false, (string)$txt, null]; }
+        return [true, $txt, $used];
     }
 
     /* fallback 1: reliable Prexzy endpoint */
