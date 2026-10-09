@@ -40,8 +40,8 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
 </head>
 <body>
 <div class="top">
-  <a class="brand" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI <span style="color:var(--dim2);font-weight:500;font-size:.8rem">Admin</span></a>
-  <div class="right"><button class="tb" id="themeBtn" title="Switch theme" type="button"><?= icon('sun', 16) ?></button><a class="back" href="index.php"><?= icon('chevron-right', 14) ?> Home</a></div>
+  <a class="brand" href="./"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI <span style="color:var(--dim2);font-weight:500;font-size:.8rem">Admin</span></a>
+  <div class="right"><button class="tb" id="themeBtn" title="Switch theme" type="button"><?= icon('sun', 16) ?></button><a class="back" href="./"><?= icon('chevron-right', 14) ?> Home</a></div>
 </div>
 
 <main>

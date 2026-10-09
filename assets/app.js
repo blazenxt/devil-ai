@@ -433,7 +433,10 @@ function api(action, body, method, signal) {
   /* NOTE: action may carry extra query params (chat_load&id=…) whose values
      are already encodeURIComponent'd by the caller — so don't re-encode here */
   return fetch('api.php' + (action ? '?action=' + action : ''), opt).then(function (r) {
-    if (r.status === 401) { window.location.href = 'login.php'; throw new Error('signed out'); }
+    if (r.status === 401) {
+      if (window.__GUEST) { guestGate(); return { ok: false, error: 'Please log in to continue.', guest: true }; }
+      window.location.href = 'login.php?next=' + encodeURIComponent(window.location.pathname + window.location.search); throw new Error('signed out');
+    }
     /* Cloudflare wants a quick "are you human" check again (VPN / datacenter networks only):
        reload once so the check page shows, instead of failing with a network error */
     if (r.status === 403 && r.headers.get('cf-mitigated') === 'challenge') {
@@ -1765,12 +1768,34 @@ $$('#agentTasks .atask').forEach(function (c) {
     if (typeof updateSendButton === 'function') { updateSendButton(); }
   });
 });
+/* "Get started" chips (Pro-style): build tasks open in Agent Mode */
+$$('#starters [data-start]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    if (chatMode !== 'agent' && agentEnabled && !busy) { chooseMode('agent'); }
+    inp.value = b.getAttribute('data-start');
+    resize();
+    inp.focus();
+  });
+});
 $$('#welcome .card').forEach(function (c) {
   c.addEventListener('click', function () { inp.value = c.dataset.fill; resize(); send(); });
 });
 
 /* ── send / retry ── */
+/* ── signed-out visitors: Pro-style "log in to continue" — the typed message is kept for after login ── */
+function guestGate() {
+  try {
+    var t = (inp && inp.value || '').trim();
+    if (t) { localStorage.setItem('devil_guest_draft', JSON.stringify({ text: t, path: window.location.pathname, at: Date.now() })); }
+  } catch (e) {}
+  var m = document.getElementById('guestModal');
+  if (!m) { window.location.href = 'login.php'; return; }
+  var next = encodeURIComponent(window.location.pathname + window.location.search);
+  var em = document.getElementById('guestEmail'); if (em) { em.href = 'login.php?next=' + next; }
+  m.classList.remove('hidden');
+}
 function send() {
+  if (window.__GUEST) { guestGate(); return; }
   if (inlineEdit) { toast('Save or cancel the edited message first', 'warning'); return; }
   if (isCmp()) { sendCompare(); return; }
   var text = inp.value.trim();
@@ -2021,6 +2046,7 @@ function retryCompareSide(d, side) {
 }
 function sendCompare() {
   closePop();
+  if (window.__GUEST) { guestGate(); return; }
   var text = inp.value.trim();
   if (!text || busy) { return; }
   if (pendingFiles && pendingFiles.length) { toast('Battle and Side by Side are text-only — use AI Mode for files', 'warning'); return; }
@@ -2118,7 +2144,7 @@ function openLeaderboard() {
     if (lbTab === 'mine') { renderMyVotes(); } else { openLeaderboard(); }
   });
 })();
-['sbBoard', 'railBoard'].forEach(function (id) { var el = document.getElementById(id); if (el) { el.addEventListener('click', openLeaderboard); } });
+/* Leaderboard is its own page now (Pro-style): #sbBoard / #railBoard are plain links */
 (function () { var lb = $('#lbBattle'); if (lb) { lb.addEventListener('click', function () { window.location.href = 'battle'; }); } })();
 
 /* ── scroll-to-latest button (all modes) ── */
@@ -2306,7 +2332,7 @@ document.addEventListener('click', function (e) {
 /* ── user menu ── */
 $('#userBtn').addEventListener('click', function (e) { e.stopPropagation(); var o = $('#userMenu').classList.toggle('open'); this.setAttribute('aria-expanded', o ? 'true' : 'false'); });
 document.addEventListener('click', function (e) { if (!e.target.closest('.sb-bottom')) { $('#userMenu').classList.remove('open'); $('#userBtn').setAttribute('aria-expanded', 'false'); } });
-$('#mLogout').addEventListener('click', function () { api('logout', {}).then(function () { window.location.href = 'index.php'; }); });
+$('#mLogout').addEventListener('click', function () { api('logout', {}).then(function () { window.location.href = './'; }); });
 $('#mCookies').addEventListener('click', function () { $('#userMenu').classList.remove('open'); if (window.devilOpenCookies) { devilOpenCookies(); } });
 
 $('#mDelAcc').addEventListener('click', function () {
@@ -2336,7 +2362,7 @@ $('#delAccGo').addEventListener('click', function () {
   var code = $('#delAccCode').value.replace(/\D/g, '');
   if (code.length !== 6) { $('#delAccStatus').textContent = 'Enter the 6-digit code from your email.'; return; }
   api('account_delete', { code: code }).then(function (j) {
-    if (j.ok) { window.location.href = 'index.php'; }
+    if (j.ok) { window.location.href = './'; }
     else { $('#delAccStatus').textContent = j.error || 'Delete failed.'; }
   });
 });
@@ -3854,7 +3880,15 @@ if (INITIAL_CHAT_ID) {
 } else {
   updateChatActions();
 }
-loadChats();
+if (!window.__GUEST) { loadChats(); }
+/* message typed before logging in → put it back in the box */
+if (!window.__GUEST && !INITIAL_CHAT_ID) {
+  try {
+    var gd = JSON.parse(localStorage.getItem('devil_guest_draft') || 'null');
+    localStorage.removeItem('devil_guest_draft');
+    if (gd && gd.text && Date.now() - (gd.at || 0) < 3600000 && !inp.value) { inp.value = String(gd.text).slice(0, 4000); }
+  } catch (e) {}
+}
 resize();
 if (window.innerWidth > 900) { inp.focus(); }
 })();

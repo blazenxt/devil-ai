@@ -36,7 +36,20 @@ if (in_array(($_SERVER['REQUEST_METHOD'] ?? 'GET'), ['GET', 'HEAD'], true) && pr
     header('Location: ' . $to . ($q ? '?' . http_build_query($q) : ''), true, 301);
     exit;
 }
-if (!$me) { header('Location: ' . ($APP_BASE_PATH ?: '') . '/login.php'); exit; }
+/* Pro-style: no landing page — signed-out visitors see the chat screen; sending asks them to log in */
+/* The service worker stores the home page for offline use (a background fetch, not a page visit).
+   That copy must never contain anyone's chats → background fetches always get the signed-out page. */
+$IS_SHELL_FETCH = isset($_SERVER['HTTP_SEC_FETCH_MODE']) && $_SERVER['HTTP_SEC_FETCH_MODE'] !== 'navigate';
+if ($IS_SHELL_FETCH) { $me = null; }
+$IS_GUEST = !$me;
+if ($IS_GUEST) {
+    /* a saved chat link needs the owner's account */
+    if (preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? ''))) {
+        header('Location: ' . ($APP_BASE_PATH ?: '') . '/login.php?next=' . rawurlencode($REQ_PATH), true, 302);
+        exit;
+    }
+    $me = ['id' => '', 'name' => 'Guest', 'email' => ''];
+}
 /* /agent and /agent/{slug} are rewritten to app.php?mode=agent */
 /* cache-busting version for the static app bundle (changes whenever a file is redeployed) */
 $ASSET_V = substr(md5(implode('|', array_map(static function ($f) { return @filemtime($f) . ':' . @filesize($f); }, [__DIR__ . '/assets/app.css', __DIR__ . '/assets/app.js']))), 0, 10);
@@ -48,11 +61,11 @@ try {
     if (!defined('DEVIL_API_AS_LIB')) { define('DEVIL_API_AS_LIB', true); }
     require_once __DIR__ . '/api.php';
     $BOOT['bootstrap'] = bootstrap_payload();
-    $BOOT['chats'] = ['ok' => true, 'chats' => list_chats((string)$me['id'])];
+    $BOOT['chats'] = ['ok' => true, 'chats' => $IS_GUEST ? [] : list_chats((string)$me['id'])];
     $bootChat = (string)($_GET['chat'] ?? '');
     $bootVar = (string)($_GET['variant'] ?? '');
     if (!preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $bootVar) && $bootVar !== 'original') { $bootVar = ''; }
-    if (preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $bootChat)) {
+    if (!$IS_GUEST && preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', $bootChat)) {
         $pl = chat_load_payload((string)$me['id'], $bootChat, $bootVar);
         if ($pl !== null && strlen((string)json_encode($pl)) < 700000) { $BOOT['chat_load&id=' . $bootChat . ($bootVar !== '' ? '&variant=' . $bootVar : '')] = $pl; }
     }
@@ -108,12 +121,14 @@ $JS_ICONS = [
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <base href="<?= htmlspecialchars(($APP_BASE_PATH ?: '') . '/', ENT_QUOTES) ?>">
 <meta name="theme-color" content="#0c0709">
-<meta name="robots" content="noindex">
+<?php $IS_HOME = in_array(rtrim($REQ_PATH, '/'), [rtrim($APP_BASE_PATH, '/'), rtrim($APP_BASE_PATH, '/') . '/index.php'], true); ?>
+<?php if ($IS_HOME && $IS_GUEST): ?><meta name="description" content="Chat with top AI models, compare them in anonymous battles, build apps with Devil Agent and see the leaderboard. Free.">
+<link rel="canonical" href="https://ai.devil.blazenxt.com/"><?php else: ?><meta name="robots" content="noindex"><?php endif; ?>
 <script>/* theme boot — runs before paint to avoid a flash of the wrong theme */
 (function(){function ck(n){var m=document.cookie.match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}var t=ck('devil_theme');try{t=t||localStorage.getItem('devil_theme');}catch(e){}
 if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}
 document.documentElement.setAttribute('data-theme',t);})();</script>
-<title><?= htmlspecialchars($MODE_DEFS[$ROUTE_MODE]['label'] ?? 'AI Mode') ?> — Devil AI</title>
+<title><?= $IS_HOME ? 'Devil AI — Chat, compare &amp; build with the best AI models' : htmlspecialchars($MODE_DEFS[$ROUTE_MODE]['label'] ?? 'AI Mode') . ' — Devil AI' ?></title>
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="mobile-web-app-capable" content="yes">
@@ -121,7 +136,7 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
 <meta name="apple-mobile-web-app-title" content="Devil AI">
 <link rel="stylesheet" href="assets/app.css?v=<?= $ASSET_V ?>">
 </head>
-<body class="devil-ui<?= $ROUTE_MODE === 'agent' ? ' agent-mode' : '' ?><?= $ROUTE_MODE !== 'ai' ? ' alt-mode' : '' ?><?= $IS_CMP ? ' cmp-mode ' . $ROUTE_MODE . '-mode' : '' ?><?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? ' loading-chat' : '' ?>">
+<body class="devil-ui<?= $IS_GUEST ? ' guest' : '' ?><?= $ROUTE_MODE === 'agent' ? ' agent-mode' : '' ?><?= $ROUTE_MODE !== 'ai' ? ' alt-mode' : '' ?><?= $IS_CMP ? ' cmp-mode ' . $ROUTE_MODE . '-mode' : '' ?><?= preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? ' loading-chat' : '' ?>">
 
 <div id="app">
 
@@ -129,11 +144,12 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
   <aside id="sidebar">
     <div class="sb-top">
       <button class="iconbtn" id="sbToggle" title="Close sidebar"><?= icon('panel-left') ?></button>
-      <a class="brand" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
+      <a class="brand" href="./"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
       <button class="iconbtn" id="themeBtn" title="Switch theme"><?= icon('sun', 17) ?></button>
     </div>
     <button class="newchat" id="newChatBtn"><?= icon('square-pen', 17) ?> New chat</button>
-    <button class="sbnav" id="sbBoard" type="button"><?= icon('trophy', 16) ?> Leaderboard</button>
+    <a class="sbnav" id="sbBoard" href="leaderboard"><?= icon('trophy', 16) ?> Leaderboard</a>
+    <a class="sbnav" id="sbSearchPage" href="history/search"><?= icon('search', 16) ?> Search</a>
     <div class="sb-search"><?= icon('search', 15) ?><input id="searchInp" type="text" placeholder="Search chats…" autocomplete="off"></div>
     <div class="sb-filter" id="sbFilter" role="tablist" aria-label="Filter chats by mode">
       <button type="button" data-f="all" class="on">All</button>
@@ -143,7 +159,28 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
       <button type="button" data-f="sbs" title="Side by Side chats"><?= icon('columns', 13) ?><span>SBS</span></button>
     </div>
     <nav id="chatList" aria-label="Chat history"></nav>
+<?php if ($IS_GUEST): ?>
+    <div class="guestcard">
+      <b>Save your chats</b>
+      <span>Log in to keep your chat history, use Agent Mode and vote in Battles.</span>
+      <a class="btn primary" href="login.php?next=<?= rawurlencode($REQ_PATH ?: '/') ?>">Log in</a>
+    </div>
+<?php endif; ?>
+    <div class="sb-legal"><a href="how-it-works">How it works</a><a href="faq">FAQ</a><a href="blog">Blog</a><a href="company/about">About</a><a href="terms-of-use">Terms</a><a href="privacy-policy">Privacy</a><a href="cookie-policy">Cookies</a></div>
     <div class="sb-bottom">
+<?php if ($IS_GUEST): ?>
+      <div id="userMenu">
+        <button class="mi" id="mKbd" type="button"><?= icon('keyboard', 16) ?> Keyboard shortcuts</button>
+        <button class="mi" id="mCookies" type="button"><?= icon('cookie', 16) ?> Cookie settings</button>
+        <hr>
+        <a class="mi" href="login.php?next=<?= rawurlencode($REQ_PATH ?: '/') ?>"><?= icon('user', 16) ?> Log in</a>
+        <button class="mi" id="mDelAcc" type="button" hidden></button><button class="mi" id="mLogout" type="button" hidden></button>
+      </div>
+      <div class="guestrow">
+        <a class="userbtn guestlogin" href="login.php?next=<?= rawurlencode($REQ_PATH ?: '/') ?>" id="guestLoginBtn"><span class="av"><?= icon('user', 15) ?></span><span class="nm"><b>Log in</b><span>Sign up or log in</span></span></a>
+        <button class="iconbtn" id="userBtn" type="button" title="More" aria-haspopup="menu" aria-expanded="false"><?= icon('settings', 16) ?></button>
+      </div>
+<?php else: ?>
       <div id="userMenu">
         <?php if (strtolower((string)($me['email'] ?? '')) === 'bk.w.p.bk@gmail.com'): ?><a class="mi" href="admin.php"><?= icon('shield-check', 16) ?> Admin control</a><?php endif; ?>
         <a class="mi" href="developers.php"><?= icon('code', 16) ?> Developer API</a>
@@ -159,6 +196,7 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
         <span class="nm"><b><?= htmlspecialchars($me['name']) ?></b><span><?= htmlspecialchars($me['email']) ?></span></span>
         <span class="chev"><?= icon('chevron-down', 15) ?></span>
       </button>
+<?php endif; ?>
     </div>
   </aside>
   <div id="backdrop"></div>
@@ -168,7 +206,7 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
     <button class="rbtn rtop" id="railOpen" type="button" title="Open sidebar"><?= icon('panel-left', 18) ?></button>
     <button class="rbtn" id="railNew" type="button" title="New chat"><?= icon('square-pen', 17) ?></button>
     <button class="rbtn" id="railHistory" type="button" title="Chat history"><?= icon('list', 17) ?></button>
-    <button class="rbtn" id="railBoard" type="button" title="Leaderboard"><?= icon('trophy', 17) ?></button>
+    <a class="rbtn" id="railBoard" href="leaderboard" title="Leaderboard"><?= icon('trophy', 17) ?></a>
     <span class="rsp"></span>
     <button class="rbtn" id="railTheme" type="button" title="Switch theme"><?= icon('sun', 17) ?></button>
     <button class="rbtn" id="railUser" type="button" title="Account"><span class="rav"><?= htmlspecialchars(strtoupper(mb_substr($me['name'], 0, 1))) ?></span></button>
@@ -263,6 +301,13 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
         <button type="button" class="atask" data-fill="Plan a 3-day trip to  with a day-by-day itinerary and a budget in INR"><span class="ai"><?= icon('list', 16) ?></span><span><b>Plan a trip</b><small>Day-by-day itinerary + budget</small></span></button>
         <button type="button" class="atask" data-fill="Fact-check this claim with sources: "><span class="ai"><?= icon('shield-check', 16) ?></span><span><b>Fact-check a claim</b><small>Verify with real sources</small></span></button>
         <button type="button" class="atask" data-fill="Calculate the EMI for a loan of ₹10,00,000 at 9% for 5 years and show the formula"><span class="ai"><?= icon('calculator', 16) ?></span><span><b>Crunch numbers</b><small>EMI, percentages, conversions</small></span></button>
+      </div>
+      <div class="starters" id="starters" aria-label="Get started">
+        <button type="button" data-start="Create a sleek, modern landing page for a coffee shop called Brew & Bean — hero, menu highlights, testimonials and a contact section."><?= icon('monitor', 14) ?> Create a landing page</button>
+        <button type="button" data-start="Build an interactive sales dashboard with charts for revenue, orders and top products, using sample data."><?= icon('gauge', 14) ?> Build a dashboard</button>
+        <button type="button" data-start="Make a playable browser game: a colourful Snake game with score, levels and a restart button."><?= icon('play', 14) ?> Make a game</button>
+        <button type="button" data-start="Build a full-stack to-do app with a small backend API, saving tasks, filters and a clean UI."><?= icon('layers', 14) ?> Build a fullstack app</button>
+        <button type="button" data-start="Create a beautiful online shop for handmade jewellery — product grid, product page, cart and checkout form."><?= icon('sparkles', 14) ?> Launch a storefront</button>
       </div>
       <p class="hint"><span class="hk">Enter = new line • Ctrl/⌘ + Enter = send • </span>Devil AI can make mistakes.</p>
     </div>
@@ -366,6 +411,19 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
 
 <div id="toast"><?= icon('check', 16) ?><span id="toastTxt"></span></div>
 
+<?php if ($IS_GUEST): ?>
+<!-- ═══ log-in prompt (signed-out visitors, shown when they try to send) ═══ -->
+<div class="modal hidden" id="guestModal" role="dialog" aria-modal="true" aria-labelledby="guestTitle"><div class="sheet guestbox">
+  <button class="iconbtn gclose" data-close="guestModal" aria-label="Close"><?= icon('x', 16) ?></button>
+  <img class="glogo" src="assets/logo.svg" alt="">
+  <h3 id="guestTitle">Log in to continue</h3>
+  <p>Create a free account or log in to chat with the models, run the Agent and vote in Battles. Your message will be waiting for you.</p>
+  <a class="btn primary gbtn" id="guestEmail" href="login.php"><?= icon('mail', 16) ?> Continue with email</a>
+  <a class="btn ghost gbtn" id="guestGithub" href="login.php?github_start=1"><?= icon('github', 16) ?> Continue with GitHub</a>
+  <small>By continuing you agree to our <a href="terms-of-use">Terms of Use</a> and <a href="privacy-policy">Privacy Policy</a>.</small>
+</div></div>
+<?php endif; ?>
+
 <?php require __DIR__ . '/inc/cookiebar.php'; ?>
 
 <script>
@@ -373,6 +431,7 @@ const I = <?= json_encode($JS_ICONS, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ME = <?= json_encode(['name' => $me['name'], 'email' => $me['email']], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const APP_BASE_PATH = <?= json_encode($APP_BASE_PATH, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ROUTE_MODE = <?= json_encode($ROUTE_MODE) ?>;
+window.__GUEST = <?= $IS_GUEST ? 'true' : 'false' ?>;
 window.__BOOT = <?= json_encode($BOOT ?: new stdClass(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
 const INITIAL_CHAT_ID = <?= json_encode(preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['chat'] ?? '')) ? (string)$_GET['chat'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const INITIAL_VARIANT = <?= json_encode((preg_match('/^(?:c[a-f0-9]{6,32}|[a-f0-9]{128})$/', (string)($_GET['variant'] ?? '')) || (string)($_GET['variant'] ?? '') === 'original') ? (string)$_GET['variant'] : '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;

@@ -107,7 +107,7 @@ $transcript = $ok ? share_transcript($share) : '';
 </style>
 </head>
 <body>
-<div class="top"><div class="topin"><a class="brand" href="index.php"><img src="assets/logo.svg" alt="Devil AI">Devil AI</a><div class="actions"><?php if ($ok): ?><button class="btn" id="copyTranscript" type="button"><?= icon('copy', 15) ?> Copy chat</button><?php endif; ?><a class="btn" href="login.php"><?= icon('message', 15) ?> Open Devil AI</a></div></div></div>
+<div class="top"><div class="topin"><a class="brand" href="./"><img src="assets/logo.svg" alt="Devil AI">Devil AI</a><div class="actions"><?php if ($ok): ?><button class="btn" id="copyTranscript" type="button"><?= icon('copy', 15) ?> Copy chat</button><?php endif; ?><a class="btn" href="login.php"><?= icon('message', 15) ?> Open Devil AI</a></div></div></div>
 <main>
 <?php if (!$ok): ?>
   <div class="empty"><h1>Shared chat not found</h1><p class="meta">This link may be wrong, expired, or the share may have been removed.</p><p class="meta">If you copied this from Devil AI, create a fresh share link and try again.</p></div>

@@ -8,12 +8,19 @@
  */
 require_once __DIR__ . '/inc/session.php';
 devil_session_boot();
+/* where to go after signing in (only same-site paths like /agent or /leaderboard) */
+$NEXT = 'chat';
+$nextIn = isset($_GET['next']) && is_string($_GET['next']) ? $_GET['next'] : (string)($_SESSION['devil_next'] ?? '');
+if ($nextIn !== '' && preg_match('~^/(?![/\\])[A-Za-z0-9/_.\-]{0,200}$~', $nextIn) && strpos($nextIn, '..') === false && !preg_match('~login\.php|app\.php~i', $nextIn)) {
+    $NEXT = $nextIn;
+    if (isset($_GET['next'])) { $_SESSION['devil_next'] = $nextIn; }
+}
 /* already signed in? — validate against users.json, else a deleted account
    with a stale session would bounce app.php ⇄ login.php forever */
 if (isset($_SESSION['devil_uid'])) {
     $users = json_decode((string)@file_get_contents(__DIR__ . '/data/users.json'), true);
     if (is_array($users) && isset($users[$_SESSION['devil_uid']])) {
-        header('Location: chat'); exit;
+        unset($_SESSION['devil_next']); header('Location: ' . $NEXT); exit;
     }
     unset($_SESSION['devil_uid'], $_SESSION['devil_name']); /* stale — clean it up */
 }
@@ -105,7 +112,7 @@ if (isset($_GET['token']) && is_string($_GET['token'])) {
             }
         }
     }
-    if ($ok) { header('Location: chat'); exit; }
+    if ($ok) { unset($_SESSION['devil_next']); header('Location: ' . $NEXT); exit; }
     if ($tokenNote === null) { $tokenNote = 'This magic link is invalid or has expired. Enter your email below to get a fresh code.'; }
 }
 ?><!DOCTYPE html>
@@ -201,16 +208,16 @@ label{display:block;font-size:.74rem;font-weight:600;color:var(--soft);margin:18
 <body>
 
 <div class="top">
-  <a class="brand" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
+  <a class="brand" href="./"><img src="assets/logo.svg" alt="Devil AI logo">Devil AI</a>
   <div class="right">
     <button class="tb" id="themeBtn" title="Switch theme" type="button"><?= icon('sun', 16) ?></button>
-    <a class="back" href="index.php"><?= icon('chevron-right', 14) ?> Back to home</a>
+    <a class="back" href="./"><?= icon('chevron-right', 14) ?> Back to home</a>
   </div>
 </div>
 
 <main>
   <div class="card">
-    <a class="logo" href="index.php"><img src="assets/logo.svg" alt="Devil AI logo"></a>
+    <a class="logo" href="./"><img src="assets/logo.svg" alt="Devil AI logo"></a>
 
     <?php if ($tokenNote): ?>
       <div class="err show"><?= icon('warning', 16) ?><span><?= htmlspecialchars($tokenNote) ?></span></div>
@@ -337,7 +344,7 @@ $('#codeForm').addEventListener('submit', async function (e) {
   busy($('#e2btn'), true);
   var j = await post('otp_verify', { email: email, code: code });
   busy($('#e2btn'), false);
-  if (j.ok) { window.location.href = 'chat'; }
+  if (j.ok) { window.location.href = <?= json_encode($NEXT, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>; }
   else { showErr($('#e2err'), j.error || 'Wrong or expired code.'); }
 });
 

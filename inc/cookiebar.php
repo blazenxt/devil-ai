@@ -66,7 +66,7 @@ $devilCookieSecure = function_exists('devil_is_https') ? devil_is_https() : (!em
 
 <div class="dcb dcb-banner" id="dcbBanner" style="display:none">
   <h4><?= '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5Z"/><path d="M8.5 10.5v.01M13.5 15.5v.01M8 15v.01M15.5 10v.01M11 19v.01M18 15v.01"/></svg>' ?> Cookies, but make it devilish</h4>
-  <p>We use cookies to keep you signed in and remember your theme, model, sidebar and settings. Analytics and personalization are <b>optional</b> — you decide. <a href="cookies.php">Read our Cookie Policy</a></p>
+  <p>We use cookies to keep you signed in and remember your theme, model, sidebar and settings. Analytics and personalization are <b>optional</b> — you decide. <a href="cookie-policy">Read our Cookie Policy</a></p>
   <div class="dcb-btns">
     <button class="dcb-btn dcb-accept" id="dcbAcceptAll" type="button">Accept all cookies</button>
     <button class="dcb-btn dcb-manage" id="dcbManage" type="button">Manage cookies</button>

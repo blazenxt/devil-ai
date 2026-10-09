@@ -1250,3 +1250,34 @@ body.agent-mode .msg-ai .content h1,body.agent-mode .msg-ai .content h2,body.age
 .agt-deploy .du{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agt-deploy .dgo{flex-shrink:0;padding:6px 12px;border-radius:8px;border:1px solid var(--ag-line,var(--border));font-size:.78rem;color:var(--text);text-decoration:none}
 .agt-deploy .dgo:hover{background:var(--ag-hover,var(--panel2))}
+
+/* ═══ signed-out visitors (Pro-style: chat first, log in on send) + sidebar legal links ═══ */
+a.sbnav{text-decoration:none}
+.guestcard{margin:8px 12px 6px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--panel);display:flex;flex-direction:column;gap:6px}
+.guestcard b{font-size:.9rem;color:var(--text)}
+.guestcard span{font-size:.78rem;color:var(--dim);line-height:1.45}
+.guestcard .btn{justify-content:center;margin-top:4px;padding:9px 14px;text-decoration:none}
+body.guest #sbFilter,body.guest .sb-search,body.guest #chatList:empty{display:none}
+body.guest:not(.site-page) #sidebar .guestcard{margin-top:auto}
+.sb-legal{display:flex;flex-wrap:wrap;gap:2px 10px;padding:8px 20px 10px;font-size:.7rem}
+.sb-legal a{color:var(--dim2);text-decoration:none}
+.sb-legal a:hover{color:var(--text)}
+a.userbtn{text-decoration:none;color:inherit}
+.userbtn.guestlogin .av{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+.guestbox{max-width:400px;width:100%;text-align:center;padding:30px 28px 22px;position:relative;display:flex;flex-direction:column;align-items:center;gap:10px}
+.guestbox .gclose{position:absolute;top:10px;right:10px}
+.guestbox .glogo{width:46px;height:46px}
+.guestbox h3{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:1.6rem;margin:4px 0 0}
+.guestbox p{font-size:.88rem;color:var(--dim);line-height:1.55;margin:0 0 8px}
+.guestbox .gbtn{width:100%;justify-content:center;text-decoration:none;padding:12px 16px}
+.guestbox small{font-size:.72rem;color:var(--dim2);margin-top:6px;line-height:1.5}
+.guestbox small a{text-decoration:underline}
+/* Pro-style "Get started" suggestions under the box on a fresh chat */
+.starters{display:none;flex-wrap:wrap;justify-content:center;gap:8px;max-width:940px;margin:14px auto 0;padding:0 12px}
+.starters button{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--dim);font-size:.82rem;transition:.15s}
+.starters button:hover{color:var(--text);border-color:var(--border-hi)}
+.starters button svg{flex-shrink:0}
+body.devil-ui.agent-empty .starters{display:flex}
+body.cmp-mode .starters{display:none!important}
+.guestrow{display:flex;align-items:center;gap:4px}
+.guestrow .userbtn{flex:1;min-width:0}
