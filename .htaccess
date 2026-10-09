@@ -31,9 +31,6 @@ Options -Indexes -MultiViews
   RewriteRule ^auth/github/callback/?$ login.php?github_callback=1 [L,QSA]
 
   # AI Mode home: /chat (app.php itself is never shown — app.php redirects to /chat)
-  RewriteCond %{THE_REQUEST} \s/+index\.php[\s?]
-  RewriteRule ^index\.php$ / [R=301,L]
-  RewriteRule ^cookies\.php$ /cookie-policy [R=301,L]
   RewriteRule ^chat/?$ app.php [L,QSA]
   RewriteRule ^direct/?$ app.php [L,QSA]
   RewriteRule ^leaderboard/?$ site.php?p=leaderboard [L,QSA]
