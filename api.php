@@ -2408,9 +2408,6 @@ function chat_load_payload(string $uid, string $id, string $variant): ?array {
     return ['ok' => true, 'chat' => compare_public_chat($displayChat), 'branch_groups' => $branchGroups, 'agent_job' => $pendingJob];
 }
 
-/* one-time rename of stored compare-mode data (temporary) */
-if (is_file(__DIR__ . '/inc/migrate_battle.php')) { require_once __DIR__ . '/inc/migrate_battle.php'; try { devil_migrate_battle_v1(); } catch (Throwable $e) {} }
-
 /* app.php includes this file only for its functions */
 if (defined('DEVIL_API_AS_LIB')) { return; }
 
