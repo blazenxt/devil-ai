@@ -978,6 +978,17 @@ function agent_job_advance(array &$job, array $deps): array {
             if ($roots && ($job['autocheck_sig'] ?? '') !== $sig) {
                 $job['autocheck_sig'] = $sig;
                 $issues = sbx_site_doctor((array)($deps['sbx']['cfg'] ?? []), (string)($deps['sbx']['sid'] ?? ''), $roots);
+                /* never "done" without looking: the pages must have been opened in the browser after the last change */
+                $lastWrite = -1; $lastBrowse = -1;
+                foreach ((array)$job['trace'] as $ti => $st) {
+                    $tn = (string)($st['tool'] ?? '');
+                    if (in_array($tn, ['write_file', 'append_file'], true) && preg_match('/\.(html?|css|js)\s*$/i', (string)strtok((string)($st['input'] ?? ''), "\n"))) { $lastWrite = $ti; }
+                    if ($tn === 'bash' && preg_match('/\b(sed|perl)\s+-[a-z]*i/', (string)($st['input'] ?? ''))) { $lastWrite = $ti; }
+                    if ($tn === 'browser') { $lastBrowse = $ti; }
+                }
+                if ($lastWrite >= 0 && $lastBrowse < $lastWrite) {
+                    $issues[] = 'NOT TESTED: the pages were not opened with the browser tool after your last change. Start the server if needed, open EVERY page with browser (one call per page) and test the interactive parts with action lines (forms: fill + click submit; tabs/menus: click; also a "mobile" check). Fix whatever it reports.';
+                }
                 if ($issues) {
                     $job['autochecks'] = (int)($job['autochecks'] ?? 0) + 1;
                     $job['history'][] = ['role' => 'assistant', 'content' => $txt];

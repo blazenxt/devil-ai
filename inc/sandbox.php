@@ -687,6 +687,45 @@ if node:
                 issues.append(os.path.relpath(jp, W) + ": JavaScript syntax error " + where.replace("[stdin]", "line") + ": " + err[:160])
         except Exception:
             pass
+# quality: a too-basic design, and generated images that no page uses
+IMGX = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".avif")
+for root in roots:
+    top = os.path.normpath(os.path.join(W, root))
+    if not os.path.isdir(top) or is_framework(top):
+        continue
+    pages, html_bytes, rules, text, imgs = 0, 0, 0, "", []
+    depth0 = top.count(os.sep)
+    for dp, dn, fn in os.walk(top):
+        dn[:] = [d for d in dn if d not in SKIP and not d.startswith(".")]
+        if root == "." or dp.count(os.sep) - depth0 >= 4:
+            dn[:] = []
+        for f in fn:
+            p = os.path.join(dp, f)
+            low = f.lower()
+            if low.endswith(IMGX):
+                imgs.append(os.path.relpath(p, W))
+                continue
+            if not low.endswith((".html", ".htm", ".css", ".js")) or low.endswith(".min.js"):
+                continue
+            try:
+                t = open(p, encoding="utf-8", errors="replace").read()
+            except Exception:
+                continue
+            text += t + "\n"
+            if low.endswith((".html", ".htm")):
+                pages += 1
+                html_bytes += len(t)
+                for blk in re.findall(r"<style[^>]*>(.*?)</style>", t, re.S | re.I):
+                    rules += blk.count("{") - len(re.findall(r"@media|@keyframes|@supports", blk))
+            elif low.endswith(".css"):
+                rules += t.count("{") - len(re.findall(r"@media|@keyframes|@supports", t))
+    css_fw = re.search(r"tailwind|bootstrap(\.min)?\.css|bulma|daisyui|materialize|uikit|foundation(\.min)?\.css|pico(\.min)?\.css", text, re.I)
+    if pages and rules < 30 and (pages >= 2 or html_bytes > 1200) and not css_fw:
+        issues.append((root if root != "." else "site") + ": the design is too basic (only " + str(rules) + " CSS rules for " + str(pages) + " page(s)). Make it look professional: colour palette, typography, spacing, a styled nav/header and footer, cards, buttons with hover, hero, and responsive @media rules.")
+    unused = [i for i in imgs if os.path.basename(i) not in text and "/.devil/" not in i and not os.path.basename(i).lower().startswith(("favicon", "shot-"))]
+    if unused and pages:
+        issues.append(str(len(unused)) + " image(s) are not used by any page: " + ", ".join(unused[:8]) + (" ..." if len(unused) > 8 else "") + " - show them on the right pages (e.g. <img src=...> on the menu/gallery cards) or delete them.")
+
 # JavaScript asks for ids that no HTML page has (getElementById returns null → the feature silently does nothing)
 IDREF = re.compile(r"""getElementById\(\s*['"`]([\w-]+)['"`]\s*\)|querySelector(?:All)?\(\s*['"`]#([\w-]+)['"`]\s*\)""")
 if allids:
