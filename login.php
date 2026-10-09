@@ -11,7 +11,7 @@ devil_session_boot();
 /* where to go after signing in (only same-site paths like /agent or /leaderboard) */
 $NEXT = 'chat';
 $nextIn = isset($_GET['next']) && is_string($_GET['next']) ? $_GET['next'] : (string)($_SESSION['devil_next'] ?? '');
-if ($nextIn !== '' && preg_match('~^/(?![/\\])[A-Za-z0-9/_.\-]{0,200}$~', $nextIn) && strpos($nextIn, '..') === false && !preg_match('~login\.php|app\.php~i', $nextIn)) {
+if ($nextIn !== '' && preg_match('~^/[A-Za-z0-9/_.-]{0,200}$~', $nextIn) && strpos($nextIn, '//') === false && strpos($nextIn, '..') === false && !preg_match('~login[.]php|app[.]php~i', $nextIn)) {
     $NEXT = $nextIn;
     if (isset($_GET['next'])) { $_SESSION['devil_next'] = $nextIn; }
 }

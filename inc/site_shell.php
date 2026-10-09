@@ -1,7 +1,7 @@
 <?php
 /**
  * ═══════════════════════════════════════════════════════
- *  DEVIL AI — page shell for the Pro-style site pages
+ *  DEVIL AI — page shell for the public site pages
  *  (leaderboard, search, how it works, FAQ, blog, company, legal).
  *  Same sidebar + theme as the chat app, so every page feels like one product.
  * ═══════════════════════════════════════════════════════

@@ -445,7 +445,7 @@ body.voice-open{overflow:hidden}
 .pvFrame iframe{width:100%;height:100%;border:none;display:block;background:#fff}
 #previewModal .sheet{max-width:880px;width:94vw}
 
-/* ═══════════ PRO-STYLE UI (AI Mode + Agent Mode) ═══════════ */
+/* ═══════════ DEVIL UI (AI Mode + Agent Mode) ═══════════ */
 body.devil-ui{
   --bg:#262624; --bg2:#2a2a28; --sb:#262624; --panel:#30302e; --panel2:#2c2c2a; --panel3:#3a3a37;
   --border:rgba(255,255,255,.1); --border-hi:rgba(255,255,255,.22);
@@ -534,7 +534,7 @@ body.devil-ui.agent-empty #inp{min-height:64px}
 @media (max-width:600px){
   body.devil-ui #welcome h2{font-size:1.95rem}
   body.agent-mode.agent-empty #composer{padding-bottom:18vh}
-  /* AI Mode on phones: heading in the middle, composer docked at the bottom (like Battle Direct) */
+  /* AI Mode on phones: heading in the middle, composer docked at the bottom */
   body.devil-ui:not(.agent-mode).agent-empty #scroller{flex:1 1 auto;margin-top:0;display:flex;flex-direction:column;justify-content:center;overflow:auto}
   body.devil-ui:not(.agent-mode).agent-empty #composer{margin-bottom:0;padding-bottom:12px}
   body.devil-ui:not(.agent-mode).agent-empty #inp{min-height:40px}
@@ -574,7 +574,7 @@ body.devil-ui #modelMenu,body.devil-ui #customModelMenu,body.devil-ui #promptMen
 body.devil-ui .hint{color:var(--dim2)}
 body.devil-ui #editChip,body.devil-ui #voiceChip{background:var(--panel2);border-color:var(--border);color:var(--dim)}
 
-/* mode chip inside the composer (AI Mode, like Battle's "Direct ⌄") */
+/* mode chip inside the composer (AI Mode: "Direct ⌄") */
 .modechipwrap{display:none;position:relative}
 body.devil-ui .modechipwrap{display:block}
 body.agent-mode #modeChip .mcc:first-child{color:var(--ag-accent)}
@@ -656,7 +656,7 @@ a.ws-item:hover{background:var(--ag-hover)}
 .ws-stat span{font-size:.72rem;color:var(--dim2)}
 @media (max-width:900px){ #wsPanel{width:100%} }
 
-/* ═══════════ BATTLE MODES: Battle + Side by Side, leaderboard, chat upgrades ═══════════ */
+/* ═══════════ COMPARE MODES: Battle + Side by Side, leaderboard, chat upgrades ═══════════ */
 .sbnav{display:flex;align-items:center;gap:9px;width:calc(100% - 24px);margin:6px 12px 0;padding:8px 12px;border-radius:10px;color:var(--dim);font-size:.86rem;font-weight:500;transition:.12s}
 .sbnav:hover{background:var(--ag-hover,rgba(255,255,255,.06));color:var(--text)}
 .chatitem .cmode{display:inline-flex;color:var(--dim2);flex-shrink:0}
@@ -664,7 +664,7 @@ a.ws-item:hover{background:var(--ag-hover)}
 body.alt-mode .modebtn .agspark{color:var(--ag-accent)}
 body.cmp-mode .modebtn .agspark{color:var(--text)}
 
-/* header chat title (centered, like Battle's conversation header) */
+/* header chat title (centered) */
 .m-top .ctitle{display:none}
 @media (min-width:901px){
   body.devil-ui .m-top .ctitle{display:block;position:absolute;left:50%;top:26px;z-index:5;transform:translate(-50%,-50%);max-width:min(46%,520px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.86rem;font-weight:500;color:var(--dim);pointer-events:none}
@@ -778,7 +778,7 @@ body.cmp-mode .compbox{max-width:760px}
 #toBottom:hover{background:var(--panel2)}
 
 /* ═══════════ MOBILE POLISH (phones + small tablets) ═══════════ */
-/* neutral Battle accents instead of the old pink ones */
+/* neutral accents instead of the old pink ones */
 body.devil-ui .iconbtn:hover,body.devil-ui .userbtn:hover,body.devil-ui #userMenu .mi:hover,body.devil-ui .popt:hover,body.devil-ui .mopt:hover,body.devil-ui .cmopt:hover,body.devil-ui .pvbtn:hover{background:var(--ag-hover);color:var(--text)}
 body.devil-ui .mopt.on,body.devil-ui .cmopt.on{background:var(--panel2)}
 body.devil-ui .popt .ic,body.devil-ui .mopt .ic,body.devil-ui .cmopt .ic{background:var(--panel2);color:var(--text)}
@@ -1104,7 +1104,7 @@ body.sbs-mode .cmpswap{display:inline-flex}
 @media (max-width:900px){ #wsPanel.wide{width:100%} .ws-btn span{display:none} .ws-btn{padding:0 8px} }
 @media (min-width:1180px){ body.ws-docked #scroller,body.ws-docked #composer{margin-right:var(--wsw,340px);transition:margin .22s ease} body.ws-docked .chattitle{max-width:calc(100% - var(--wsw,340px) - 260px)} }
 
-/* ═══════════ Pro-style agent transcript (the reference agent) ═══════════ */
+/* ═══════════ agent transcript ═══════════ */
 body{--agt-card:var(--panel);--agt-pre:var(--bg2);--agt-ok:#4ade80;--agt-bad:#f87171;--agt-errtx:#fca5a5}
 body.devil-ui{--agt-card:#2a2a28;--agt-pre:#20201e;--agt-ok:#5fd38d;--agt-bad:#f2777a;--agt-errtx:#f4a3a5}
 [data-theme=light] body{--agt-card:#fff;--agt-pre:#f7f6f3;--agt-ok:#16a34a;--agt-bad:#dc2626;--agt-errtx:#b91c1c}
@@ -1186,7 +1186,7 @@ body.devil-ui{--agt-card:#2a2a28;--agt-pre:#20201e;--agt-ok:#5fd38d;--agt-bad:#f
 .agt-fh button{height:30px;min-width:30px;padding:0 9px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;color:var(--dim);font-size:.78rem}
 .agt-fh button:hover{background:var(--ag-hover);color:var(--text)}
 .agt-fbox iframe{flex:1;width:100%;border:0;background:#fff}
-/* live status: one line, pulsing dot (the reference agent) */
+/* live status: one line, pulsing dot */
 .agt-live{display:flex;align-items:center;gap:9px;min-height:22px;color:var(--dim);font-size:.86rem}
 .agt-dot{width:9px;height:9px;border-radius:50%;background:var(--text);flex-shrink:0;animation:agtpulse 1.15s ease-in-out infinite}
 @keyframes agtpulse{0%,100%{transform:scale(.68);opacity:.5}50%{transform:scale(1);opacity:1}}
@@ -1251,7 +1251,7 @@ body.agent-mode .msg-ai .content h1,body.agent-mode .msg-ai .content h2,body.age
 .agt-deploy .dgo{flex-shrink:0;padding:6px 12px;border-radius:8px;border:1px solid var(--ag-line,var(--border));font-size:.78rem;color:var(--text);text-decoration:none}
 .agt-deploy .dgo:hover{background:var(--ag-hover,var(--panel2))}
 
-/* ═══ signed-out visitors (Pro-style: chat first, log in on send) + sidebar legal links ═══ */
+/* ═══ signed-out visitors (chat first, log in on send) + sidebar legal links ═══ */
 a.sbnav{text-decoration:none}
 .guestcard{margin:8px 12px 6px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--panel);display:flex;flex-direction:column;gap:6px}
 .guestcard b{font-size:.9rem;color:var(--text)}
@@ -1272,7 +1272,7 @@ a.userbtn{text-decoration:none;color:inherit}
 .guestbox .gbtn{width:100%;justify-content:center;text-decoration:none;padding:12px 16px}
 .guestbox small{font-size:.72rem;color:var(--dim2);margin-top:6px;line-height:1.5}
 .guestbox small a{text-decoration:underline}
-/* Pro-style "Get started" suggestions under the box on a fresh chat */
+/* "Get started" suggestions under the box on a fresh chat */
 .starters{display:none;flex-wrap:wrap;justify-content:center;gap:8px;max-width:940px;margin:14px auto 0;padding:0 12px}
 .starters button{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--dim);font-size:.82rem;transition:.15s}
 .starters button:hover{color:var(--text);border-color:var(--border-hi)}

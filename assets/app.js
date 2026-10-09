@@ -841,7 +841,7 @@ function addUserMsg(text, img, meta) {
   b.className = 'bub';
   fillUserBubble(b, text, img, !!meta.edited, meta.attachments || []);
   d.appendChild(b);
-  /* Agent Mode (the reference agent): attached files sit as chips above the bubble */
+  /* Agent Mode: attached files sit as chips above the bubble */
   if (agentMode) { var fw = b.querySelector('.msg-files'); if (fw) { d.insertBefore(fw, b); } if (typeof agtTaskCardClose === 'function') { agtTaskCardClose(); } }
   var nav = makeBranchNav(meta.index, meta.branchGroup || branchGroupFor(meta.index));
   if (nav) { d.appendChild(nav); }
@@ -1768,7 +1768,7 @@ $$('#agentTasks .atask').forEach(function (c) {
     if (typeof updateSendButton === 'function') { updateSendButton(); }
   });
 });
-/* "Get started" chips (Pro-style): build tasks open in Agent Mode */
+/* "Get started" chips: build tasks open in Agent Mode */
 $$('#starters [data-start]').forEach(function (b) {
   b.addEventListener('click', function () {
     if (chatMode !== 'agent' && agentEnabled && !busy) { chooseMode('agent'); }
@@ -1782,7 +1782,7 @@ $$('#welcome .card').forEach(function (c) {
 });
 
 /* ── send / retry ── */
-/* ── signed-out visitors: Pro-style "log in to continue" — the typed message is kept for after login ── */
+/* ── signed-out visitors: "log in to continue" — the typed message is kept for after login ── */
 function guestGate() {
   try {
     var t = (inp && inp.value || '').trim();
@@ -1896,7 +1896,7 @@ function runSend(payload) {
 }
 
 
-/* ═══ Battle compare modes: Battle (anonymous) + Side by Side ═══ */
+/* ═══ compare modes: Battle (anonymous) + Side by Side ═══ */
 function cmpName(side, label) { return label ? label : ('Assistant ' + side.toUpperCase()); }
 function cmpRevealed() { return chatMode === 'sbs' || !!(currentChat && currentChat.revealed); }
 function lastCompareTurn() { var t = $$('.cmp-turn'); return t.length ? t[t.length - 1] : null; }
@@ -2144,7 +2144,7 @@ function openLeaderboard() {
     if (lbTab === 'mine') { renderMyVotes(); } else { openLeaderboard(); }
   });
 })();
-/* Leaderboard is its own page now (Pro-style): #sbBoard / #railBoard are plain links */
+/* Leaderboard is its own page now: #sbBoard / #railBoard are plain links */
 (function () { var lb = $('#lbBattle'); if (lb) { lb.addEventListener('click', function () { window.location.href = 'battle'; }); } })();
 
 /* ── scroll-to-latest button (all modes) ── */
@@ -2933,7 +2933,7 @@ function agxStepElClassic(s, i, running) {
   return st;
 }
 
-/* ═══════════ Pro-style agent transcript (matches the reference agent) ═══════════
+/* ═══════════ agent transcript ═══════════
    The agent's own words are plain prose between the tool calls. Shell commands are bordered cards:
    header "›_ $ command…   exit 0 · 2.4s ⌄ ✓", body COMMAND / STDOUT / STDERR. File work is a slim
    inline row ("Write  app.html  120 lines  open ›"), and an HTML file gets a live preview card.
@@ -3225,7 +3225,7 @@ function agtAppend(el, node) {
   box.insertBefore(node, box.querySelector('.agt-live'));
 }
 
-/* ask_user → Battle clarification card: radio options, "write your own", Skip */
+/* ask_user → clarification card: radio options, "write your own", Skip */
 function renderAskChips(el, ask) {
   if (!el || !ask) { return; }
   var opts = ask.options || [], needs = ask.needs || [];
@@ -3282,7 +3282,7 @@ function renderAskChips(el, ask) {
   w.innerHTML = '<div class="agt-askh"><span>' + (opts.length ? 'Pick an option' : 'Your answer') + '</span><button type="button" class="agt-skip">Skip</button></div>' +
     opts.map(function (o, i) { return '<button type="button" role="radio" aria-checked="false" class="agt-opt" data-i="' + i + '"><span class="rd"></span><span class="ol"><span class="olt"></span><span class="old"></span></span></button>'; }).join('') +
     '<form class="agt-askc"><input type="text" maxlength="2000" placeholder="' + (opts.length ? 'Revise options or write your own...' : 'Write your answer...') + '" aria-label="Write your own answer"><button type="submit" aria-label="Submit custom response" title="Send">' + AGT.send + '</button></form>';
-  /* "Label — short explanation" → bold label + muted description (like the reference agent) */
+  /* "Label — short explanation" → bold label + muted description */
   var parts = opts.map(function (o) { var p = String(o).split(/\s+[—–]\s+/); return { l: p[0], d: p.slice(1).join(' — ') }; });
   Array.prototype.forEach.call(w.querySelectorAll('.agt-opt'), function (b) {
     var p = parts[Number(b.dataset.i)];
@@ -3320,7 +3320,7 @@ function agtTaskCard(el, reply, idx) {
     var b = e.target.closest('[data-a]'); if (!b) { return; }
     var a = b.dataset.a;
     agtTaskCardClose();
-    /* like the reference agent: "Keep working" just hands the composer back — the user types what to do next */
+    /* "Keep working" just hands the composer back — the user types what to do next */
     if (a === 'more') { if (inp) { inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e2) {} } return; }
     var rating = a === 'yes' ? 'good' : 'bad', meta = { index: idx }, key = feedbackKey(meta, reply);
     var up = el && el.querySelector('.acts button[title="Good response"]'), down = el && el.querySelector('.acts button[title="Bad response"]');
@@ -3347,7 +3347,7 @@ function agentLiveEl() {
   var el = addAiMsg({ modelTag: activeModelLabel() });
   el.classList.add('agent-live');
   var box = renderAgentTrace(el, [], 0, true);
-  /* one live status only, at the bottom of the turn (like the reference agent): a pulsing dot + "Thinking…"
+  /* one live status only, at the bottom of the turn: a pulsing dot + "Thinking…"
      while the model plans; while a tool runs it says what is happening ("Bashing…", "Exploring files…"). */
   el.querySelector('.content').innerHTML = '';
   var t0 = Date.now(), tm = box.querySelector('.agt-tm');
@@ -3356,7 +3356,7 @@ function agentLiveEl() {
   refreshMessageActions(); scrollDown();
   return el;
 }
-/* Pro-style live status: one line whose words follow what the agent is doing right now
+/* live status: one line whose words follow what the agent is doing right now
    ("Thinking…", "Bashing…", "Running commands…", "Exploring files…", "Installing packages…" …).
    text can be a string or a list of labels that rotate every few seconds. */
 function agentStatus(el, text) {
@@ -3694,7 +3694,7 @@ function wsPickUpload() {
   });
   fi.click();
 }
-/* ── file viewer: every common type gets a real preview (like the reference agent) ──
+/* ── file viewer: every common type gets a real preview ──
    Files are served through sbx-view/{signed token}/{path}, so an HTML page loads its own CSS / JS / images. */
 var SBXV = {};
 function sbxViewBase() {

@@ -1,7 +1,7 @@
 <?php
 /**
  * ═══════════════════════════════════════════════════════
- *  DEVIL AI — Pro-style site pages (site.php)
+ *  DEVIL AI — public site pages (site.php)
  *  /leaderboard[/text|/my-votes]  /history/search  /how-it-works  /faq
  *  /blog[/slug]  /company/about  /company/careers
  *  /privacy-policy  /terms-of-use  /cookie-policy
@@ -66,7 +66,7 @@ function page_leaderboard(string $board): void {
     $today = 0; foreach ($raw as $v) { if ((int)($v['t'] ?? 0) >= time() - 86400) { $today++; } }
     $labels = []; foreach ($models as $m) { $labels[$m['id']] = $m; }
 
-    $boards = ['' => 'Overview', 'text' => 'Text Battle', 'my-votes' => 'My votes'];
+    $boards = ['' => 'Overview', 'text' => 'Text', 'my-votes' => 'My votes'];
     if (!isset($boards[$board])) { site_404(); }
     site_head(($board === '' ? 'Leaderboard' : $boards[$board] . ' Leaderboard'), 'leaderboard', 'Devil AI Leaderboard: AI models ranked by anonymous head-to-head Battle votes.');
     echo '<div class="hero lbhero"><span class="eyebrow">' . icon('trophy', 13) . ' Leaderboard</span><h1>Which model wins?</h1><p class="lead">Models ranked by <b>' . number_format($total) . '</b> anonymous Battle vote' . ($total === 1 ? '' : 's') . '. Names stay hidden until after the vote.</p>'
@@ -93,7 +93,7 @@ function page_leaderboard(string $board): void {
     };
 
     if ($board === 'text') {
-        echo '<section class="scard"><div class="scard-h"><h2>' . icon('message', 16) . ' Text Battle</h2><span class="muted">Elo score · updated live</span></div>' . $table($ranked, true);
+        echo '<section class="scard"><div class="scard-h"><h2>' . icon('message', 16) . ' Text leaderboard</h2><span class="muted">Elo score · updated live</span></div>' . $table($ranked, true);
         $unranked = array_values(array_filter($models, function ($m) { return $m['votes'] === 0; }));
         if ($unranked) {
             echo '<p class="muted small">Waiting for their first vote: ';

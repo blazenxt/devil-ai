@@ -233,7 +233,7 @@ function devil_security_boot(): void {
     $badUa = $ua === '' || preg_match('/(python-requests|scrapy|curl|wget|httpclient|libwww|go-http-client|java\/|okhttp|node-fetch|axios|phantomjs|headless|selenium|playwright|puppeteer|nikto|sqlmap|nmap|masscan|zgrab|crawler|spider|\bbot\b)/i', $ua) === 1;
     $noBrowserHints = empty($_SERVER['HTTP_ACCEPT_LANGUAGE']) && empty($_SERVER['HTTP_SEC_CH_UA']) && !$hasApiKey;
 
-    if (!$isApi && $badUa && !str_contains($uaLow, 'devil-agent')) {
+    if (!$isApi && $badUa) {
         devil_sec_block('Automated scraping is blocked.', 403);   /* block the request, never ban the (possibly shared) IP */
     }
     if (!$isApi && $noBrowserHints && devil_sec_datacenter_like($ip, true)) {

@@ -879,7 +879,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
                 . 'i=0; while [ ! -f "$J.sh.rc" ] && [ $i -lt ' . ($wait * 5) . ' ]; do sleep 0.2; i=$((i+1)); done; '
                 . 'if [ -f "$J.sh.rc" ]; then sz=$(stat -c %s "$J.sh.out" 2>/dev/null || echo 0); '
                 . 'if [ "$sz" -gt 14000 ]; then head -c 3000 "$J.sh.out"; echo; echo "… [$sz bytes of output, middle cut] …"; tail -c 10000 "$J.sh.out"; else cat "$J.sh.out" 2>/dev/null; fi; '
-                /* stderr comes back after a marker so the UI can show STDOUT and STDERR separately (like the reference agent) */
+                /* stderr comes back after a marker so the UI can show STDOUT and STDERR separately */
                 . 'if [ -s "$J.sh.err" ]; then es=$(stat -c %s "$J.sh.err"); echo; echo __DEVIL_STDERR__; if [ "$es" -gt 6000 ]; then head -c 1500 "$J.sh.err"; echo; echo "… [$es bytes, middle cut] …"; tail -c 4000 "$J.sh.err"; else cat "$J.sh.err"; fi; fi; '
                 . 'rc=$(cat "$J.sh.rc"); rm -f "$J.sh" "$J.sh.rc" "$J.sh.log" "$J.sh.out" "$J.sh.err"; exit $rc; '
                 . 'else echo "__DEVIL_STILL_RUNNING__ pid=$P log=$J.sh.log"; tail -c 3000 "$J.sh.log" 2>/dev/null; exit 0; fi';

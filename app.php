@@ -36,7 +36,7 @@ if (in_array(($_SERVER['REQUEST_METHOD'] ?? 'GET'), ['GET', 'HEAD'], true) && pr
     header('Location: ' . $to . ($q ? '?' . http_build_query($q) : ''), true, 301);
     exit;
 }
-/* Pro-style: no landing page — signed-out visitors see the chat screen; sending asks them to log in */
+/* No landing page — signed-out visitors see the chat screen; sending asks them to log in */
 /* The service worker stores the home page for offline use (a background fetch, not a page visit).
    That copy must never contain anyone's chats → background fetches always get the signed-out page. */
 $IS_SHELL_FETCH = isset($_SERVER['HTTP_SEC_FETCH_MODE']) && $_SERVER['HTTP_SEC_FETCH_MODE'] !== 'navigate';
@@ -71,7 +71,7 @@ try {
     }
 } catch (Throwable $e) { $BOOT = []; }
 $ROUTE_MODE = in_array((string)($_GET['mode'] ?? ''), ['agent', 'battle', 'sbs'], true) ? (string)$_GET['mode'] : 'ai';
-/* Pro-style modes (order matches the reference site): Battle, Agent, Side by Side, Direct (AI Mode) */
+/* chat modes: Battle, Agent, Side by Side, Direct (AI Mode) */
 $MODE_DEFS = [
     'battle' => ['label' => 'Battle Mode',  'chip' => 'Battle',       'icon' => 'swords',  'desc' => 'Battle 2 anonymous models — vote, then names are revealed'],
     'agent'  => ['label' => 'Agent Mode',   'chip' => 'Agent',        'icon' => 'spark',   'desc' => 'Built for complex tasks — searches the web, reads pages, calculates'],
@@ -342,7 +342,7 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
 
 <!-- ═══ leaderboard modal (Battle Mode votes) ═══ -->
 <div class="modal hidden" id="lbModal"><div class="sheet lbsheet">
-  <div class="shead"><h3><?= icon('trophy', 17) ?> Devil Battle Leaderboard</h3><button class="iconbtn" data-close="lbModal"><?= icon('x', 16) ?></button></div>
+  <div class="shead"><h3><?= icon('trophy', 17) ?> Devil Leaderboard</h3><button class="iconbtn" data-close="lbModal"><?= icon('x', 16) ?></button></div>
   <div class="lbtabs" id="lbTabs" role="tablist"><button type="button" class="on" data-lbt="board"><?= icon('trophy', 14) ?> Leaderboard</button><button type="button" data-lbt="mine"><?= icon('user', 14) ?> My votes</button></div>
   <p class="snote" id="lbNote">Rankings come from anonymous Battle Mode votes (Elo score).</p>
   <div id="lbBody" class="lbbody"></div>

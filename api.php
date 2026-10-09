@@ -1841,7 +1841,7 @@ function infer_chat_route(array $chat): array {
 
 /* Chat mode: 'ai' (normal chat, /chat/... URLs) or 'agent' (Agent Mode, /agent/{slug} URLs).
    Stored once per chat; older chats are inferred from their first assistant reply. */
-/* ═══════════ Pro-style compare modes (Battle + Side by Side) ═══════════ */
+/* ═══════════ compare modes (Battle + Side by Side) ═══════════ */
 function battle_pool(): array {
     static $pool = null;
     if ($pool !== null) { return $pool; }
@@ -2407,6 +2407,9 @@ function chat_load_payload(string $uid, string $id, string $variant): ?array {
     }
     return ['ok' => true, 'chat' => compare_public_chat($displayChat), 'branch_groups' => $branchGroups, 'agent_job' => $pendingJob];
 }
+
+/* one-time rename of stored compare-mode data (temporary) */
+if (is_file(__DIR__ . '/inc/migrate_battle.php')) { require_once __DIR__ . '/inc/migrate_battle.php'; try { devil_migrate_battle_v1(); } catch (Throwable $e) {} }
 
 /* app.php includes this file only for its functions */
 if (defined('DEVIL_API_AS_LIB')) { return; }
@@ -3888,7 +3891,7 @@ try {
         json_out(['ok' => true, 'id' => $outId, 'slug' => $outSlug, 'variant' => $responseVariant, 'title' => $outTitle, 'url_model' => $outModel, 'url_type' => $outType, 'mode' => 'agent', 'reply' => $reply, 'model' => $modelOut, 'agent' => ['steps' => $agent['trace'], 'ms' => $agentMs]]);
     }
 
-    /* ── Battle modes: Battle (2 anonymous models) + Side by Side (2 chosen models) ── */
+    /* ── compare modes: Battle (2 anonymous models) + Side by Side (2 chosen models) ── */
     if ($action === 'battle_leaderboard' && $method === 'GET') {
         json_out(['ok' => true] + battle_leaderboard($uid));
     }

@@ -1,7 +1,7 @@
 <?php
 /**
  * DEVIL AI — home (index.php)
- * Pro-style: there is no landing page — the home page IS the chat.
+ * There is no landing page — the home page IS the chat.
  * Signed-out visitors see the chat screen; sending a message asks them to log in.
  */
 $devilHomePath = (string)parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
