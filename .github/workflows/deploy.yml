@@ -168,10 +168,11 @@ jobs:
           DEVIL_VERCEL_TOKEN: ${{ secrets.DEVIL_VERCEL_TOKEN }}
           DEVIL_VERCEL_TEAM_ID: ${{ secrets.DEVIL_VERCEL_TEAM_ID }}
           DEVIL_VERCEL_PROJECT_ID: ${{ secrets.DEVIL_VERCEL_PROJECT_ID }}
+          DEVIL_E2B_API_KEY: ${{ secrets.DEVIL_E2B_API_KEY }}
           DEVIL_PREVIEW_KEY: ${{ secrets.DEVIL_PREVIEW_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ] && [ -z "${DEVIL_VERCEL_TOKEN:-}" ]; then
+          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ] && [ -z "${DEVIL_VERCEL_TOKEN:-}" ] && [ -z "${DEVIL_E2B_API_KEY:-}" ]; then
             echo "No sandbox secrets set; skipping sandbox config patch."
             exit 0
           fi
@@ -210,9 +211,16 @@ jobs:
           else:
               for k in ('vercel_token', 'vercel_team_id', 'vercel_project_id'):
                   cfg.pop(k, None)
-          if has_d or has_v:
-              # Daytona first, Vercel Sandbox as the automatic backup (or whichever one is configured)
-              cfg['sandbox_provider'] = 'auto' if (has_d and has_v) else ('daytona' if has_d else 'vercel')
+          has_e = bool(os.environ.get('DEVIL_E2B_API_KEY'))
+          if has_e:
+              cfg['e2b_api_key'] = os.environ['DEVIL_E2B_API_KEY']
+              cfg.setdefault('e2b_template', 'devil-box')
+          else:
+              cfg.pop('e2b_api_key', None)
+          n = int(has_d) + int(has_e) + int(has_v)
+          if n:
+              # chain: Daytona (main) -> E2B (backup + full internet) -> Vercel (last backup); single provider when only one is set
+              cfg['sandbox_provider'] = 'auto' if n > 1 else ('daytona' if has_d else ('e2b' if has_e else 'vercel'))
           else:
               cfg.update({
                   'sandbox_provider': 'devil',
@@ -224,7 +232,8 @@ jobs:
               cfg['preview_key'] = os.environ['DEVIL_PREVIEW_KEY']
           else:
               cfg.pop('preview_key', None)
-          cfg.setdefault('agent_sandbox_max_steps', 30)
+          if int(cfg.get('agent_sandbox_max_steps', 0) or 0) <= 30:
+              cfg['agent_sandbox_max_steps'] = 50
           path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
           print('sandbox config patched; provider:', cfg.get('sandbox_provider'), '| keys:', len(cfg))
           PY

@@ -23,3 +23,4 @@ data/sbx_route.json
 data/hosting/
 data/agent_secrets/
 data/agent_jobs/
+data/sbx_e2b.json
