@@ -5,12 +5,12 @@ var $$ = function (s) { return Array.prototype.slice.call(document.querySelector
 
 /* ── state ── */
 var models = [], modelById = {}, currentModel = 'flash';
-var customModels = [], customById = {}, currentCustom = 'devil-09';
+var customModels = [], customById = {}, currentCustom = 'gemini-3.6-flash';
 var chats = [], currentChat = null;   /* currentChat = {id, title, messages, temp?} */
 var listModeFilter = 'all';
 var busy = false, isTempChat = false, activeController = null, sendSeq = 0, inlineEdit = null, editRestoreChat = null;
 var chatMode = ROUTE_MODE, agentMode = ROUTE_MODE === 'agent', agentEnabled = true;
-var BATTLE_POOL = [], battleById = {}, cmpA = 'flash', cmpB = 'pro', cmpFromChat = false;
+var BATTLE_POOL = [], battleById = {}, cmpA = 'custom:gemini-3.5-flash-lite', cmpB = 'custom:gemini-3.6-flash', cmpFromChat = false;
 var MODE_INFO = {
   battle: { label: 'Battle Mode', chip: 'Battle', icon: 'swordsM', chipIcon: 'swords', path: 'battle', seg: 'battle' },
   agent:  { label: 'Agent Mode', chip: 'Agent', icon: 'sparkM', chipIcon: 'spark', path: 'agent', seg: 'agent' },
@@ -159,7 +159,7 @@ window.addEventListener('resize', fitOpenMenus);
 if (window.visualViewport) { window.visualViewport.addEventListener('resize', fitOpenMenus); }
 
 /* ── Side by Side model pickers ── */
-function battleLabel(id) { return (battleById[id] || {}).label || (id === 'flash' ? 'Devil Flash' : (id === 'pro' ? 'Devil Pro' : 'Devil AI')); }
+function battleLabel(id) { return (battleById[id] || {}).label || (id === 'flash' ? 'Gemini 3.5 Flash Lite' : (id === 'pro' ? 'Gemini 3.6 Flash' : 'AI model')); }
 function battleIcon(id) {
   var m = battleById[id];
   if (m && I[m.icon]) { return I[m.icon]; }

@@ -540,8 +540,7 @@ function agent_respond(array $cfg, string $modelId, array $messages, callable $r
     for ($step = 0; $step <= $maxSteps; $step++) {
         $prompt = $history;
         if ($step === 0) {
-            /* The Prexzy engine flattens the conversation and skips system messages,
-               so the tool instructions must travel as a user-role turn to reach the model. */
+            /* the tool instructions travel as the first user turn (kept as-is: the agent is tuned for it) */
             array_unshift($prompt, ['role' => 'user', 'content' => agent_system_prompt() . "\n\n---\nNow answer the user's actual request below."]);
         }
         $res = $responder($cfg, $modelId, $prompt, ($step === 0 ? $image : ''));

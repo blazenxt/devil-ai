@@ -277,13 +277,13 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
               </div>
             </div>
             <span id="cmpAuto" class="cmpchip" title="Two random Devil models are picked for every battle. Their names stay hidden until you vote."><?= icon('shuffle', 14) ?><span class="lb">Random models</span></span>
-            <div class="cmppick" id="cmpPickA" data-side="a"><button type="button" class="cmpbtn" aria-haspopup="menu"><span class="cmpab">A</span><span class="lb">Devil Flash</span><?= icon('chevron-down', 13) ?></button><div class="cmpmenu" role="menu"></div></div>
+            <div class="cmppick" id="cmpPickA" data-side="a"><button type="button" class="cmpbtn" aria-haspopup="menu"><span class="cmpab">A</span><span class="lb">Gemini 3.5 Flash Lite</span><?= icon('chevron-down', 13) ?></button><div class="cmpmenu" role="menu"></div></div>
             <button type="button" id="cmpSwap" class="cmpswap" title="Swap model A and B" aria-label="Swap model A and B"><?= icon('swap', 15) ?></button>
-            <div class="cmppick" id="cmpPickB" data-side="b"><button type="button" class="cmpbtn" aria-haspopup="menu"><span class="cmpab">B</span><span class="lb">Devil Pro</span><?= icon('chevron-down', 13) ?></button><div class="cmpmenu" role="menu"></div></div>
+            <div class="cmppick" id="cmpPickB" data-side="b"><button type="button" class="cmpbtn" aria-haspopup="menu"><span class="cmpab">B</span><span class="lb">Gemini 3.6 Flash</span><?= icon('chevron-down', 13) ?></button><div class="cmpmenu" role="menu"></div></div>
             <button id="voiceBtn" title="Live voice chat" type="button" aria-pressed="false"><?= icon('mic', 16) ?></button>
             <button id="promptBtn" title="Prompt library" type="button"><?= icon('lightbulb', 16) ?></button>
             <div id="promptMenu"></div>
-            <button id="modelBtn" title="Choose model"><span id="modelIco"><?= icon('zap', 14) ?></span><span class="lb" id="modelLbl">Devil Flash</span><?= icon('chevron-down', 13) ?></button>
+            <button id="modelBtn" title="Choose model"><span id="modelIco"><?= icon('zap', 14) ?></span><span class="lb" id="modelLbl">Gemini 3.5 Flash Lite</span><?= icon('chevron-down', 13) ?></button>
             <div id="modelMenu"></div>
             <div id="customWrap" class="customwrap">
               <button id="customModelBtn" title="Choose custom AI model" type="button"><span id="customIco"></span><span class="lb" id="customLbl">Devil Smart</span><?= icon('chevron-down', 13) ?></button>

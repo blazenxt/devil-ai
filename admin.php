@@ -84,8 +84,8 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
       </div>
 
       <div class="section" id="tab-models">
-        <div class="row"><div><label>Devil Flash engine</label><select id="aFlash"></select></div><div><label>Devil Pro engine</label><select id="aPro"></select></div></div>
-        <label>Devil Ultra engine</label><select id="aUltra"></select>
+        <div class="row"><div><label>Quick pick 1 (fast)</label><select id="aFlash"></select></div><div><label>Quick pick 2 (balanced)</label><select id="aPro"></select></div></div>
+        <label>Quick pick 3 (best)</label><select id="aUltra"></select>
         <div class="row"><div><label for="aRate">Messages per user per hour</label><input id="aRate" type="number" min="1" max="1000" inputmode="numeric"></div><div><label for="aChats">Max saved chats per user</label><input id="aChats" type="number" min="1" max="500" inputmode="numeric"></div></div>
         <div class="btnrow"><button class="btn primary saveBtn" type="button"><?= icon('check', 15) ?> Save settings</button></div>
         <div class="status" id="modelStatus"></div>

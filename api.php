@@ -31,8 +31,8 @@
  *    POST ?action=test              {current_admin_password}    → {ok, reply}
  *
  *  Models (public names) → engines (server-side secret):
- *    Devil Flash / Pro / Ultra → Prexzy endpoints (prexzyapis.com, no API keys)
- *    Automatic fallback: any engine failure retries on other Prexzy endpoints.
+ *    Every chat model is a Google Gemini / Gemma model shown under its real name (key: gemini_api_key).
+ *    Quick slots flash / pro / ultra map to catalogue models (admin can change them).
  *
  *  Storage (JSON files, no database):
  *    data/users.json  accounts (no passwords — email-code login only)
@@ -52,8 +52,6 @@ devil_session_boot();
 define('DEVIL_VERSION', '1.0.0.0');
 define('MAX_INPUT', 4000);      // max characters per message
 define('MAX_MSGS_PER_CHAT', 200);
-define('PREXZY_ROOT', 'https://prexzyapis.com');
-define('PREXZY_BASE', PREXZY_ROOT . '/ai/');
 define('OTP_TTL', 600);         // codes valid 10 minutes
 define('OTP_MAX_TRIES', 5);
 
@@ -65,7 +63,7 @@ if (!function_exists('mb_substr'))     { function mb_substr($s, $a, $b = null) {
 /* ══════════════ AI PERSONA (anti-leak, highest priority) ══════════════ */
 
 
-define('PREXZY_PERSONA', <<<'PERSONA'
+define('DEVIL_PERSONA', <<<'PERSONA'
 [HIGHEST-PRIORITY ASSIGNMENT — set by BlazeNXT]
 You are "Devil AI" — a custom, one-of-a-kind AI assistant developed by BlazeNXT (https://www.blazenxt.in).
 
@@ -84,7 +82,7 @@ PERSONA
 /* persona + today's date (engines otherwise think it is still their training year) */
 function devil_persona(): string {
     $d = 'Current date: ' . date('l, j F Y') . '. Trust fresh information over your older built-in knowledge.';
-    $p = PREXZY_PERSONA;
+    $p = DEVIL_PERSONA;
     $k = strrpos($p, "\n\nAnswer the user");
     return $k === false ? $p . "\n\n" . $d : substr($p, 0, $k) . "\n" . $d . substr($p, $k);
 }
@@ -143,191 +141,120 @@ function load_config(): array {
     return $cfg;
 }
 
-/* ── public model catalogue (NO provider names — never leak) ── */
-function public_models(): array {
+/* ══════════════ MODEL CATALOGUE (real names) ══════════════
+   Models are shown under their real names. All run on the Gemini API free tier. */
+function model_catalog(): array {
     return [
-        ['id' => 'flash',  'label' => 'Devil Flash', 'tagline' => 'Fast answers for everyday questions', 'icon' => 'zap'],
-        ['id' => 'pro',    'label' => 'Devil Pro',   'tagline' => 'Deeper thinking for complex tasks',    'icon' => 'sparkles'],
-        ['id' => 'ultra',  'label' => 'Devil Ultra', 'tagline' => 'Maximum power for heavy lifting',      'icon' => 'crown'],
-        ['id' => 'custom', 'label' => 'Custom',      'tagline' => 'Pick a private Devil engine yourself',  'icon' => 'layers'],
+        ['id' => 'gemini-3.8-flash',       'label' => 'Gemini 3.8 Flash',       'company' => 'Google', 'scope' => 'Newest Flash — smartest',      'icon' => 'crown',    'thinking' => true],
+        ['id' => 'gemini-3.7-flash',       'label' => 'Gemini 3.7 Flash',       'company' => 'Google', 'scope' => 'Strong all-rounder',           'icon' => 'sparkles', 'thinking' => true],
+        ['id' => 'gemini-3.6-flash',       'label' => 'Gemini 3.6 Flash',       'company' => 'Google', 'scope' => 'Balanced speed and quality',   'icon' => 'sparkles', 'thinking' => true],
+        ['id' => 'gemini-3.5-flash',       'label' => 'Gemini 3.5 Flash',       'company' => 'Google', 'scope' => 'Reliable everyday model',      'icon' => 'sparkles', 'thinking' => true],
+        ['id' => 'gemini-3-flash-preview', 'label' => 'Gemini 3 Flash Preview', 'company' => 'Google', 'scope' => 'Preview build',                'icon' => 'spark',    'thinking' => true],
+        ['id' => 'gemini-3.5-flash-lite',  'label' => 'Gemini 3.5 Flash Lite',  'company' => 'Google', 'scope' => 'Fastest answers',              'icon' => 'zap',      'thinking' => true],
+        ['id' => 'gemini-3.1-flash-lite',  'label' => 'Gemini 3.1 Flash Lite',  'company' => 'Google', 'scope' => 'Light and quick',              'icon' => 'zap',      'thinking' => true],
+        ['id' => 'gemma-4-31b-it',         'label' => 'Gemma 4 31B',            'company' => 'Google', 'scope' => 'Open model — largest Gemma',   'icon' => 'layers',   'thinking' => false],
+        ['id' => 'gemma-4-26b-a4b-it',     'label' => 'Gemma 4 26B A4B',        'company' => 'Google', 'scope' => 'Open model — mixture of experts', 'icon' => 'layers', 'thinking' => false],
     ];
 }
-
-function prexzy_ai_catalog(): array {
-    static $models = null;
-    if ($models !== null) { return $models; }
-    $models = [
-        ['id' => 'dream',          'label' => 'AI Dream Interpreter',   'company' => 'Prexzy AI',                 'scope' => 'Dream analysis',      'icon' => 'prexzy',  'path' => '/ai/dream',          'param' => 'dream',  'memory' => false],
-        ['id' => 'aiwriter-chat',  'label' => 'AI Writer Chat',         'company' => 'OpenAI / AI Writer',        'scope' => 'Writing chat',        'icon' => 'openai',  'path' => '/ai/aiwriter-chat',  'param' => 'prompt', 'defaults' => ['model' => 'gpt-4o-mini'], 'max_prompt' => 11800 /* reads only the first ~12k chars */],
-        ['id' => 'ai4chat',        'label' => 'AI4Chat',                'company' => 'AI4Chat',                   'scope' => 'General chat',        'icon' => 'prexzy',  'path' => '/ai/ai4chat',        'param' => 'prompt'],
-        ['id' => 'aiapk',          'label' => 'AiApp AI',               'company' => 'AiApp',                     'scope' => 'Chat + vision',       'icon' => 'aiapp',   'path' => '/ai/aiapk',          'param' => 'prompt', 'image_param' => 'image', 'vision' => true],
-        ['id' => 'aiappgen',       'label' => 'AiApp Image Generator',  'company' => 'AiApp / Flux / DALL·E',     'scope' => 'Image generation',    'icon' => 'image',   'path' => '/ai/aiappgen',       'param' => 'prompt', 'image_param' => 'image', 'memory' => false],
-        ['id' => 'aimelody',       'label' => 'AiMelody',               'company' => 'AiMelody',                  'scope' => 'Lyrics + music',      'icon' => 'music',   'path' => '/ai/aimelody',       'param' => 'prompt', 'image_param' => 'image', 'defaults' => ['mode' => 'generate'], 'memory' => false],
-        ['id' => 'aiserv',         'label' => 'AiServ AI',              'company' => 'OpenAI GPT',                'scope' => 'Advanced chat',       'icon' => 'openai',  'path' => '/ai/aiserv',         'param' => 'prompt'],
-        ['id' => 'aiw3',           'label' => 'AIW3 Chat',              'company' => 'AIW3',                      'scope' => 'Chat',                'icon' => 'prexzy',  'path' => '/ai/aiw3',           'param' => 'prompt'],
-        ['id' => 'askgpt5',        'label' => 'AskGPT5 AI',             'company' => 'OpenAI GPT',                'scope' => 'Chat + web/media',    'icon' => 'openai',  'path' => '/ai/askgpt5',        'param' => 'prompt', 'image_param' => 'media', 'vision' => true],
-        ['id' => 'ch',             'label' => 'Chat AI',                'company' => 'Prexzy',                    'scope' => 'Fast chat',           'icon' => 'prexzy',  'path' => '/ai/ch',             'param' => 'q'],
-        ['id' => 'charart',        'label' => 'ChatArt AI',             'company' => 'ChatArt',                   'scope' => 'Chat + vision',       'icon' => 'aiapp',   'path' => '/ai/charart',        'param' => 'prompt', 'image_param' => 'image', 'vision' => true],
-        ['id' => 'chatbot',        'label' => 'ChatBot App',            'company' => 'ChatBot',                   'scope' => 'Chat + search',       'icon' => 'prexzy',  'path' => '/ai/chatbot',        'param' => 'text',   'defaults' => ['search' => 'true']],
-        ['id' => 'convertcode',    'label' => 'Convert Code',           'company' => 'Prexzy Code',               'scope' => 'Code conversion',     'icon' => 'code',    'path' => '/ai/convertcode',    'param' => 'code',   'defaults' => ['target' => 'javascript'], 'memory' => false],
-        ['id' => 'detectbugs',     'label' => 'Detect Bugs',            'company' => 'Prexzy Code',               'scope' => 'Debug code',          'icon' => 'code',    'path' => '/ai/detectbugs',     'param' => 'code',   'memory' => false],
-        ['id' => 'explaincode',    'label' => 'Explain Code',           'company' => 'Prexzy Code',               'scope' => 'Explain code',        'icon' => 'code',    'path' => '/ai/explaincode',    'param' => 'code',   'defaults' => ['lang' => 'auto'], 'memory' => false],
-        ['id' => 'flippedchat',    'label' => 'Flipped Chat',           'company' => 'Flipped Chat',              'scope' => 'Character chat',      'icon' => 'prexzy',  'path' => '/ai/flippedchat',    'param' => 'prompt', 'defaults' => ['action' => 'chat']],
-        ['id' => 'genigpt',        'label' => 'GeniGPT AI',             'company' => 'GeniGPT',                   'scope' => 'Image generation/edit','icon' => 'image',  'path' => '/ai/genigpt',        'param' => 'prompt', 'image_param' => 'image', 'memory' => false],
-        ['id' => 'genimage',       'label' => 'GenImage AI',            'company' => 'GenImage',                  'scope' => 'Image generation',    'icon' => 'image',   'path' => '/ai/genimage',       'param' => 'prompt', 'defaults' => ['width' => '1024', 'height' => '1024'], 'memory' => false],
-        ['id' => 'gemini',         'label' => 'Google Gemini',          'company' => 'Google',                    'scope' => 'Chat',                'icon' => 'google',  'path' => '/ai/gemini',         'param' => 'prompt'],
-        ['id' => 'mistral',        'label' => 'Mistral AI',             'company' => 'Mistral AI',                'scope' => 'Chat + web',          'icon' => 'mistral', 'path' => '/ai/mistral',        'param' => 'prompt'],
-        ['id' => 'msa',            'label' => 'MSA Tutor',              'company' => 'MSA Medical AI',            'scope' => 'Medical tutor',       'icon' => 'medical', 'path' => '/ai/msa',            'param' => 'prompt'],
-        ['id' => 'olabiba',        'label' => 'Olabiba AI',             'company' => 'Olabiba',                   'scope' => 'Multilingual chat',   'icon' => 'prexzy',  'path' => '/ai/olabiba',        'param' => 'prompt', 'image_param' => 'media', 'vision' => true],
-        ['id' => 'prompttocode',   'label' => 'Prompt to Code',         'company' => 'Prexzy Code',               'scope' => 'Generate code',       'icon' => 'code',    'path' => '/ai/prompttocode',   'param' => 'prompt', 'defaults' => ['language' => 'javascript'], 'memory' => false],
-        ['id' => 'qwen',           'label' => 'Qwen AI Chat',           'company' => 'Alibaba Qwen',              'scope' => 'Chat',                'icon' => 'qwen',    'path' => '/ai/qwen',           'param' => 'prompt'],
-        ['id' => 'advanced',       'label' => 'Story AI Advanced',      'company' => 'Prexzy Story',              'scope' => 'Story writing',       'icon' => 'story',   'path' => '/ai/advanced',       'param' => 'text',   'defaults' => ['mode' => 'story', 'length' => 'medium'], 'memory' => false],
-        ['id' => 'quick',          'label' => 'Story AI Quick',         'company' => 'Prexzy Story',              'scope' => 'Quick stories',       'icon' => 'story',   'path' => '/ai/quick',          'param' => 'text',   'memory' => false],
-    ];
-    return $models;
-}
-
-function custom_public_id(string $internalId): string {
-    $i = 1;
-    foreach (prexzy_ai_catalog() as $m) {
-        if ($m['id'] === $internalId) { return 'devil-' . str_pad((string)$i, 2, '0', STR_PAD_LEFT); }
-        $i++;
-    }
-    return 'devil-00';
-}
-
-function custom_public_label(string $internalId): string {
-    $map = [
-        'dream'         => 'Devil Dream',
-        'aiwriter-chat' => 'Devil Writer',
-        'ai4chat'       => 'Devil Chat',
-        'aiapk'         => 'Devil Vision',
-        'aiappgen'      => 'Devil Image',
-        'aimelody'      => 'Devil Melody',
-        'aiserv'        => 'Devil Advanced',
-        'aiw3'          => 'Devil Chat Pro',
-        'askgpt5'       => 'Devil Smart',
-        'ch'            => 'Devil Quick',
-        'charart'       => 'Devil Vision Chat',
-        'chatbot'       => 'Devil Search Chat',
-        'convertcode'   => 'Devil Code Convert',
-        'detectbugs'    => 'Devil Debug',
-        'explaincode'   => 'Devil Code Explain',
-        'flippedchat'   => 'Devil Character',
-        'genigpt'       => 'Devil Image Edit',
-        'genimage'      => 'Devil Image Pro',
-        'gemini'        => 'Devil Deep',
-        'mistral'       => 'Devil Logic',
-        'msa'           => 'Devil Medical Tutor',
-        'olabiba'       => 'Devil Multilingual',
-        'prompttocode'  => 'Devil Code Generator',
-        'qwen'          => 'Devil Reasoner',
-        'advanced'      => 'Devil Story Pro',
-        'quick'         => 'Devil Story Quick',
-    ];
-    return $map[$internalId] ?? 'Devil Engine';
-}
-
-function custom_public_icon(array $m): string {
-    $icon = (string)($m['icon'] ?? 'devil');
-    if (in_array($icon, ['code', 'image', 'music', 'medical', 'story'], true)) { return $icon; }
-    return 'devil';
-}
-
-function custom_model_by_id(string $id): ?array {
+function catalog_model(string $id): ?array {
     $id = strtolower(trim($id));
-    foreach (prexzy_ai_catalog() as $m) {
-        if ($m['id'] === $id || custom_public_id((string)$m['id']) === $id) { return $m; }
-    }
+    foreach (model_catalog() as $m) { if ($m['id'] === $id) { return $m; } }
     return null;
 }
-
-function prexzy_engine_from_id(string $id): array {
-    $m = custom_model_by_id($id);
-    if (!$m) { $m = custom_model_by_id('askgpt5'); }
-    if (!$m) { return ['kind' => 'prexzy', 'endpoint' => 'askgpt5', 'path' => '/ai/askgpt5', 'param' => 'prompt']; }
-    $m['kind'] = 'prexzy';
-    $m['endpoint'] = $m['id'];
-    if (!isset($m['memory'])) { $m['memory'] = true; }
-    return $m;
+/* quick slots → catalogue model (admin can remap them; values look like "gemini:<model id>") */
+function slot_model(string $slot): string {
+    $defaults = ['flash' => 'gemini-3.5-flash-lite', 'pro' => 'gemini-3.6-flash', 'ultra' => 'gemini-3.8-flash', 'custom' => 'gemini-3.6-flash'];
+    static $cfgEngines = null;
+    if ($cfgEngines === null) { $c = function_exists('load_config') ? load_config() : []; $cfgEngines = (array)($c['engines'] ?? []); }
+    $v = (string)($cfgEngines[$slot] ?? '');
+    if (preg_match('/^gemini:([a-z0-9._-]+)$/', $v, $m) && catalog_model($m[1])) { return $m[1]; }
+    return $defaults[$slot] ?? 'gemini-3.6-flash';
 }
 
+/* a model whose daily free limit is used up rests for hours — say so in the menu */
+function model_resting(string $id): bool {
+    static $cool = null;
+    if ($cool === null) { $cool = function_exists('gemini_state') ? (array)(gemini_state()['cool'] ?? []) : []; }
+    return (int)($cool[$id] ?? 0) > time() + 3600;
+}
+function model_scope(array $m): string { return model_resting($m['id']) ? 'Daily limit reached — back tomorrow' : $m['scope']; }
+
+/* ── public model menu: three quick picks + "More models" (every catalogue model) ── */
+function public_models(): array {
+    $out = [];
+    foreach (['flash' => 'zap', 'pro' => 'sparkles', 'ultra' => 'crown'] as $slot => $icon) {
+        $m = catalog_model(slot_model($slot));
+        $out[] = ['id' => $slot, 'label' => (string)($m['label'] ?? 'Gemini'), 'tagline' => $m ? model_scope($m) : '', 'icon' => $icon];
+    }
+    $out[] = ['id' => 'custom', 'label' => 'More models', 'tagline' => 'Pick any model from the full list', 'icon' => 'layers'];
+    return $out;
+}
+function custom_public_id(string $id): string { $m = catalog_model($id); return $m ? $m['id'] : ''; }
+function custom_public_label(string $id): string { $m = catalog_model($id); return $m ? $m['label'] : 'Unknown model'; }
+function custom_model_by_id(string $id): ?array { return catalog_model($id); }
 function public_custom_models(): array {
     $out = [];
-    foreach (prexzy_ai_catalog() as $m) {
-        $out[] = [
-            'id'      => custom_public_id((string)$m['id']),
-            'label'   => custom_public_label((string)$m['id']),
-            'company' => 'Devil AI',
-            'scope'   => $m['scope'],
-            'icon'    => custom_public_icon($m),
-            'vision'  => !empty($m['vision']),
-        ];
+    foreach (model_catalog() as $m) {
+        $out[] = ['id' => $m['id'], 'label' => $m['label'], 'company' => $m['company'], 'scope' => model_scope($m), 'icon' => $m['icon'], 'vision' => true];
     }
     return $out;
 }
-
-function custom_model_label(string $id): string {
-    $m = custom_model_by_id($id);
-    return $m ? custom_public_label((string)$m['id']) : 'Custom Devil';
-}
-
+function custom_model_label(string $id): string { return custom_public_label($id); }
 function model_label(string $id): string {
-    if (strpos($id, 'custom:') === 0) { return custom_model_label(substr($id, 7)); }
+    if (strpos($id, 'custom:') === 0) { return custom_public_label(substr($id, 7)); }
     if ($id === 'agent') { return 'Devil Agent'; }
-    foreach (public_models() as $m) { if ($m['id'] === $id) { return $m['label']; } }
-    return 'Devil AI';
+    if (in_array($id, ['flash', 'pro', 'ultra', 'custom'], true)) { return custom_public_label(slot_model($id)); }
+    $m = catalog_model($id);
+    return $m ? $m['label'] : 'Devil AI';
+}
+/* label of the model that actually answered (a busy model may hand over to a sibling) */
+function used_model_label($used, string $fallback): string {
+    if (is_string($used) && strpos($used, 'gemini:') === 0) { $m = catalog_model(substr($used, 7)); if ($m) { return $m['label']; } }
+    return $fallback;
+}
+/* system prompt for a named model: honest identity, like a model-comparison site */
+function model_persona(string $modelId, bool $blind = false): string {
+    $m = catalog_model($modelId);
+    $label = $m ? $m['label'] : 'an AI model';
+    $who = $blind
+        ? 'You are an anonymous AI model in a blind Battle on Devil AI (a site by BlazeNXT where people compare AI models). The user votes before model names are shown, so never reveal your model name, version or maker — if asked, say your identity is revealed after they vote. '
+        : 'You are ' . $label . ', a model made by Google, answering a user on Devil AI (a site by BlazeNXT where people chat with and compare AI models). ';
+    return $who
+        . 'Current date: ' . date('l, j F Y') . '. Trust fresh information over older built-in knowledge. '
+        . 'Reply in the same language the user writes in. Format answers clearly with Markdown (short paragraphs, lists, code blocks) where it helps.';
 }
 
 /* engines visible to the ADMIN only (after password) */
 function admin_engine_list(): array {
     $out = [];
-    foreach (prexzy_ai_catalog() as $m) {
-        $out[] = ['id' => 'prexzy:' . $m['id'], 'label' => 'Devil AI — ' . custom_public_label((string)$m['id']) . ' (' . $m['scope'] . ')'];
-    }
+    foreach (model_catalog() as $m) { $out[] = ['id' => 'gemini:' . $m['id'], 'label' => $m['label'] . ' (' . $m['scope'] . ')']; }
     return $out;
 }
 
-/* default model → engine mapping (public model id → Prexzy endpoint) */
+/* default slot → engine mapping */
 function model_engine_defaults(): array {
     return [
-        'flash'  => 'prexzy:ch',      /* fastest */
-        'pro'    => 'prexzy:askgpt5', /* reliable */
-        'ultra'  => 'prexzy:aiapk',   /* smartest, stays in character */
-        'custom' => 'prexzy:askgpt5',
-        /* Agent Mode always uses this one (users do not pick a model there): the strongest coder that
-           follows the tool protocol — tested 2026-10 against every engine. Override: config agent_engine. */
-        'agent'  => 'prexzy:aiwriter-chat@claude-3.5-sonnet-v2',
+        'flash'  => 'gemini:gemini-3.5-flash-lite',
+        'pro'    => 'gemini:gemini-3.6-flash',
+        'ultra'  => 'gemini:gemini-3.8-flash',
+        'custom' => 'gemini:gemini-3.6-flash',
+        /* Agent Mode has no picker: newest healthy Flash model, picked automatically */
+        'agent'  => 'gemini:auto',
     ];
 }
 
-/* resolve a public model id to a real engine — server-side secret */
+/* resolve a public model id to an engine */
 function engine_for(array $cfg, string $model_id): array {
-    if (strpos($model_id, 'custom:') === 0) {
-        return prexzy_engine_from_id(substr($model_id, 7));
+    if (gemini_api_key($cfg) === '') { return ['kind' => 'none', 'id' => 'none', 'endpoint' => 'none', 'max_prompt' => 0]; }
+    if ($model_id === 'agent') {
+        $eng = (string)($cfg['agent_engine'] ?? '');
+        $model = preg_match('/^gemini:([a-z0-9._-]{2,60})$/i', $eng, $m) ? strtolower($m[1]) : 'auto';
+        return ['kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini', 'model' => $model, 'label' => 'Devil Agent', 'max_prompt' => 0, 'vision' => true, 'agent' => true];
     }
-    $defaults = model_engine_defaults();
-    $eng = (string)($cfg['engines'][$model_id] ?? ($defaults[$model_id] ?? 'prexzy:askgpt5'));
-    if ($model_id === 'agent' && !empty($cfg['agent_engine']) && is_string($cfg['agent_engine'])) { $eng = (string)$cfg['agent_engine']; }
-    /* Agent Mode runs on Gemini whenever a key is configured (native multi-turn, long context, long answers) */
-    elseif ($model_id === 'agent' && gemini_api_key($cfg) !== '') { $eng = 'gemini:auto'; }
-    if (preg_match('/^gemini:([a-z0-9._-]{2,60})$/i', $eng, $gm) && gemini_api_key($cfg) !== '') {
-        return ['kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini', 'model' => strtolower($gm[1]),
-                'label' => 'Devil Agent', 'max_prompt' => 0, 'vision' => true];
-    }
-    /* every engine is a Prexzy endpoint — anything unknown (incl. legacy values) coerces to the model default.
-       "prexzy:endpoint@sub-model" picks a model inside endpoints that offer several (aiwriter-chat). */
-    if (preg_match('/^prexzy:([a-z0-9_-]+)(?:@([a-z0-9._-]{2,40}))?$/i', $eng, $m)) {
-        $e = prexzy_engine_from_id(strtolower($m[1]));
-        if (!empty($m[2]) && strtolower((string)($e['id'] ?? '')) === strtolower($m[1])) {
-            $e['defaults'] = array_merge((array)($e['defaults'] ?? []), ['model' => $m[2]]);
-            $e['submodel'] = $m[2];
-        }
-        return $e;
-    }
-    $fallback = strtolower((string)($defaults[$model_id] ?? 'prexzy:askgpt5'));
-    $fallback = preg_replace('/^prexzy:/', '', $fallback);
-    return prexzy_engine_from_id($fallback ?: 'askgpt5');
+    if (strpos($model_id, 'custom:') === 0) { $model = catalog_model(substr($model_id, 7)) ? strtolower(substr($model_id, 7)) : slot_model('custom'); }
+    elseif (catalog_model($model_id)) { $model = strtolower($model_id); }
+    else { $model = slot_model(in_array($model_id, ['flash', 'pro', 'ultra', 'custom'], true) ? $model_id : 'flash'); }
+    return ['kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini', 'model' => $model, 'label' => custom_public_label($model), 'max_prompt' => 0, 'vision' => true, 'agent' => false];
 }
 
 /* ── users (no passwords — email-code login) ── */
@@ -572,9 +499,9 @@ function dev_api_auth(): array {
 
 function dev_api_models(): array {
     return [
-        ['id' => 'devil-flash', 'label' => 'Devil Flash', 'owned_by' => 'devil-ai'],
-        ['id' => 'devil-pro',   'label' => 'Devil Pro',   'owned_by' => 'devil-ai'],
-        ['id' => 'devil-ultra', 'label' => 'Devil Ultra', 'owned_by' => 'devil-ai'],
+        ['id' => 'devil-flash', 'label' => model_label('flash'), 'owned_by' => 'google'],
+        ['id' => 'devil-pro',   'label' => model_label('pro'),   'owned_by' => 'google'],
+        ['id' => 'devil-ultra', 'label' => model_label('ultra'), 'owned_by' => 'google'],
     ];
 }
 
@@ -1169,13 +1096,6 @@ function error_hint(int $status): ?string {
 
 /* ══════════════ LEAK GUARD (server-side safety net) ══════════════ */
 
-/* did an engine break character and name another model/provider? */
-function reply_leaks(string $t): bool {
-    return (bool)preg_match('/\b(qwen|chatgpt|gpt-[345]|gpt\s?[345o]\b|gemini|deepseek|llama|mistral|grok|kimi|zhipu|prexzy|openai|anthropic)\b/iu', $t)
-        || (bool)preg_match('/(powered|built|made|created|developed|trained)\s+by\s+(openai|google|alibaba|meta|anthropic|z\.?ai|zhipu|microsoft)/iu', $t)
-        || (bool)preg_match('/\b\d{2,4}b\b.{0,25}\b(a\d+b|instruct|preview)\b/iu', $t);
-}
-
 /* does the user's latest message explicitly ask about the bot's identity? */
 function identity_question(array $messages): bool {
     $q = '';
@@ -1409,43 +1329,9 @@ function process_attachments($input): array {
 
 /* ══════════════ INTRO STRIPPER ══════════════ */
 
-/* Removes a leading self-introduction sentence ("I'm Devil AI — custom-built…")
-   that some engines insist on despite the persona rules. Never strips everything. */
-function strip_intro(string $txt): string {
-    $out = $txt;
-    for ($i = 0; $i < 3; $i++) {
-        $t = ltrim($out);
-        if ($t === '') { break; }
-        if (!preg_match('/^[^.!?\n]*[.!?]+[^\w\s]*\s*|^[^\n]+\n/', $t, $m)) { break; }
-        $first = trim($m[0]);
-        $rest  = ltrim(mb_substr($t, strlen($m[0])));
-        if ($first === '') { break; }
-        /* canned-intro markers only — plain mentions of the name are NOT stripped */
-        $strong = preg_match('/straight from hell|best answers on earth|custom[- ]built by my master|(?:his|my|the) (?:owner|master).{0,20}php server|php server|how can i (?:help|assist|serve)/iu', $first) === 1
-               || preg_match("/\\bi\\s*(?:'| a)?m\\s+devil\\b|\\bi'?m\\s+devil\\b/iu", $first) === 1;
-        $isHelp = preg_match('/^[\\W_]*(how\\s+(?:can|may)\\s+i\\s+(?:help|assist|serve)|what\\s+(?:can|would)\\s+(?:i|you))/iu', $first) === 1;
-        if (!($strong || $isHelp)) { break; }
-        if (trim($rest) === '') { break; }   /* nothing meaningful after → stop */
-        $out = $rest;
-    }
-    $trimmed = trim($out);
-    if ($trimmed === '') { return $txt; }   /* reply was ONLY the intro → keep it */
-    /* only emoji/decoration left (no letters or digits) → the real content WAS the intro → keep it */
-    if (preg_match('/[\\p{L}\\p{N}]/u', $trimmed) !== 1) { return $txt; }
-    /* only a help-line left + original mentioned the name → whole reply was an intro → keep it */
-    if (stripos($txt, 'devil') !== false
-        && preg_match('/^[\\W_]*(how\\s+(?:can|may)\\s+i\\s+(?:help|assist|serve)|what\\s+(?:can|would)\\s+(?:i|you)|now,|please)/iu', $trimmed) === 1) {
-        return $txt;
-    }
-    return $out;
-}
-
 /* ══════════════ AI ENGINES ══════════════ */
 
-/* Build a memory-aware single-turn prompt for Prexzy endpoints.
-   The free Prexzy APIs accept one prompt, so we fold the recent chat into it
-   instead of sending only the latest user line. This stops the bot from
-   forgetting names, images, and short follow-ups like "yes", "it", "continue". */
+/* shorten a chat line for summaries / memory */
 function compact_prompt_text(string $s, int $max = 1200): string {
     $s = trim(str_replace("\r", '', $s));
     $s = preg_replace('/[ \t]+/u', ' ', $s);
@@ -1455,51 +1341,6 @@ function compact_prompt_text(string $s, int $max = 1200): string {
     return $s;
 }
 
-function build_memory_prompt(array $messages, string $image = '', array $limits = []): string {
-    $items = [];
-    $userMax = (int)($limits['user_text'] ?? 1500);
-    $assistantMax = (int)($limits['assistant_text'] ?? 1100);
-    $attachmentMax = (int)($limits['attachment_text'] ?? 3500);
-    $turns = (int)($limits['turns'] ?? 18);
-    $budget = (int)($limits['budget'] ?? 7200);
-    foreach ($messages as $m) {
-        if (!is_array($m)) { continue; }
-        $role = (string)($m['role'] ?? '');
-        if ($role !== 'user' && $role !== 'assistant') { continue; }
-        $content = compact_prompt_text((string)($m['content'] ?? ''), $role === 'user' ? $userMax : $assistantMax);
-        $attText = compact_prompt_text((string)($m['attachment_text'] ?? ''), $attachmentMax);
-        if ($attText !== '') { $content = trim($content . "\n\n" . $attText); }
-        if ($content === '' && !empty($m['img'])) { $content = '[attached an image]'; }
-        if ($content === '') { continue; }
-        $items[] = ($role === 'assistant' ? 'Devil AI' : 'User') . ': ' . $content;
-    }
-    if (!$items) {
-        if ($image !== '') {
-            return "The user attached an image with no text. Look at it and respond helpfully: describe it briefly and ask what they would like to know.";
-        }
-        return '';
-    }
-
-    /* Keep the latest turns first-priority, then older useful context while under budget. */
-    $items = array_slice($items, -max(1, $turns));
-    $selected = [];
-    $used = 0;
-    $budget = max(1000, $budget);
-    for ($i = count($items) - 1; $i >= 0; $i--) {
-        $len = mb_strlen($items[$i]);
-        if ($used + $len > $budget && count($selected) > 0) { continue; }
-        array_unshift($selected, $items[$i]);
-        $used += $len;
-    }
-
-    $prompt = "Use the conversation memory below. The LAST User message is the current request. Resolve short replies like yes, ok, it, this, that, continue, or more from the previous turns. Do not repeat the transcript; answer only the latest user request.\n\nConversation:\n";
-    $prompt .= implode("\n\n", $selected);
-    if ($image !== '') {
-        $prompt .= "\n\nRelevant image: an image is attached with this request. If the latest user message refers to an earlier image/photo/QR/code, use the attached image as that image.";
-    }
-    $prompt .= "\n\nNow reply to the LAST User message:";
-    return $prompt;
-}
 
 function recent_chat_image(array $messages): string {
     $seenLatestUser = false;
@@ -1522,32 +1363,7 @@ function should_reuse_recent_image(string $msg): bool {
     return (bool)preg_match('/\b(this|that|it|image|img|photo|pic|picture|qr|code|scan|read|decode|attached|above|previous|ye|yeh|isko|isme|iss|usme|batao|bataye|dikhao)\b/u', $low);
 }
 
-function latest_user_prompt(array $messages, string $image = '', array $limits = []): string {
-    $textMax = (int)($limits['latest_text'] ?? 5000);
-    $attachmentMax = (int)($limits['latest_attachment'] ?? 5000);
-    foreach (array_reverse($messages) as $m) {
-        if (is_array($m) && (($m['role'] ?? '') === 'user')) {
-            $q = compact_prompt_text((string)($m['content'] ?? ''), $textMax);
-            $attText = compact_prompt_text((string)($m['attachment_text'] ?? ''), $attachmentMax);
-            if ($attText !== '') { $q = trim($q . "\n\n" . $attText); }
-            if ($q !== '') { return $q; }
-            if ($image !== '' || !empty($m['img'])) { return 'The user attached an image. Respond helpfully to the image.'; }
-        }
-    }
-    return $image !== '' ? 'The user attached an image. Respond helpfully to the image.' : '';
-}
 
-function prexzy_bad_response($j, int $status): bool {
-    if (!is_array($j)) { return true; }
-    if ($status >= 400) { return true; }
-    foreach (['status', 'success', 'ok'] as $k) {
-        if (array_key_exists($k, $j)) {
-            $v = $j[$k];
-            if ($v === false || $v === 0 || $v === '0' || $v === 'false' || $v === 'error' || $v === 'failed') { return true; }
-        }
-    }
-    return false;
-}
 
 function extract_ai_text($j): string {
     if (is_string($j)) { return trim($j); }
@@ -1577,14 +1393,6 @@ function extract_ai_text($j): string {
     return '';
 }
 
-function prexzy_error_message($j, int $status): string {
-    if (is_array($j)) {
-        foreach (['error', 'message', 'detail'] as $k) {
-            if (isset($j[$k]) && is_scalar($j[$k]) && trim((string)$j[$k]) !== '') { return (string)$j[$k]; }
-        }
-    }
-    return 'HTTP ' . $status;
-}
 
 function ai_prompt_limits(array $cfg): array {
     if (!empty($cfg['_prompt_limits']) && is_array($cfg['_prompt_limits'])) { return $cfg['_prompt_limits']; }
@@ -1602,54 +1410,6 @@ function ai_prompt_limits(array $cfg): array {
     return [];
 }
 
-function call_engine(array $cfg, array $engine, array $messages, string $image = ''): array {
-    /* ── Prexzy (free, no key, single-turn) ── */
-    if ($engine['kind'] === 'prexzy') {
-        $useMemory = array_key_exists('memory', $engine) ? (bool)$engine['memory'] : true;
-        $promptLimits = ai_prompt_limits($cfg);
-        $q = $useMemory ? build_memory_prompt($messages, $image, $promptLimits) : latest_user_prompt($messages, $image, $promptLimits);
-        if ($q === '') { return [false, 'Message is empty.', null, null]; }
-
-        /* Keep the Devil AI persona even when the public UI exposes a custom provider name. */
-        $prompt = devil_persona() . "\n\n" . $q;
-        $param = (string)($engine['param'] ?? 'prompt');
-        $body = isset($engine['defaults']) && is_array($engine['defaults']) ? $engine['defaults'] : [];
-        $body[$param] = $prompt;
-        if ($image !== '' && !empty($engine['image_param'])) {
-            $body[(string)$engine['image_param']] = preg_replace('/^data:[^,]+,/', '', $image);   /* raw base64 for vision-capable endpoints */
-        }
-
-        $path = (string)($engine['path'] ?? ('/ai/' . ($engine['endpoint'] ?? 'askgpt5')));
-        $url = PREXZY_ROOT . $path;
-        list($ok, $raw, $status) = http_post_json($url, [], $body);
-        if (!$ok) { return [false, $raw, null, null]; }
-        $j = json_decode($raw, true);
-
-        /* Some endpoints document POST but only read query params. Fallback to GET once. */
-        if (prexzy_bad_response($j, $status)) {
-            list($ok2, $raw2, $status2) = http_get_query($url, [], $body);
-            if ($ok2) { $j2 = json_decode($raw2, true); if (!prexzy_bad_response($j2, $status2)) { $j = $j2; $status = $status2; } }
-        }
-
-        if (prexzy_bad_response($j, $status)) {
-            return [false, 'Engine error: ' . prexzy_error_message($j, $status), 'Devil AI will retry automatically — try again in a moment.', null];
-        }
-        $txt = extract_ai_text($j);
-        if (trim($txt) === '') { return [false, 'The engine returned an empty answer.', null, null]; }
-        /* some engines answer "busy" as if it were a normal reply — that is a failure, so retry/fallback kicks in */
-        if (mb_strlen($txt) < 220 && preg_match('/^\W*(at the moment i am not able to think|i am not able to think right now|please try again in a few minutes|too many requests|rate limit(ed)?|service (is )?(temporarily )?unavailable|server is busy|model is (currently )?overloaded)/i', trim($txt))) {
-            return [false, 'The engine is busy right now.', 'Devil AI will retry automatically — try again in a moment.', null];
-        }
-        return [true, $txt, null, 'prexzy:' . (string)($engine['endpoint'] ?? 'custom')];
-    }
-
-    /* ── Google Gemini (Agent Mode) — errors stay neutral: the engine is never named to users ── */
-    if ($engine['kind'] === 'gemini') {
-        return gemini_call($cfg, (string)($engine['model'] ?? 'auto'), $messages, $image);
-    }
-
-    return [false, 'Unknown engine.', null, null];
-}
 
 /* ══════════════ Gemini engine ══════════════ */
 const GEMINI_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
@@ -1699,10 +1459,15 @@ function gemini_order(array $models): array {
     if ($good !== '' && in_array($good, $ok, true)) { $ok = array_values(array_unique(array_merge([$good], $ok))); }
     return array_merge($ok, $cooling);   /* cooling ones only as a last resort */
 }
-function gemini_mark(string $model, bool $good): void {
+function gemini_mark(string $model, bool $good, bool $dayQuota = false): void {
     $st = gemini_state();
     if ($good) { $st['good'] = $model; unset($st['cool'][$model]); }
-    else { $st['cool'][$model] = time() + 180; if (($st['good'] ?? '') === $model) { $st['good'] = ''; } }
+    else {
+        $until = time() + 180;
+        if ($dayQuota) { $r = new DateTime('tomorrow', new DateTimeZone('America/Los_Angeles')); $until = $r->getTimestamp() + 60; }
+        $st['cool'][$model] = $until;
+        if (($st['good'] ?? '') === $model) { $st['good'] = ''; }
+    }
     gemini_state_save($st);
 }
 /* chat messages → Gemini contents (roles user/model, same-role turns merged, image on the last user turn) */
@@ -1725,32 +1490,34 @@ function gemini_contents(array $messages, string $image): array {
     }
     return $out;
 }
-function gemini_call(array $cfg, string $model, array $messages, string $image = ''): array {
+/* $system: text, or a Closure(model id) → text so each model gets its own identity */
+function gemini_call(array $cfg, array $models, array $messages, string $image = '', $system = '', int $tryCap = 0): array {
     $key = gemini_api_key($cfg);
     if ($key === '') { return [false, 'The engine is not configured.', null, null]; }
-    $models = ($model === '' || $model === 'auto') ? gemini_order(gemini_models($cfg)) : [$model];
-    $body = json_encode([
-        'systemInstruction' => ['parts' => [['text' => devil_persona()]]],
-        'contents' => gemini_contents($messages, $image),
-        'generationConfig' => [
-            'temperature' => 0.4,
-            'maxOutputTokens' => (int)($cfg['gemini_max_output'] ?? 32768),
-            'thinkingConfig' => ['thinkingLevel' => (string)($cfg['gemini_thinking'] ?? 'low')],
-        ],
-    ], JSON_UNESCAPED_UNICODE);
-    if ($body === false || !function_exists('curl_init')) { return [false, 'The engine failed while the agent was working.', null, null]; }
+    $models = array_values(array_filter($models, 'is_string'));
+    if (!$models || !function_exists('curl_init')) { return [false, 'The engine failed while the agent was working.', null, null]; }
+    $contents = gemini_contents($messages, $image);
     $last = 'The engine is busy right now.';
     $tries = 0;
     foreach ($models as $mdl) {
         $tl = devil_time_left(85) - 3;   /* an agent step gets ~78 s: long files need most of it */
         if ($tl < 8 || $tries >= 4) { break; }
         $tries++;
+        $gen = ['temperature' => 0.5, 'maxOutputTokens' => (int)($cfg['gemini_max_output'] ?? 32768)];
+        /* Gemma models reject the thinking-level setting */
+        if (strpos($mdl, 'gemma') !== 0) { $gen['thinkingConfig'] = ['thinkingLevel' => (string)($cfg['gemini_thinking'] ?? 'low')]; }
+        $req = ['contents' => $contents, 'generationConfig' => $gen];
+        $sysTxt = $system instanceof Closure ? (string)$system($mdl) : (string)$system;
+        if (trim($sysTxt) !== '') { $req['systemInstruction'] = ['parts' => [['text' => $sysTxt]]]; }
+        $body = json_encode($req, JSON_UNESCAPED_UNICODE);
+        if ($body === false) { return [false, 'The engine failed while the agent was working.', null, null]; }
         $ch = curl_init(GEMINI_ROOT . '/models/' . rawurlencode($mdl) . ':generateContent');
         curl_setopt_array($ch, [
             CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json; charset=utf-8', 'x-goog-api-key: ' . $key],
             /* the first try may use most of the step; later tries must leave room for the reply */
-            CURLOPT_TIMEOUT => max(8, $tries === 1 ? $tl : min($tl, 45)), CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_ENCODING => '',
+            /* chat passes $tryCap so one slow model can't hold the reply — the next model gets a turn */
+            CURLOPT_TIMEOUT => max(8, $tryCap > 0 ? min($tl, $tryCap + (strpos($mdl, 'gemma') === 0 ? 15 : 0)) : ($tries === 1 ? $tl : min($tl, 45))), CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_ENCODING => '',
         ]);
         $t0 = microtime(true);
         $raw = curl_exec($ch);
@@ -1759,8 +1526,9 @@ function gemini_call(array $cfg, string $model, array $messages, string $image =
         $j = is_string($raw) ? json_decode($raw, true) : null;
         if ($raw === false || $status === 0 || $status === 404 || $status === 429 || $status >= 500 || !is_array($j)) {
             /* a long answer that ran out of time is not "busy" — only real busy/limit errors (or a quick failure) rest the model */
-            $slow = ($status === 0 || $raw === false) && (microtime(true) - $t0) > 30;
-            if (!$slow) { gemini_mark($mdl, false); }
+            $slow = $tryCap === 0 && ($status === 0 || $raw === false) && (microtime(true) - $t0) > 30;
+            /* daily quota used up → rest until the reset (midnight Pacific); other busy errors → a few minutes */
+            if (!$slow) { gemini_mark($mdl, false, $status === 429 && is_string($raw) && stripos($raw, 'PerDay') !== false); }
             $last = $slow ? 'This step ran out of time — retrying.' : 'The engine is busy right now.';
             continue;
         }
@@ -1777,71 +1545,47 @@ function gemini_call(array $cfg, string $model, array $messages, string $image =
     return [false, $last, 'Devil AI will retry automatically — try again in a moment.', null];
 }
 
-/* full pipeline with AUTOMATIC FALLBACK (Prexzy is the safety net) */
-function ai_respond(array $cfg, string $modelId, array $messages, string $image = ''): array {
+/* full pipeline. $strict = compare modes (Battle / Side by Side): the named model only, no stand-in */
+function ai_respond(array $cfg, string $modelId, array $messages, string $image = '', bool $strict = false, bool $blind = false): array {
     $engine = engine_for($cfg, $modelId);
+    if (($engine['kind'] ?? '') !== 'gemini') { return [false, 'The AI engine is not configured yet.', null]; }
+    $isAgent = !empty($engine['agent']);
+    $model = (string)$engine['model'];
 
-    /* images need a vision-capable engine — route there automatically */
-    if ($image !== '') {
-        $vision = !empty($engine['vision']) ? $engine : prexzy_engine_from_id('aiapk');
-        list($ok, $txt, $hint, $used) = call_engine($cfg, $vision, $messages, $image);
-        if (!$ok) { list($ok, $txt, $hint, $used) = call_engine($cfg, $vision, $messages, $image); }   /* one retry */
-        if (!$ok) {
-            /* vision down → answer from text alone, honestly */
-            list($ok, $txt, $hint, $used) = call_engine($cfg, prexzy_engine_from_id('askgpt5'), $messages, '');
-            if ($ok) { $txt = "I couldn't open the attached image right now, but here's what I can tell you:\n\n" . $txt; }
-            if ($ok && $used !== null && !identity_question($messages)) { $txt = strip_intro($txt); }
-            return [$ok, $txt, $used];
+    /* Agent Mode: unchanged — Devil persona as system instruction, the agent's own prompts stay in the chat */
+    if ($isAgent) {
+        $models = $model === 'auto' ? gemini_order(gemini_models($cfg)) : [$model];
+        list($ok, $txt, $hint, $used) = gemini_call($cfg, $models, $messages, $image, devil_persona());
+        return $ok ? [true, $txt, $used] : [false, (string)$txt, null];
+    }
+    /* chat models: system messages → system instruction; the Devil persona becomes the model's real identity */
+    $sys = []; $rest = [];
+    foreach ($messages as $m) {
+        if (($m['role'] ?? '') === 'system') {
+            $c = (string)($m['content'] ?? '');
+            if ($c === devil_persona()) { continue; }   /* replaced by the model's own identity below */
+            if (trim($c) !== '') { $sys[] = $c; }
+        } else { $rest[] = $m; }
+    }
+    $system = static function (string $mdl) use ($sys, $blind): string { return implode("\n\n", array_merge([model_persona($mdl, $blind)], $sys)); };
+
+    if ($isAgent || $model === 'auto') {
+        $models = $model === 'auto' ? gemini_order(gemini_models($cfg)) : [$model];
+    } else {
+        /* chosen model first; in normal chat a busy model may hand over to its closest healthy sibling */
+        $models = [$model];
+        if ($strict) { $models[] = $model; }   /* compare modes: the same model gets a second chance, never a stand-in */
+        else {
+            foreach (gemini_order(['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']) as $alt) {
+                if ($alt !== $model && count($models) < 3) { $models[] = $alt; }
+            }
         }
-        if ($ok && $used !== null && reply_leaks($txt) && !identity_question($messages)) {
-            list($ok2, $txt2, $h2, $u2) = call_engine($cfg, prexzy_engine_from_id('askgpt5'), $messages, '');
-            if ($ok2 && trim($txt2) !== '') { $txt = $txt2; $used = $u2; }
-        }
-        if ($ok && $used !== null && !identity_question($messages)) { $txt = strip_intro($txt); }
-        return [$ok, $txt, $used];
     }
-
-    list($ok, $txt, $hint, $used) = call_engine($cfg, $engine, $messages);
-    if (!$ok && ($engine['kind'] ?? '') === 'gemini') {
-        /* Agent Mode: try the previous agent engine once if there is time; otherwise report the failure so the
-           agent step is retried — never answer with the chat fallbacks / offline text (they break the tool protocol) */
-        if (strpos((string)$txt, 'ran out of time') === false && devil_time_left(85) > 25) {
-            $cfgNoG = $cfg; unset($cfgNoG['gemini_api_key']);
-            list($ok, $txt, $hint, $used) = call_engine($cfg, engine_for($cfgNoG, $modelId), $messages);
-        }
-        if (!$ok) { return [false, (string)$txt, null]; }
-        return [true, $txt, $used];
-    }
-
-    /* fallback 1: reliable Prexzy endpoint */
-    if (!$ok && $engine['endpoint'] !== 'askgpt5') {
-        list($ok, $txt, $hint, $used) = call_engine($cfg, prexzy_engine_from_id('askgpt5'), $messages);
-    }
-    /* fallback 2: fast Prexzy endpoint */
-    if (!$ok && $engine['endpoint'] !== 'ch') {
-        list($ok, $txt, $hint, $used) = call_engine($cfg, prexzy_engine_from_id('ch'), $messages);
-    }
-    /* persona safety net: if the engine broke character and named another model,
-       regenerate with the most in-character engine */
-    /* (not for Agent Mode on Gemini: its replies carry tool calls and code, where words like "openai" are normal) */
-    $agentGemini = strpos((string)$used, 'gemini:') === 0;
-    if ($ok && $used !== null && !$agentGemini && reply_leaks($txt) && !identity_question($messages)) {
-        list($ok2, $txt2, $h2, $u2) = call_engine($cfg, prexzy_engine_from_id('aiapk'), $messages, '');
-        if ($ok2 && trim($txt2) !== '') { $txt = $txt2; $used = $u2; $hint = $h2; }
-    }
-
-    /* strip the canned self-intro — but NOT when the user explicitly asked for the identity */
-    if ($ok && $used !== null && !identity_question($messages)) { $txt = strip_intro($txt); }
-
-    /* last resort: offline brain so the user is never left hanging */
+    list($ok, $txt, $hint, $used) = gemini_call($cfg, $models, $rest, $image, $system, $strict ? 40 : 25);
     if (!$ok) {
-        $q = '';
-        foreach (array_reverse($messages) as $m) {
-            if (($m['role'] ?? '') === 'user') { $q = (string)$m['content']; break; }
-        }
-        return [true, "My connection to the other world flickered for a moment, so here's my offline brain talking:\n\n" . offline_reply($q), 'offline'];
+        return [false, ($engine['label'] ?? 'This model') . ' is busy right now. Try again in a moment' . ($strict ? '.' : ' or pick another model.'), null];
     }
-    return [$ok, $txt, $used];
+    return [true, $txt, $used];
 }
 
 /* ══════════════ OFFLINE BRAIN (internal last-resort fallback only) ══════════════ */
@@ -1995,14 +1739,7 @@ function battle_pool(): array {
     static $pool = null;
     if ($pool !== null) { return $pool; }
     $pool = [];
-    $icons = ['flash' => 'zap', 'pro' => 'sparkles', 'ultra' => 'crown'];
-    foreach (['flash', 'pro', 'ultra'] as $id) {
-        $pool[] = ['id' => $id, 'label' => model_label($id), 'icon' => $icons[$id]];
-    }
-    foreach (['gemini', 'qwen', 'aiserv', 'aiwriter-chat']  /* tested: these answer reliably with the Devil persona */ as $iid) {
-        if (!custom_model_by_id($iid)) { continue; }
-        $pool[] = ['id' => 'custom:' . custom_public_id($iid), 'label' => custom_public_label($iid), 'icon' => 'devil'];
-    }
+    foreach (model_catalog() as $m) { $pool[] = ['id' => 'custom:' . $m['id'], 'label' => $m['label'], 'icon' => $m['icon']]; }
     return $pool;
 }
 function battle_model_ok(string $id): bool {
@@ -2011,6 +1748,10 @@ function battle_model_ok(string $id): bool {
 }
 function battle_pick_pair(): array {
     $ids = array_map(function ($m) { return $m['id']; }, battle_pool());
+    /* skip models that are resting (busy / daily limit reached) while at least two others are healthy */
+    $st = gemini_state(); $now = time();
+    $healthy = array_values(array_filter($ids, function ($id) use ($st, $now) { return (int)($st['cool'][substr($id, 7)] ?? 0) <= $now; }));
+    if (count($healthy) >= 2) { $ids = $healthy; }
     shuffle($ids);
     return ['a' => $ids[0] ?? 'flash', 'b' => $ids[1] ?? 'pro'];
 }
@@ -2089,6 +1830,7 @@ function battle_leaderboard(string $uid = ''): array {
         if (!is_array($v)) { continue; }
         $a = (string)($v['a'] ?? ''); $b = (string)($v['b'] ?? ''); $r = (string)($v['v'] ?? '');
         if ($a === '' || $b === '' || $a === $b) { continue; }
+        if (!isset($rows[$a]) || !isset($rows[$b])) { continue; }   /* votes for retired models do not count */
         foreach ([$a, $b] as $id) {
             if (!isset($rows[$id])) { $rows[$id] = ['id' => $id, 'label' => model_label($id), 'icon' => 'devil', 'score' => 1000.0, 'wins' => 0, 'losses' => 0, 'ties' => 0, 'votes' => 0]; }
         }
@@ -3370,7 +3112,7 @@ try {
         $validModel = false;
         foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
         if (!$validModel) { $model = 'flash'; $customModel = ''; }
-        if ($model === 'custom' && !custom_model_by_id($customModel)) { $customModel = 'askgpt5'; }
+        if ($model === 'custom' && !custom_model_by_id($customModel)) { $customModel = slot_model('custom'); }
 
         $branchMsgs = array_slice($msgs0, 0, $idx);
         $edited = $msgs0[$idx];
@@ -3387,6 +3129,7 @@ try {
         $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
         list($ok, $reply, $used) = ai_respond($cfgAll, $aiModel, $providerMsgs, $img);
         if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }
+        $displayLabel = used_model_label($used, $displayLabel);
 
         $assistantMsg = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => $displayLabel];
         if ($customModel !== '') { $assistantMsg['custom_model'] = $customModel; }
@@ -3435,8 +3178,8 @@ try {
         if (!$validModel) { $model = 'flash'; }
         $customModel = '';
         if ($model === 'custom') {
-            $customModel = strtolower(trim((string)($in['custom_model'] ?? 'askgpt5')));
-            if (!custom_model_by_id($customModel)) { $customModel = 'askgpt5'; }
+            $customModel = strtolower(trim((string)($in['custom_model'] ?? '')));
+            if (!custom_model_by_id($customModel)) { $customModel = slot_model('custom'); }
         }
 
         $cfgAll = load_config();
@@ -3524,6 +3267,7 @@ try {
         list($ok, $reply, $used) = ai_respond($cfgAll, $aiModel, $providerMsgs, $aiImg);
         $replyMs = (int)round((microtime(true) - $t0) * 1000);
         if (!$ok) { json_out(['ok' => false, 'error' => $reply, 'hint' => $used], 502); }
+        $displayLabel = used_model_label($used, $displayLabel);
 
         $assistantMsg = ['role' => 'assistant', 'content' => $reply, 'ts' => time(), 'model_id' => $model, 'model_label' => $displayLabel, 'ms' => $replyMs];
         if ($customModel !== '') { $assistantMsg['custom_model'] = $customModel; }
@@ -4075,9 +3819,9 @@ try {
             $pair = (isset($chat['battle_models']['a'], $chat['battle_models']['b']) && battle_model_ok((string)$chat['battle_models']['a']) && battle_model_ok((string)$chat['battle_models']['b']))
                 ? ['a' => (string)$chat['battle_models']['a'], 'b' => (string)$chat['battle_models']['b']] : battle_pick_pair();
         } else {
-            $a = (string)($in['model_a'] ?? 'flash'); $b = (string)($in['model_b'] ?? 'pro');
-            if (!battle_model_ok($a)) { $a = 'flash'; }
-            if (!battle_model_ok($b)) { $b = 'pro'; }
+            $a = (string)($in['model_a'] ?? ''); $b = (string)($in['model_b'] ?? '');
+            if (!battle_model_ok($a)) { $a = 'custom:' . slot_model('flash'); }
+            if (!battle_model_ok($b) || $b === $a) { $b = 'custom:' . slot_model($a === 'custom:' . slot_model('pro') ? 'ultra' : 'pro'); }
             $pair = ['a' => $a, 'b' => $b];
         }
         $chat['battle_models'] = $pair;
@@ -4133,7 +3877,7 @@ try {
         $hist = compare_history(array_slice($msgs, 0, $turn), $side);
         $providerMsgs = array_merge([['role' => 'system', 'content' => devil_persona()]], $hist);
         $t0 = microtime(true);
-        list($ok, $reply, $used) = ai_respond($cfgAll, $modelId, $providerMsgs, '');
+        list($ok, $reply, $used) = ai_respond($cfgAll, $modelId, $providerMsgs, '', true, !$show);
         $ms = (int)round((microtime(true) - $t0) * 1000);
 
         $lock = chat_lock_open($uid, (string)$chat['id']);

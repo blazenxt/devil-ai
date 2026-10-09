@@ -12,7 +12,7 @@ dev_console_start('Playground', 'playground');
     <div>
       <h2><?= icon('message-circle', 18) ?> Request</h2>
       <label class="sub" for="pgModel" style="display:block;margin-bottom:6px">Model</label>
-      <select class="field" id="pgModel"><option value="devil-flash">Devil Flash</option><option value="devil-pro">Devil Pro</option><option value="devil-ultra">Devil Ultra</option></select>
+      <select class="field" id="pgModel"><option value="devil-flash">Gemini 3.5 Flash Lite</option><option value="devil-pro">Gemini 3.6 Flash</option><option value="devil-ultra">Gemini 3.8 Flash</option></select>
       <label class="sub" for="pgSystem" style="display:block;margin:12px 0 6px">Optional developer instruction</label>
       <input class="field" id="pgSystem" type="text" maxlength="1200" placeholder="e.g. Reply in Hinglish">
       <label class="sub" for="pgPrompt" style="display:block;margin:12px 0 6px">Prompt</label>

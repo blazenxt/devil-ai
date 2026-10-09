@@ -88,7 +88,7 @@ function site_page_content(string $p): ?array {
   <a class="mcard" href="battle"><span class="sic">' . icon('swords', 20) . '</span><b>Battle</b><span>Two anonymous models answer. Vote, then the names are revealed.</span></a>
   <a class="mcard" href="agent"><span class="sic">' . icon('spark', 20) . '</span><b>Agent</b><span>Built for complex tasks: it writes and runs code, builds apps, tests them and gives you a live preview.</span></a>
   <a class="mcard" href="side-by-side"><span class="sic">' . icon('columns', 20) . '</span><b>Side by Side</b><span>Compare two models of your choice on the same prompt.</span></a>
-  <a class="mcard" href="direct"><span class="sic">' . icon('message', 20) . '</span><b>Direct</b><span>Chat with one model at a time — Devil Flash, Pro, Ultra or a custom engine.</span></a>
+  <a class="mcard" href="direct"><span class="sic">' . icon('message', 20) . '</span><b>Direct</b><span>Chat with one model at a time — Gemini 3.8 Flash, Gemma 4 and more, by their real names.</span></a>
 </div>
 <h2 class="sect">How the ranking is calculated</h2>
 <div class="prose"><p>Each Battle vote is a match between two models. We use the <b>Elo rating system</b>: every model starts at 1000 points. A win against a stronger model earns more points than a win against a weaker one; a tie moves both scores towards each other. "Both are bad" votes count as a tie.</p>
@@ -123,7 +123,7 @@ function site_page_content(string $p): ?array {
 <h2>What we build</h2>
 </div>
 <div class="feat">
-  <div><span class="sic">' . icon('message', 18) . '</span><b>Chat</b><p>Devil Flash, Pro and Ultra, plus custom engines — with files, images, voice, sharing and export.</p></div>
+  <div><span class="sic">' . icon('message', 18) . '</span><b>Chat</b><p>Nine Google models (Gemini Flash, Flash Lite and Gemma) by their real names — with files, images, voice, sharing and export.</p></div>
   <div><span class="sic">' . icon('swords', 18) . '</span><b>Battles</b><p>Anonymous head-to-head comparisons that power the public leaderboard.</p></div>
   <div><span class="sic">' . icon('spark', 18) . '</span><b>Agent</b><p>An agent with its own workspace that builds, runs and tests real software.</p></div>
   <div><span class="sic">' . icon('shield', 18) . '</span><b>Privacy</b><p>No passwords, no ad trackers, and chats that you can delete at any time.</p></div>

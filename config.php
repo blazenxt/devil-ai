@@ -14,21 +14,15 @@
 
 return [
 
-    /* ═══════ MODELS → ENGINES (server-side secret) ═══════
-       The public only sees "Devil Flash / Pro / Ultra".
-       Which real engine powers each model is configured here
-       (or in Admin settings) and is NEVER exposed publicly.
-         'prexzy:askgpt5'  — free, no key (fast & strong)
-         'prexzy:gemini'   — free, no key
-         'prexzy:quick'    — free, no key
-         'gemini:key'      — Google Gemini via site API key
-         'demo'            — offline brain
-       Automatic fallback: if any engine fails, Devil AI
-       retries on Prexzy — the chat never dies.            */
+    /* ═══════ QUICK MODEL SLOTS ═══════
+       The three quick picks in the model menu. Each value is
+       'gemini:<model id>' from the model catalogue in api.php
+       (Admin settings can change them). Models show their real names.
+       Needs gemini_api_key (data/config.json).                */
     'engines' => [
-        'flash' => 'prexzy:askgpt5',
-        'pro'   => 'prexzy:gemini',
-        'ultra' => 'gemini:key',
+        'flash' => 'gemini:gemini-3.5-flash-lite',
+        'pro'   => 'gemini:gemini-3.6-flash',
+        'ultra' => 'gemini:gemini-3.8-flash',
     ],
 
     /* Gemini settings (only used by the 'gemini:key' engine).
