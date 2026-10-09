@@ -360,6 +360,7 @@ function sbx_agent_tools_all(): array {
     return [
         'bash'           => 'Run a shell command in your Linux sandbox (cwd /home/user/work). Output and exit code come back. A command that is still running after ~25s keeps running in the background and you get its pid and log file — check it later with tail. Use start_server (not bash) for servers. INPUT: the command(s); several lines are fine.',
         'write_file'     => 'Create or overwrite a file. INPUT: first line = path (relative to /home/user/work), then the full file content on the following lines.',
+        'append_file'    => 'Add text to the END of a file (creates it if missing). Use it to write a big file in parts: write_file the first part, then append_file the rest. INPUT: first line = path, then the text to add.',
         'read_file'      => 'Read a text file from the sandbox. INPUT: path.',
         'list_files'     => 'List files in the workspace. INPUT: a folder path, or "." for everything.',
         'start_server'   => 'Start a long-running app/dev server in the background and get its public preview URL. INPUT: first line = port, second line = command (bind to 0.0.0.0).',
@@ -399,13 +400,55 @@ function sbx_unfence(string $s): string {
 /* ── never reveal which cloud runs the sandbox ──
    Every tool result (text + meta) and every sandbox error shown to the user or the model goes through
    sbx_scrub(): provider names become "sandbox" and raw provider preview links become our own preview links. */
+/* Environment every agent command starts with: the user's saved secrets, plus dev-server host checks
+   opened up so the public preview link works (Vite blocks unknown hosts; CRA/webpack too). */
+function sbx_env_prefix(array $cfg, string $sid): string {
+    $s = '[ -f ' . SBX_SECRETS_FILE . ' ] && . ' . SBX_SECRETS_FILE . '; export DANGEROUSLY_DISABLE_HOST_CHECK=true;';
+    if (sbx_is_cloud($cfg)) {
+        $s .= ' export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=' . (sbx_backend($cfg, $sid) === 'vercel' ? '.vercel.run' : '.daytonaproxy01.net') . ';';
+    }
+    return $s;
+}
+
+/* After write_file / append_file: warn the agent when a file looks cut off (its reply hit the length limit)
+   so it finishes the file with append_file instead of shipping half a stylesheet. */
+function sbx_file_check(string $path, string $content, bool $cut = false): string {
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    $c = rtrim($content);
+    $why = '';
+    if (in_array($ext, ['css', 'scss', 'js', 'mjs', 'ts', 'tsx', 'jsx', 'json', 'php', 'java', 'c', 'cpp', 'go', 'rs'], true)) {
+        $code = preg_replace('#/\*.*?\*/#s', '', $c);
+        $code = preg_replace('#(["\'`])(?:\\\\.|(?!\1).)*\1#s', '""', (string)$code);
+        $open = substr_count((string)$code, '{') - substr_count((string)$code, '}');
+        if ($open > 0) { $why = $open . ' unclosed { brace' . ($open > 1 ? 's' : ''); }
+        elseif ($ext !== 'css' && $ext !== 'scss') {
+            $po = substr_count((string)$code, '(') - substr_count((string)$code, ')');
+            $bo = substr_count((string)$code, '[') - substr_count((string)$code, ']');
+            if ($po > 0) { $why = $po . ' unclosed ( parenthes' . ($po > 1 ? 'es' : 'is'); }
+            elseif ($bo > 0) { $why = $bo . ' unclosed [ bracket' . ($bo > 1 ? 's' : ''); }
+            elseif (preg_match('/[\'"`][^\'"`\n]*$/', rtrim($c)) && preg_match('/[(,=+:]\s*[\'"`][^\'"`\n]*$/', rtrim($c))) { $why = 'it ends inside an unfinished string'; }
+        }
+    } elseif (in_array($ext, ['html', 'htm'], true)) {
+        if (stripos($c, '<html') !== false && stripos($c, '</html>') === false) { $why = 'no closing </html>'; }
+        elseif (stripos($c, '<body') !== false && stripos($c, '</body>') === false) { $why = 'no closing </body>'; }
+    }
+    if ($why === '' && !$cut) { return ''; }
+    $tail = mb_substr($c, -120);
+    if ($why === '') {
+        return "\nNote: your message was very long and may have been cut off by the length limit. The file ends with:\n" . $tail
+            . "\nIf that is not the real end, add the missing rest with append_file (only the missing part). If it is complete, carry on.";
+    }
+    return "\n⚠ This file looks UNFINISHED (" . ($why !== '' ? $why : 'your message was cut off by the length limit') . "). It currently ends with:\n" . $tail
+        . "\nYour replies are cut at about 5,000 characters. Add the missing rest with append_file (only the missing part, continuing exactly from that point) before moving on.";
+}
+
 function sbx_scrub(string $t, array $cfg = []): string {
     if ($t === '' || !preg_match('/daytona|vercel/i', $t)) { return $t; }
     $t = (string)preg_replace_callback('#https?://[a-z0-9.-]+\.(?:vercel\.run|daytonaproxy\d*\.net)(?::\d+)?[^\s"\'<>)\]]*#i', static function ($m) use ($cfg) {
         $u = $cfg ? sbx_public_url($cfg, $m[0]) : $m[0];
         return $u !== $m[0] ? $u : 'the preview link';
     }, $t);
-    $t = (string)preg_replace('#[a-z0-9.-]+\.(?:vercel\.run|daytonaproxy\d*\.net)#i', 'preview-host', $t);
+    $t = (string)preg_replace('#[a-z0-9.-]*\.(?:vercel\.run|daytonaproxy\d*\.net)#i', 'preview-host', $t);
     $t = (string)preg_replace('#[a-z0-9.-]*\bdaytona\.(?:io|work|app)\b[^\s"\'<>)]*#i', 'sandbox-api', $t);
     $t = (string)preg_replace('#/home/(?:daytona|vercel-sandbox)\b#', '/home/sandbox', $t);
     $t = (string)preg_replace('/\b(?:VERCEL|DAYTONA)_[A-Z0-9_]*/', 'SANDBOX_ENV', $t);
@@ -441,7 +484,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
                agent step well under Cloudflare's 100s request limit. */
             $wait = max(10, min(55, (int)($cfg['agent_bash_wait'] ?? 25)));
             $job = '/home/user/.bg/cmd-' . bin2hex(random_bytes(4));
-            $cmd = '[ -f ' . SBX_SECRETS_FILE . ' ] && . ' . SBX_SECRETS_FILE . "\n" . $cmd;
+            $cmd = sbx_env_prefix($cfg, $sid) . "\n" . $cmd;
             $wrapper = 'mkdir -p /home/user/.bg; J=' . $job . '; echo ' . base64_encode($cmd) . ' | base64 -d > "$J.sh"; '
                 . 'nohup setsid bash -c \'bash -l "$1" > >(tee "$1.out" >> "$1.log") 2> >(tee "$1.err" >> "$1.log"); r=$?; sleep 0.2; echo $r > "$1.rc"\' _ "$J.sh" > /dev/null 2>&1 < /dev/null & P=$!; '
                 . 'i=0; while [ ! -f "$J.sh.rc" ] && [ $i -lt ' . ($wait * 5) . ' ]; do sleep 0.2; i=$((i+1)); done; '
@@ -490,7 +533,25 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
             if ($content !== '' && substr($content, -1) !== "\n") { $content .= "\n"; }
             $r = sbx_write($cfg, $sid, $path, $content);
             if (empty($r['ok'])) { return ['ok' => false, 'text' => 'Could not write ' . $path . ': ' . (string)($r['error'] ?? '')]; }
-            return ['ok' => true, 'text' => 'Wrote ' . $path . ' (' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).', 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
+            return ['ok' => true, 'text' => 'Wrote ' . $path . ' (' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . sbx_file_check($path, $content, !empty($ctx['cut'])), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
+        }
+        case 'append_file': {
+            $lines = preg_split('/\r?\n/', ltrim($input, "\r\n"), 2);
+            $path = sbx_rel((string)($lines[0] ?? ''));
+            $add = sbx_unfence((string)($lines[1] ?? ''));
+            if ($path === '.' || $path === '') { return ['ok' => false, 'text' => 'append_file: the first line must be the file path.']; }
+            if ($add === '') { return ['ok' => false, 'text' => 'append_file: nothing to add.']; }
+            $old = sbx_read($cfg, $sid, $path);
+            $prev = !empty($old['ok']) ? (string)$old['data'] : '';
+            if (empty($old['ok']) && (int)($old['status'] ?? 404) !== 404 && stripos((string)($old['error'] ?? ''), 'not found') === false && stripos((string)($old['error'] ?? ''), 'no such') === false) {
+                return ['ok' => false, 'text' => 'Could not read ' . $path . ' to append: ' . (string)($old['error'] ?? '')];
+            }
+            if ($prev !== '' && substr($prev, -1) !== "\n") { $prev .= "\n"; }
+            $content = $prev . $add;
+            if (substr($content, -1) !== "\n") { $content .= "\n"; }
+            $r = sbx_write($cfg, $sid, $path, $content);
+            if (empty($r['ok'])) { return ['ok' => false, 'text' => 'Could not write ' . $path . ': ' . (string)($r['error'] ?? '')]; }
+            return ['ok' => true, 'text' => 'Appended ' . strlen($add) . ' bytes to ' . $path . ' (now ' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . sbx_file_check($path, $content, !empty($ctx['cut'])), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
         }
         case 'read_file': {
             $path = sbx_rel(strtok(trim($input), "\n") ?: '');
@@ -520,7 +581,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
             $cmd = trim((string)($lines[1] ?? ''));
             if ($port < 1024 || $port > 65535 || $cmd === '') { return ['ok' => false, 'text' => 'start_server: first line = port (1024-65535), second line = command.']; }
             sbx_exec($cfg, $sid, 'fuser -k ' . $port . '/tcp >/dev/null 2>&1; true', 15);
-            $r = sbx_exec($cfg, $sid, '[ -f ' . SBX_SECRETS_FILE . ' ] && . ' . SBX_SECRETS_FILE . '; ' . $cmd, 30, true, 6.0);
+            $r = sbx_exec($cfg, $sid, sbx_env_prefix($cfg, $sid) . "\n" . $cmd, 30, true, 6.0);
             if (empty($r['ok'])) { return ['ok' => false, 'text' => 'Could not start: ' . (string)($r['error'] ?? '')]; }
             $listening = false; $url = '';
             for ($i = 0; $i < 6 && !$listening; $i++) {
@@ -558,7 +619,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
 import asyncio, json, sys, os
 from playwright.async_api import async_playwright
 async def main(url, shot):
-    out = {"url": url, "console": [], "errors": []}
+    out = {"url": url, "console": [], "errors": [], "failed": []}
     async with async_playwright() as p:
         try:
             b = await p.chromium.launch(args=["--no-sandbox"])
@@ -567,6 +628,8 @@ async def main(url, shot):
         pg = await b.new_page(viewport={"width": 1280, "height": 800})
         pg.on("console", lambda m: out["console"].append(f"{m.type}: {m.text}"[:300]) if m.type in ("error", "warning") else None)
         pg.on("pageerror", lambda e: out["errors"].append(str(e)[:300]))
+        pg.on("requestfailed", lambda q: out["failed"].append((q.url[:160] + " (" + str(q.failure)[:60] + ")")) if len(out["failed"]) < 12 else None)
+        pg.on("response", lambda s: out["failed"].append(s.url[:160] + " -> HTTP " + str(s.status)) if s.status >= 400 and s.request.resource_type in ("stylesheet", "script", "image", "font", "fetch", "xhr") and len(out["failed"]) < 12 else None)
         try:
             r = await pg.goto(url, wait_until="networkidle", timeout=25000)
             out["status"] = r.status if r else None
@@ -577,6 +640,12 @@ async def main(url, shot):
             out["text"] = (await pg.inner_text("body"))[:5000]
         except Exception as e:
             out["text"] = ""
+        try:
+            out["style"] = await pg.evaluate("""() => { const b = getComputedStyle(document.body); let rules = 0;
+                for (const s of document.styleSheets) { try { rules += s.cssRules.length; } catch (e) { rules += 1; } }
+                return { sheets: document.styleSheets.length, rules: rules, bg: b.backgroundColor, color: b.color, font: b.fontFamily.slice(0, 60) }; }""")
+        except Exception:
+            pass
         os.makedirs(os.path.dirname(shot), exist_ok=True)
         try:
             await pg.screenshot(path=shot)
@@ -602,8 +671,15 @@ PY;
             $j = json_decode($line, true);
             if (!is_array($j)) { return ['ok' => false, 'text' => 'Browser failed: ' . mb_substr($raw, -2000)]; }
             $t = 'Page: ' . ($j['title'] ?? '') . ' (' . $url . ', HTTP ' . ($j['status'] ?? '?') . ")\n";
-            if (!empty($j['errors'])) { $t .= "Page errors:\n- " . implode("\n- ", array_slice((array)$j['errors'], 0, 8)) . "\n"; }
+            if (!empty($j['errors'])) { $t .= "Page errors:\n- " . implode("\n- ", array_slice((array)$j['errors'], 0, 8)) . "\n(These are REAL JavaScript errors in this page — the code after them does not run. They are never a false alarm: fix them. Note: top-level const/let in separate classic <script> tags share ONE global scope, so the same name declared twice breaks the page.)\n"; }
             if (!empty($j['console'])) { $t .= "Console:\n- " . implode("\n- ", array_slice((array)$j['console'], 0, 10)) . "\n"; }
+            if (!empty($j['failed'])) { $t .= "Failed to load (fix these paths / files):\n- " . implode("\n- ", array_slice(array_unique((array)$j['failed']), 0, 10)) . "\n"; }
+            if (!empty($j['style']) && is_array($j['style'])) {
+                $st = $j['style'];
+                $plain = (int)($st['rules'] ?? 0) < 5 || (preg_match('/^"?(times|serif)/i', (string)($st['font'] ?? '')) && preg_match('/rgba\(0, 0, 0, 0\)|rgb\(255, 255, 255\)/', (string)($st['bg'] ?? '')));
+                $t .= 'Styling: ' . (int)($st['rules'] ?? 0) . ' CSS rules in ' . (int)($st['sheets'] ?? 0) . ' stylesheet(s); body background ' . ($st['bg'] ?? '?') . ', text ' . ($st['color'] ?? '?') . ', font ' . ($st['font'] ?? '?') . "\n";
+                if ($plain) { $t .= "⚠ The page looks UNSTYLED (default black-on-white HTML). The CSS is missing, not linked, or failed to load — check the <link href> paths against the real file names and the failed list above, then fix it before telling the user it is styled.\n"; }
+            }
             $t .= "Visible text:\n" . mb_substr((string)($j['text'] ?? ''), 0, 4000);
             if (!empty($j['screenshot'])) { $t .= "\n\nScreenshot saved: " . $j['screenshot']; }
             return ['ok' => empty($j['errors']), 'text' => $t, 'meta' => ['screenshot' => (string)($j['screenshot'] ?? ''), 'url' => $url]];

@@ -158,7 +158,7 @@ function prexzy_ai_catalog(): array {
     if ($models !== null) { return $models; }
     $models = [
         ['id' => 'dream',          'label' => 'AI Dream Interpreter',   'company' => 'Prexzy AI',                 'scope' => 'Dream analysis',      'icon' => 'prexzy',  'path' => '/ai/dream',          'param' => 'dream',  'memory' => false],
-        ['id' => 'aiwriter-chat',  'label' => 'AI Writer Chat',         'company' => 'OpenAI / AI Writer',        'scope' => 'Writing chat',        'icon' => 'openai',  'path' => '/ai/aiwriter-chat',  'param' => 'prompt', 'defaults' => ['model' => 'gpt-4o-mini']],
+        ['id' => 'aiwriter-chat',  'label' => 'AI Writer Chat',         'company' => 'OpenAI / AI Writer',        'scope' => 'Writing chat',        'icon' => 'openai',  'path' => '/ai/aiwriter-chat',  'param' => 'prompt', 'defaults' => ['model' => 'gpt-4o-mini'], 'max_prompt' => 11800 /* reads only the first ~12k chars */],
         ['id' => 'ai4chat',        'label' => 'AI4Chat',                'company' => 'AI4Chat',                   'scope' => 'General chat',        'icon' => 'prexzy',  'path' => '/ai/ai4chat',        'param' => 'prompt'],
         ['id' => 'aiapk',          'label' => 'AiApp AI',               'company' => 'AiApp',                     'scope' => 'Chat + vision',       'icon' => 'aiapp',   'path' => '/ai/aiapk',          'param' => 'prompt', 'image_param' => 'image', 'vision' => true],
         ['id' => 'aiappgen',       'label' => 'AiApp Image Generator',  'company' => 'AiApp / Flux / DALL·E',     'scope' => 'Image generation',    'icon' => 'image',   'path' => '/ai/aiappgen',       'param' => 'prompt', 'image_param' => 'image', 'memory' => false],
@@ -274,6 +274,7 @@ function custom_model_label(string $id): string {
 
 function model_label(string $id): string {
     if (strpos($id, 'custom:') === 0) { return custom_model_label(substr($id, 7)); }
+    if ($id === 'agent') { return 'Devil Agent'; }
     foreach (public_models() as $m) { if ($m['id'] === $id) { return $m['label']; } }
     return 'Devil AI';
 }
@@ -294,6 +295,9 @@ function model_engine_defaults(): array {
         'pro'    => 'prexzy:askgpt5', /* reliable */
         'ultra'  => 'prexzy:aiapk',   /* smartest, stays in character */
         'custom' => 'prexzy:askgpt5',
+        /* Agent Mode always uses this one (users do not pick a model there): the strongest coder that
+           follows the tool protocol — tested 2026-10 against every engine. Override: config agent_engine. */
+        'agent'  => 'prexzy:aiwriter-chat@claude-3.5-sonnet-v2',
     ];
 }
 
@@ -304,9 +308,16 @@ function engine_for(array $cfg, string $model_id): array {
     }
     $defaults = model_engine_defaults();
     $eng = (string)($cfg['engines'][$model_id] ?? ($defaults[$model_id] ?? 'prexzy:askgpt5'));
-    /* every engine is a Prexzy endpoint — anything unknown (incl. legacy values) coerces to the model default */
-    if (preg_match('/^prexzy:([a-z0-9_-]+)$/i', $eng, $m)) {
-        return prexzy_engine_from_id(strtolower($m[1]));
+    if ($model_id === 'agent' && !empty($cfg['agent_engine']) && is_string($cfg['agent_engine'])) { $eng = (string)$cfg['agent_engine']; }
+    /* every engine is a Prexzy endpoint — anything unknown (incl. legacy values) coerces to the model default.
+       "prexzy:endpoint@sub-model" picks a model inside endpoints that offer several (aiwriter-chat). */
+    if (preg_match('/^prexzy:([a-z0-9_-]+)(?:@([a-z0-9._-]{2,40}))?$/i', $eng, $m)) {
+        $e = prexzy_engine_from_id(strtolower($m[1]));
+        if (!empty($m[2]) && strtolower((string)($e['id'] ?? '')) === strtolower($m[1])) {
+            $e['defaults'] = array_merge((array)($e['defaults'] ?? []), ['model' => $m[2]]);
+            $e['submodel'] = $m[2];
+        }
+        return $e;
     }
     $fallback = strtolower((string)($defaults[$model_id] ?? 'prexzy:askgpt5'));
     $fallback = preg_replace('/^prexzy:/', '', $fallback);
@@ -1537,6 +1548,13 @@ function extract_ai_text($j): string {
     if (!is_array($j)) { return ''; }
     foreach (['response', 'result', 'answer', 'message', 'text', 'content', 'output', 'reply', 'url', 'image', 'image_url', 'file', 'link'] as $k) {
         if (isset($j[$k]) && is_scalar($j[$k]) && trim((string)$j[$k]) !== '') { return trim((string)$j[$k]); }
+    }
+    /* some endpoints stream the answer back as a list of text chunks: {"text": ["part 1", "part 2"]} */
+    foreach (['text', 'response', 'answer', 'content'] as $k) {
+        if (isset($j[$k]) && is_array($j[$k]) && $j[$k] && array_keys($j[$k]) === range(0, count($j[$k]) - 1)) {
+            $parts = array_filter($j[$k], 'is_string');
+            if (count($parts) === count($j[$k])) { $t = trim(implode('', $parts)); if ($t !== '') { return $t; } }
+        }
     }
     foreach (['data', 'result', 'results', 'choices'] as $k) {
         if (isset($j[$k])) {
@@ -3450,20 +3468,14 @@ try {
             $temp = !empty($in['temp']);
             $variantId = (string)($in['variant'] ?? '');
             $msg = trim((string)($in['message'] ?? ''));
-            $model = (string)($in['model'] ?? 'flash');
+            /* Agent Mode has no model picker: it always runs on the Devil Agent engine */
+            $model = 'agent';
             $img = '';
             if (isset($in['image']) && is_string($in['image']) && trim($in['image']) !== '') {
                 $img = validate_image($in['image']);
                 if ($img === null) { json_out(['ok' => false, 'error' => 'That image could not be read. Use a PNG, JPEG, GIF or WebP file under 2 MB.'], 400); }
             }
-            $validModel = false;
-            foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
-            if (!$validModel) { $model = 'flash'; }
             $customModel = '';
-            if ($model === 'custom') {
-                $customModel = strtolower(trim((string)($in['custom_model'] ?? 'askgpt5')));
-                if (!custom_model_by_id($customModel)) { $customModel = 'askgpt5'; }
-            }
             $rl = (int)$cfgAll['rate_per_hour'];
             if (!rate_ok('rl.json', 'u:' . $uid, $rl, 3600)) {
                 json_out(['ok' => false, 'error' => "Easy there, human! You're sending messages too fast.", 'hint' => 'Limit: ' . $rl . ' messages per hour. Please wait a bit.'], 429);
@@ -3581,7 +3593,7 @@ try {
                 'model' => $model, 'custom_model' => $customModel, 'ai_model' => ($model === 'custom') ? ('custom:' . $customModel) : $model,
                 'model_label' => $displayLabel, 'model_out' => ['id' => $model, 'label' => $displayLabel] + ($customModel !== '' ? ['custom' => $customModel] : []),
                 'sandbox' => $sbxOn, 'sid' => $sid, 'image' => $img, 'history' => $history, 'trace' => [], 'state' => 'model',
-                'max_steps' => max(3, min(60, (int)($cfgAll['agent_sandbox_max_steps'] ?? 30))), 't0' => microtime(true), 'created' => time(), 'updated' => time(),
+                'max_steps' => max(3, min(100, (static function ($v) { return ($v === 30 || $v <= 0) ? 50 : $v; })((int)($cfgAll['agent_sandbox_max_steps'] ?? 50)))), 't0' => microtime(true), 'created' => time(), 'updated' => time(),
             ];
             if (!$sbxOn) { $job['max_steps'] = max(1, (int)($cfgAll['agent_max_steps'] ?? 6)); }
             if (!save_json_atomic($jobPath($jid), $job)) { json_out(['ok' => false, 'error' => 'Could not create the agent job — check data/ permissions.'], 500); }
@@ -3731,20 +3743,13 @@ try {
         $temp   = !empty($in['temp']);
         $variantId = (string)($in['variant'] ?? '');
         $msg    = trim((string)($in['message'] ?? ''));
-        $model  = (string)($in['model'] ?? 'flash');
+        $model  = 'agent';   /* Agent Mode: fixed engine, no model picker */
         $img    = '';
         if (isset($in['image']) && is_string($in['image']) && trim($in['image']) !== '') {
             $img = validate_image($in['image']);
             if ($img === null) { json_out(['ok' => false, 'error' => 'That image could not be read. Use a PNG, JPEG, GIF or WebP file under 2 MB.'], 400); }
         }
-        $validModel = false;
-        foreach (public_models() as $mm) { if ($mm['id'] === $model) { $validModel = true; break; } }
-        if (!$validModel) { $model = 'flash'; }
         $customModel = '';
-        if ($model === 'custom') {
-            $customModel = strtolower(trim((string)($in['custom_model'] ?? 'askgpt5')));
-            if (!custom_model_by_id($customModel)) { $customModel = 'askgpt5'; }
-        }
 
         /* per-user rate limit (an agent turn counts as one message) */
         $rl = (int)$cfgAll['rate_per_hour'];

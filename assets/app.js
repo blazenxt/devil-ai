@@ -232,6 +232,7 @@ function providerIcon(key) {
 }
 
 function activeModelLabel() {
+  if (agentMode) { return 'Devil Agent'; }   /* Agent Mode: one fixed engine, no model picker */
   if (currentModel === 'custom') { return (customById[currentCustom] || {}).label || 'Custom AI'; }
   return (modelById[currentModel] || {}).label || 'Devil AI';
 }
@@ -301,6 +302,8 @@ function inline(s) {
   function hold(html) { keep.push(html); return '\u0000' + (keep.length - 1) + '\u0000'; }
   /* inline code first: nothing inside it is formatted */
   s = s.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, function (m, t, c) { return hold('<code>' + c.trim() + '</code>'); });
+  /* backslash escapes: \* \_ \# … show the character itself, unformatted */
+  s = s.replace(/\\{1,2}([\\`*_{}\[\]()#+\-.!|~])/g, function (m, c) { return hold(c); });
   /* images and links */
   s = s.replace(/!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\s*\)/g, function (m, alt, u) {
     var href = mdSafeUrl(u); if (!href || !/^https?:/i.test(href)) { return m; }
@@ -335,7 +338,8 @@ function md(src) {
   function flushPara() { if (para.length) { out.push('<p>' + para.map(inline).join('<br>') + '</p>'); para = []; } }
   function isTableSep(l) { return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l) && l.indexOf('-') !== -1; }
   function cells(l) { l = l.trim().replace(/^\|/, '').replace(/\|$/, ''); return l.replace(/\\\|/g, '\u0001').split('|').map(function (c) { return c.trim().replace(/\u0001/g, '|'); }); }
-  var LIST = /^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$/;
+  /* some models escape their bullets ("\* item", "1\. item") — still a list */
+  var LIST = /^(\s*)(?:\\{1,2}(?=[-*+]))?([-*+]|\d{1,3}\\?[.)])\s+(.*)$/;
   while (i < lines.length) {
     var line = lines[i], t = line.trim(), m;
     /* fenced code */
@@ -1018,7 +1022,7 @@ function renderCurrentMessages() {
     if (!m || !m.role) { return; }
     if (m.compare) { renderCompareTurn(m, idx); return; }
     if (m.role === 'user') { addUserMsg(m.content || '', m.img || '', { index: idx, edited: !!m.edited, branchGroup: branchGroupFor(idx), attachments: m.attachments || [] }); }
-    else { var el = addAiMsg({ modelTag: m.model_label }); aiContent(el, m.content || '', { index: idx, ms: m.ms || m.agent_ms }); if ((m.agent_steps && m.agent_steps.length) || m.agent_ms) { renderAgentTrace(el, m.agent_steps || [], m.agent_ms); } if (m.ask && idx === arr.length - 1) { renderAskChips(el, m.ask); } }
+    else { var el = addAiMsg({ modelTag: agentMode ? 'Devil Agent' : m.model_label }); aiContent(el, m.content || '', { index: idx, ms: m.ms || m.agent_ms }); if ((m.agent_steps && m.agent_steps.length) || m.agent_ms) { renderAgentTrace(el, m.agent_steps || [], m.agent_ms); } if (m.ask && idx === arr.length - 1) { renderAskChips(el, m.ask); } }
   });
   refreshMessageActions();
   scrollDown();
@@ -2826,6 +2830,7 @@ var agentRun = null;   /* { job, el, seq, steps:[], t0, stopped } */
 Object.assign(AGX_TOOLS, {
   bash:           { verb: 'Ran command', icon: 'terminal' },
   write_file:     { verb: 'Wrote file', icon: 'pencil' },
+  append_file:    { verb: 'Wrote file', icon: 'pencil' },
   read_file:      { verb: 'Read file', icon: 'fileText' },
   list_files:     { verb: 'Listed files', icon: 'folderS' },
   start_server:   { verb: 'Started app', icon: 'play' },
@@ -2838,7 +2843,7 @@ agxArg = function (s) {
   var inp = String(s.input || '');
   var first = inp.replace(/^\s*```[\w.+-]*\s*\n/, '').split('\n')[0].trim();
   if (s.tool === 'bash') { return first + (inp.trim().split('\n').length > 1 ? ' …' : ''); }
-  if (s.tool === 'write_file' || s.tool === 'read_file' || s.tool === 'generate_image') { return first; }
+  if (s.tool === 'write_file' || s.tool === 'append_file' || s.tool === 'read_file' || s.tool === 'generate_image') { return first; }
   if (s.tool === 'list_files') { return first || '.'; }
   if (s.tool === 'start_server') { var l = inp.trim().split('\n'); return 'port ' + (l[0] || '').trim() + (l[1] ? ' — ' + l[1].trim() : ''); }
   return agxArgBase(s);
@@ -2851,7 +2856,7 @@ function sbxFileUrl(path, dl) { return 'api.php?action=sbx_file&' + sbxChatQuery
 function agxOutHtml(s) {
   var out = String(s.output || '').trim(), meta = s.meta || {}, h = '';
   if (s.tool === 'bash') { h = '<div class="agx-cmd">$ ' + esc(String(s.input || '').trim()) + '</div>' + esc(out); }
-  else if (s.tool === 'write_file') { var body = String(s.input || '').split('\n').slice(1).join('\n'); h = esc(out) + (body.trim() ? '<div class="agx-code">' + esc(body.replace(/^\s*```[\w.+-]*\s*\n|\n?```\s*$/g, '')) + '</div>' : ''); }
+  else if (s.tool === 'write_file' || s.tool === 'append_file') { var body = String(s.input || '').split('\n').slice(1).join('\n'); h = esc(out) + (body.trim() ? '<div class="agx-code">' + esc(body.replace(/^\s*```[\w.+-]*\s*\n|\n?```\s*$/g, '')) + '</div>' : ''); }
   else { h = esc(out); }
   var img = meta.screenshot || meta.image;
   if (img && SBX.on) { h += '<img class="agx-shot" loading="lazy" alt="" src="' + esc(sbxFileUrl(img)) + '">'; }
@@ -2922,7 +2927,7 @@ var AGT = {
   send: agtSvg('<path d="M5 12h14M13 6l6 6-6 6"/>', 14),
   x: agtSvg('<path d="M18 6 6 18M6 6l12 12"/>', 13)
 };
-var AGT_SBX_TOOLS = /^(bash|write_file|read_file|list_files|start_server|browser|generate_image|ask_user)$/;
+var AGT_SBX_TOOLS = /^(bash|write_file|append_file|read_file|deploy_site|list_files|start_server|browser|generate_image|ask_user)$/;
 function agtUse(steps, live) {
   if (live || agentMode) { return true; }
   return (steps || []).some(function (s) { return s && AGT_SBX_TOOLS.test(s.tool || ''); });
@@ -3034,10 +3039,11 @@ function agtRow(s, running) {
   var m = s.meta || {}, inp = String(s.input || ''), first = inp.replace(/^\s*```[\w.+-]*\s*\n/, '').split('\n')[0].trim();
   var out = String(s.output || '').trim(), verb, arg = first, info = '', body = '', extra = null, openPath = '', live = '';
   switch (s.tool) {
-    case 'write_file': {
+    case 'write_file':
+    case 'append_file': {
       var content = agtUnfence(inp.replace(/^\s*[^\n]*\n?/, ''));
       var nl = (out.match(/(\d+) lines\)/) || [])[1], total = nl ? Number(nl) + 1 : content.split('\n').length;
-      verb = running ? 'Writing' : 'Write'; openPath = running ? '' : first;
+      verb = s.tool === 'append_file' ? (running ? 'Appending' : 'Append') : (running ? 'Writing' : 'Write'); openPath = running ? '' : first;
       info = running ? '' : total + ' line' + (total === 1 ? '' : 's');
       var shown = content.split('\n').length, partial = !running && total > shown + 1;
       body = content.trim() ? agtCode(content, { more: partial ? (total - shown) + ' more lines — open the file to see all' : '' }) : '';
@@ -3077,7 +3083,7 @@ function agtRow(s, running) {
     default: verb = (running ? 'Using ' : 'Used ') + (s.tool || 'tool'); body = out ? agtPre(out) : '';
   }
   if (!running && !s.ok) { info = (info ? info + ' · ' : '') + 'failed'; if (!body && out) { body = agtPre(out, 'err'); } }
-  if (!running && s.ms && s.tool !== 'write_file' && s.tool !== 'read_file') { info = (info ? info + ' · ' : '') + agtMs(s.ms); }
+  if (!running && s.ms && s.tool !== 'write_file' && s.tool !== 'append_file' && s.tool !== 'read_file') { info = (info ? info + ' · ' : '') + agtMs(s.ms); }
   var r = document.createElement('div');
   r.className = 'agt-row' + (running ? ' running' : '') + (!running && !s.ok ? ' fail' : '');
   r.innerHTML = '<button type="button" class="agt-rh"><span class="agt-verb' + (running ? ' agx-shimmer' : '') + '">' + esc(verb) + '</span>' +
@@ -3361,6 +3367,7 @@ function agtLiveLabel(tool, input) {
     }
     case 'start_server': return ['Starting the server…', 'Running commands…'];
     case 'write_file': return [first ? 'Writing ' + agtBase(first) + '…' : 'Writing code…'];
+    case 'append_file': return [first ? 'Writing ' + agtBase(first) + '…' : 'Writing code…'];
     case 'edit_file': return [first ? 'Editing ' + agtBase(first) + '…' : 'Editing code…'];
     case 'read_file': return [first ? 'Reading ' + agtBase(first) + '…' : 'Reading files…', 'Exploring files…'];
     case 'list_files': return ['Exploring files…'];

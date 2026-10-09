@@ -563,7 +563,7 @@ body.devil-ui:not(.agent-mode) #customWrap{order:4}
 body.devil-ui:not(.agent-mode) #promptBtn{order:5}
 body.devil-ui:not(.agent-mode) #voiceBtn{order:6}
 body.devil-ui #modelBtn,body.devil-ui #customModelBtn{border-color:transparent;color:var(--text);font-weight:500;padding:6px 9px;border-radius:8px;background:transparent}
-body.agent-mode #modelBtn,body.agent-mode #customModelBtn{color:var(--dim)}
+body.agent-mode #modelBtn,body.agent-mode #customModelBtn,body.agent-mode #modelMenu,body.agent-mode #customModelMenu{display:none!important}  /* Agent Mode runs on one fixed engine — no model picker */
 body.devil-ui #modelBtn:hover,body.devil-ui #customModelBtn:hover{background:var(--ag-hover);border-color:transparent;color:var(--text)}
 body.devil-ui #sendBtn[hidden]{display:flex!important}
 body.devil-ui #sendBtn{width:32px;height:32px;border-radius:8px;background:transparent;color:var(--dim);border:1px solid var(--border);box-shadow:none}

@@ -72,7 +72,7 @@ return [
     'sandbox_enabled' => false,
     'sandbox_url' => 'https://api.sandbox.devil.blazenxt.qzz.io',
     'sandbox_secret' => '',
-    'agent_sandbox_max_steps' => 30,
+    'agent_sandbox_max_steps' => 50,
     'security_block_disposable_emails' => true,
     'security_block_subdomain_emails' => true,
     'security_extra_blocked_email_domains' => [],

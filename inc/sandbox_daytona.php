@@ -84,14 +84,54 @@ function dyt_create(array $cfg, string $sid): array {
         'target' => (string)($cfg['daytona_target'] ?? '') ?: 'us',
         'public' => true,                       /* previews open without a token (the URL itself is unguessable) */
         'autoStopInterval' => max(5, (int)($cfg['daytona_auto_stop'] ?? 15)),
-        'autoArchiveInterval' => 60 * 24,
+        /* archive soon after it stops: archiving moves the files to object storage and frees the org's
+           disk quota (30 GiB = only 10 sandboxes otherwise). The files stay; starting it again restores them. */
+        'autoArchiveInterval' => max(1, (int)($cfg['daytona_auto_archive'] ?? 15)),
         'autoDeleteInterval' => max(60, (int)($cfg['daytona_auto_delete'] ?? 60 * 24 * 3)),
         'labels' => ['devil_sid' => $sid, 'app' => 'devil-ai'],
     ];
     if (!empty($cfg['daytona_snapshot'])) { $body['snapshot'] = (string)$cfg['daytona_snapshot']; }
     [$st, $j, , $err] = dyt_http($cfg, 'POST', dyt_api($cfg) . '/sandbox', (string)json_encode($body), 60);
-    if ($st < 200 || $st >= 300 || empty($j['id'])) { return ['ok' => false, 'error' => $err ?: 'could not create the sandbox', 'down' => true]; }
+    if (($st < 200 || $st >= 300 || empty($j['id'])) && dyt_quota_error($err) && dyt_free_quota($cfg) > 0) {
+        /* disk quota full: older stopped sandboxes were just sent to archive — give it a moment, then retry once */
+        for ($i = 0; $i < 6; $i++) {
+            sleep(3);
+            [$st, $j, , $err] = dyt_http($cfg, 'POST', dyt_api($cfg) . '/sandbox', (string)json_encode($body), 60);
+            if ($st >= 200 && $st < 300 && !empty($j['id'])) { break; }
+            if (!dyt_quota_error($err)) { break; }
+        }
+    }
+    if ($st < 200 || $st >= 300 || empty($j['id'])) { return ['ok' => false, 'error' => dyt_friendly_error($err, 'could not create the sandbox'), 'down' => true]; }
     return ['ok' => true, 'sb' => $j, 'new' => true];
+}
+
+/** Never show the provider's own error text (plan tiers, org ids, API host names) to users or the model. */
+function dyt_friendly_error(string $err, string $fallback): string {
+    if ($err === '') { return $fallback; }
+    if (dyt_quota_error($err)) { return 'All workspaces are busy right now (storage is full). Please try again in a minute.'; }
+    if (preg_match('/\btier\b|organi[sz]ation|billing|upgrade|suspend|credit|payment/i', $err)) { return 'The workspace service is temporarily unavailable. Please try again in a minute.'; }
+    if (preg_match('/daytona|https?:\/\//i', $err) || strlen($err) > 200) { return $fallback; }
+    return $err;
+}
+
+function dyt_quota_error(string $err): bool {
+    return (bool)preg_match('/disk limit|quota|limit exceeded|concurrency limit|not enough (?:disk|resources)/i', $err);
+}
+
+/** Free disk quota: archive the oldest STOPPED sandboxes of this app (files are kept in object storage and come
+    back on the next start — nothing is deleted). Returns how many were sent to archive. */
+function dyt_free_quota(array $cfg, int $want = 2): int {
+    [$st, $j] = dyt_http($cfg, 'GET', dyt_api($cfg) . '/sandbox?' . http_build_query(['labels' => json_encode(['app' => 'devil-ai'])]), null, 20);
+    if ($st !== 200 || !is_array($j)) { return 0; }
+    $items = isset($j['items']) ? (array)$j['items'] : (array_is_list($j) ? $j : []);
+    $stopped = array_values(array_filter($items, static function ($it) { return is_array($it) && (string)($it['state'] ?? '') === 'stopped'; }));
+    usort($stopped, static function ($a, $b) { return strcmp((string)($a['updatedAt'] ?? ''), (string)($b['updatedAt'] ?? '')); });
+    $n = 0;
+    foreach (array_slice($stopped, 0, $want) as $it) {
+        [$as] = dyt_http($cfg, 'POST', dyt_api($cfg) . '/sandbox/' . rawurlencode((string)$it['id']) . '/archive', '', 20);
+        if ($as >= 200 && $as < 300) { $n++; }
+    }
+    return $n;
 }
 
 /** wait until the sandbox is started (starting it if it was stopped/archived) */
@@ -101,7 +141,7 @@ function dyt_wait_started(array $cfg, string $id, int $maxSec = 45, bool $wake =
     while (true) {
         [$st, $j, , $err] = dyt_http($cfg, 'GET', dyt_api($cfg) . '/sandbox/' . rawurlencode($id), null, 15);
         if ($st === 404) { return ['ok' => false, 'gone' => true, 'error' => 'sandbox not found']; }
-        if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => $err ?: 'sandbox state unknown', 'down' => $st === 0 || $st === 401 || $st === 402 || $st === 403 || $st >= 500]; }
+        if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => dyt_friendly_error($err, 'sandbox state unknown'), 'down' => $st === 0 || $st === 401 || $st === 402 || $st === 403 || $st >= 500]; }
         $state = (string)($j['state'] ?? '');
         if ($state === 'started') { return ['ok' => true, 'sb' => $j]; }
         if (in_array($state, ['destroyed', 'destroying', 'error', 'build_failed'], true)) { return ['ok' => false, 'gone' => true, 'error' => 'sandbox ' . $state]; }
@@ -194,7 +234,7 @@ function dyt_exec(array $cfg, string $sid, string $cmd, int $timeout = 80, bool 
         $sh = 'mkdir -p /home/user/.bg; nohup setsid bash -lc ' . escapeshellarg($cmd) . ' > ' . $log . ' 2>&1 < /dev/null & echo "__PID=$!"; '
             . 'sleep ' . sprintf('%.1f', $w) . '; tail -c 6000 ' . $log . ' 2>/dev/null';
         [$st, $j, , $err] = dyt_call($cfg, $sid, 'POST', '/process/execute', (string)json_encode(['command' => 'bash -c ' . escapeshellarg($sh), 'cwd' => $cwd, 'timeout' => (int)ceil($w) + 20]), (int)ceil($w) + 30);
-        if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => $err ?: 'exec failed']; }
+        if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => dyt_friendly_error($err, 'exec failed')]; }
         $res = (string)($j['result'] ?? '');
         $pid = preg_match('/__PID=(\d+)/', $res, $m) ? $m[1] : '';
         $out = trim((string)preg_replace('/^.*?__PID=\d+\r?\n?/s', '', $res));
@@ -206,7 +246,7 @@ function dyt_exec(array $cfg, string $sid, string $cmd, int $timeout = 80, bool 
     if ($code === 'PROCESS_EXECUTION_TIMEOUT' || $code === 'TIMEOUT') {
         return ['ok' => true, 'exit_code' => 124, 'timed_out' => true, 'stdout' => '', 'stderr' => 'timed out after ' . $t . 's', 'ms' => (int)((microtime(true) - $t0) * 1000)];
     }
-    if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => $err ?: 'exec failed']; }
+    if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => dyt_friendly_error($err, 'exec failed')]; }
     $rc = (int)($j['exitCode'] ?? 0);
     $out = (string)($j['result'] ?? '');
     $trunc = false;
@@ -258,7 +298,7 @@ function dyt_read(array $cfg, string $sid, string $path): array {
     [$st, , $body, $err, $code] = dyt_call($cfg, $sid, 'GET', '/files/download?' . http_build_query(['path' => dyt_abs($path)]), null, 60, false);
     if ($code === 'NONE') { return ['ok' => false, 'error' => 'file not found', 'status' => 404]; }
     if ($st === 404 || $code === 'FILE_NOT_FOUND') { return ['ok' => false, 'error' => 'file not found', 'status' => 404]; }
-    if ($st !== 200) { return ['ok' => false, 'error' => $err ?: 'read failed', 'status' => $st]; }
+    if ($st !== 200) { return ['ok' => false, 'error' => dyt_friendly_error($err, 'read failed'), 'status' => $st]; }
     if (strlen($body) > 25 * 1024 * 1024) { return ['ok' => false, 'error' => 'file is larger than 25 MB', 'status' => 413]; }
     return ['ok' => true, 'data' => $body, 'type' => dyt_mime($path)];
 }
@@ -274,7 +314,7 @@ function dyt_write(array $cfg, string $sid, string $path, string $data): array {
     }
     [$st, , , $err] = dyt_call($cfg, $sid, 'POST', '/files/upload?' . http_build_query(['path' => dyt_abs($path)]), ['file' => $file], 120);
     if (isset($tmp)) { @unlink($tmp); }
-    if ($st < 200 || $st >= 300) { return ['ok' => false, 'error' => $err ?: 'write failed']; }
+    if ($st < 200 || $st >= 300) { return ['ok' => false, 'error' => dyt_friendly_error($err, 'write failed')]; }
     return ['ok' => true, 'path' => ltrim($path, '/'), 'size' => strlen($data)];
 }
 
@@ -306,7 +346,7 @@ function dyt_ports(array $cfg, string $sid): array {
     $e = dyt_ensure($cfg, $sid, false, false);   /* just looking: never create or wake a sandbox for this */
     if (empty($e['ok'])) { return ['ok' => true, 'ports' => []]; }
     [$st, $j, , $err] = dyt_tb($cfg, $e['id'], 'POST', '/process/execute', (string)json_encode(['command' => 'ss -ltnH', 'timeout' => 15]), 25);
-    if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => $err ?: 'ports failed', 'ports' => []]; }
+    if ($st !== 200 || !is_array($j)) { return ['ok' => false, 'error' => dyt_friendly_error($err, 'ports failed'), 'ports' => []]; }
     $ports = [];
     foreach (preg_split('/\r?\n/', (string)($j['result'] ?? '')) as $line) {
         $c = preg_split('/\s+/', trim($line));
@@ -336,7 +376,7 @@ function dyt_zip(array $cfg, string $sid): array {
     if (empty($r['ok'])) { return ['ok' => false, 'error' => (string)($r['error'] ?? 'zip failed')]; }
     [$st, , $body, $err] = dyt_call($cfg, $sid, 'GET', '/files/download?' . http_build_query(['path' => $tmp]), null, 120);
     dyt_exec($cfg, $sid, 'rm -f ' . $tmp, 10);
-    return $st === 200 ? ['ok' => true, 'data' => $body] : ['ok' => false, 'error' => $err ?: 'zip download failed'];
+    return $st === 200 ? ['ok' => true, 'data' => $body] : ['ok' => false, 'error' => dyt_friendly_error($err, 'zip download failed')];
 }
 
 /** delete the sandbox of a chat (chat deleted) */
