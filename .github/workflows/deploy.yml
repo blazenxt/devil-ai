@@ -174,9 +174,10 @@ jobs:
           DEVIL_CSB_API_KEY: ${{ secrets.DEVIL_CSB_API_KEY }}
           DEVIL_CSB_TEMPLATE: ${{ secrets.DEVIL_CSB_TEMPLATE }}
           DEVIL_PREVIEW_KEY: ${{ secrets.DEVIL_PREVIEW_KEY }}
+          DEVIL_GEMINI_API_KEY: ${{ secrets.DEVIL_GEMINI_API_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ] && [ -z "${DEVIL_VERCEL_TOKEN:-}" ] && [ -z "${DEVIL_E2B_API_KEY:-}" ] && [ -z "${DEVIL_CSB_API_KEY:-}" ]; then
+          if [ -z "${DEVIL_GEMINI_API_KEY:-}" ] && [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ] && [ -z "${DEVIL_VERCEL_TOKEN:-}" ] && [ -z "${DEVIL_E2B_API_KEY:-}" ] && [ -z "${DEVIL_CSB_API_KEY:-}" ]; then
             echo "No sandbox secrets set; skipping sandbox config patch."
             exit 0
           fi
@@ -199,6 +200,9 @@ jobs:
           if not isinstance(cfg, dict) or len(cfg) < 3:
               sys.exit('Live config.json looks wrong; refusing to overwrite it.')
           cfg['sandbox_enabled'] = True
+          if os.environ.get('DEVIL_GEMINI_API_KEY'):
+              # Agent Mode engine (only Agent Mode uses it)
+              cfg['gemini_api_key'] = os.environ['DEVIL_GEMINI_API_KEY']
           if os.environ.get('DEVIL_SANDBOX_SECRET'):
               # also used to derive the per-chat sandbox ids, so keep it stable
               cfg['sandbox_secret'] = os.environ['DEVIL_SANDBOX_SECRET']

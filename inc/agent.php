@@ -943,7 +943,9 @@ function agent_job_advance(array &$job, array $deps): array {
             if (count((array)$job['trace']) >= $max) { $prompt[0]['content'] .= "\n\nYou have used all available tool steps. Do NOT call any more tools. Give your final answer now: what you did, what works, what is left."; }
             $cfg['_prompt_limits'] = ['user_text' => $cap, 'assistant_text' => 100, 'attachment_text' => 100, 'latest_text' => $cap, 'latest_attachment' => 100, 'turns' => 2, 'budget' => $cap];
         } else {
-        $prompt = agent_compact_history((array)$job['history'], (int)($cfg['agent_history_budget'] ?? 26000));
+        /* long-context engine (Gemini) keeps far more of the transcript */
+        $histBudget = (int)($cfg['agent_history_budget'] ?? ((function_exists('gemini_api_key') && gemini_api_key($cfg) !== '' && empty($cfg['agent_engine'])) ? 300000 : 26000));
+        $prompt = agent_compact_history((array)$job['history'], $histBudget);
         array_unshift($prompt, ['role' => 'user', 'content' => agent_system_prompt_v2($sandbox, $envP) . "\n\n---\nNow work on the user's request below."]);
         /* the engines are single-turn and weigh the LAST message most: restate the protocol there */
         $li = count($prompt) - 1;

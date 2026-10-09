@@ -309,6 +309,12 @@ function engine_for(array $cfg, string $model_id): array {
     $defaults = model_engine_defaults();
     $eng = (string)($cfg['engines'][$model_id] ?? ($defaults[$model_id] ?? 'prexzy:askgpt5'));
     if ($model_id === 'agent' && !empty($cfg['agent_engine']) && is_string($cfg['agent_engine'])) { $eng = (string)$cfg['agent_engine']; }
+    /* Agent Mode runs on Gemini whenever a key is configured (native multi-turn, long context, long answers) */
+    elseif ($model_id === 'agent' && gemini_api_key($cfg) !== '') { $eng = 'gemini:auto'; }
+    if (preg_match('/^gemini:([a-z0-9._-]{2,60})$/i', $eng, $gm) && gemini_api_key($cfg) !== '') {
+        return ['kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini', 'model' => strtolower($gm[1]),
+                'label' => 'Devil Agent', 'max_prompt' => 0, 'vision' => true];
+    }
     /* every engine is a Prexzy endpoint — anything unknown (incl. legacy values) coerces to the model default.
        "prexzy:endpoint@sub-model" picks a model inside endpoints that offer several (aiwriter-chat). */
     if (preg_match('/^prexzy:([a-z0-9_-]+)(?:@([a-z0-9._-]{2,40}))?$/i', $eng, $m)) {
@@ -1637,7 +1643,91 @@ function call_engine(array $cfg, array $engine, array $messages, string $image =
         return [true, $txt, null, 'prexzy:' . (string)($engine['endpoint'] ?? 'custom')];
     }
 
+    /* ── Google Gemini (Agent Mode) — errors stay neutral: the engine is never named to users ── */
+    if ($engine['kind'] === 'gemini') {
+        return gemini_call($cfg, (string)($engine['model'] ?? 'auto'), $messages, $image);
+    }
+
     return [false, 'Unknown engine.', null, null];
+}
+
+/* ══════════════ Gemini engine ══════════════ */
+const GEMINI_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
+function gemini_api_key(array $cfg): string {
+    $k = trim((string)($cfg['gemini_api_key'] ?? ''));
+    return preg_match('/^[A-Za-z0-9_\-]{20,100}$/', $k) ? $k : '';
+}
+/* best available models, newest stable Flash first — refreshed once a day from the models list */
+function gemini_models(array $cfg): array {
+    $fallback = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest'];
+    $cache = data_dir() . '/gemini_models.json';
+    $c = is_readable($cache) ? json_decode((string)@file_get_contents($cache), true) : null;
+    if (is_array($c) && !empty($c['models']) && (time() - (int)($c['at'] ?? 0)) < 86400) { return (array)$c['models']; }
+    $key = gemini_api_key($cfg);
+    $list = [];
+    $raw = function_exists('curl_init') ? (function () use ($key) {
+        $ch = curl_init(GEMINI_ROOT . '/models?pageSize=200');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $key]]);
+        $r = curl_exec($ch); curl_close($ch); return is_string($r) ? $r : '';
+    })() : '';
+    $j = json_decode($raw, true);
+    foreach ((array)($j['models'] ?? []) as $m) {
+        $name = preg_replace('~^models/~', '', (string)($m['name'] ?? ''));
+        if (!in_array('generateContent', (array)($m['supportedGenerationMethods'] ?? []), true)) { continue; }
+        /* stable "gemini-X.Y-flash" only (no lite / preview / exp / tts / image variants) */
+        if (preg_match('/^gemini-(\d+(?:[.]\d+)?)-flash$/', $name, $mm)) { $list[$name] = (float)$mm[1]; }
+    }
+    arsort($list);
+    $models = array_slice(array_keys($list), 0, 2);
+    foreach ($fallback as $f) { if (!in_array($f, $models, true)) { $models[] = $f; } }
+    if ($list) { @file_put_contents($cache, json_encode(['at' => time(), 'models' => $models]), LOCK_EX); }
+    return $models;
+}
+/* chat messages → Gemini contents (roles user/model, same-role turns merged, image on the last user turn) */
+function gemini_contents(array $messages, string $image): array {
+    $out = [];
+    foreach ($messages as $m) {
+        $role = (($m['role'] ?? '') === 'assistant') ? 'model' : 'user';
+        $txt = (string)($m['content'] ?? '');
+        if (($m['role'] ?? '') === 'system') { $txt = "[Instructions]\n" . $txt; }
+        if (trim($txt) === '') { continue; }
+        $n = count($out);
+        if ($n && $out[$n - 1]['role'] === $role) { $out[$n - 1]['parts'][0]['text'] .= "\n\n" . $txt; }
+        else { $out[] = ['role' => $role, 'parts' => [['text' => $txt]]]; }
+    }
+    if (!$out || $out[0]['role'] !== 'user') { array_unshift($out, ['role' => 'user', 'parts' => [['text' => 'Hello.']]]); }
+    if ($image !== '' && preg_match('~^data:(image/[a-z0-9.+-]+);base64,(.+)$~is', $image, $im)) {
+        for ($i = count($out) - 1; $i >= 0; $i--) {
+            if ($out[$i]['role'] === 'user') { $out[$i]['parts'][] = ['inline_data' => ['mime_type' => strtolower($im[1]), 'data' => $im[2]]]; break; }
+        }
+    }
+    return $out;
+}
+function gemini_call(array $cfg, string $model, array $messages, string $image = ''): array {
+    $key = gemini_api_key($cfg);
+    if ($key === '') { return [false, 'The engine is not configured.', null, null]; }
+    $models = ($model === '' || $model === 'auto') ? gemini_models($cfg) : [$model];
+    $body = [
+        'systemInstruction' => ['parts' => [['text' => devil_persona()]]],
+        'contents' => gemini_contents($messages, $image),
+        'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => (int)($cfg['gemini_max_output'] ?? 32768)],
+    ];
+    $last = 'The engine failed while the agent was working.';
+    foreach (array_slice($models, 0, 3) as $mdl) {
+        list($ok, $raw, $status) = http_post_json(GEMINI_ROOT . '/models/' . rawurlencode($mdl) . ':generateContent', ['x-goog-api-key: ' . $key], $body);
+        if (!$ok) { $last = 'The engine is busy right now.'; if (strpos((string)$raw, 'ran out of time') !== false) { return [false, $raw, null, null]; } continue; }
+        $j = json_decode((string)$raw, true);
+        if ((int)$status === 404 || (int)$status === 429 || (int)$status >= 500) { $last = 'The engine is busy right now.'; continue; }
+        if ((int)$status >= 400 || !is_array($j)) { $last = 'The engine could not answer this request.'; continue; }
+        $txt = '';
+        foreach ((array)($j['candidates'][0]['content']['parts'] ?? []) as $part) {
+            if (!empty($part['thought'])) { continue; }   /* skip thinking summaries */
+            $txt .= (string)($part['text'] ?? '');
+        }
+        if (trim($txt) === '') { $last = 'The engine returned an empty answer.'; continue; }
+        return [true, $txt, null, 'gemini:' . $mdl];
+    }
+    return [false, $last, 'Devil AI will retry automatically — try again in a moment.', null];
 }
 
 /* full pipeline with AUTOMATIC FALLBACK (Prexzy is the safety net) */
@@ -1665,6 +1755,11 @@ function ai_respond(array $cfg, string $modelId, array $messages, string $image 
     }
 
     list($ok, $txt, $hint, $used) = call_engine($cfg, $engine, $messages);
+    if (!$ok && ($engine['kind'] ?? '') === 'gemini' && strpos((string)$txt, 'ran out of time') === false) {
+        $cfgNoG = $cfg; unset($cfgNoG['gemini_api_key']);
+        $engine = engine_for($cfgNoG, $modelId);
+        list($ok, $txt, $hint, $used) = call_engine($cfg, $engine, $messages);
+    }
 
     /* fallback 1: reliable Prexzy endpoint */
     if (!$ok && $engine['endpoint'] !== 'askgpt5') {
@@ -1676,7 +1771,9 @@ function ai_respond(array $cfg, string $modelId, array $messages, string $image 
     }
     /* persona safety net: if the engine broke character and named another model,
        regenerate with the most in-character engine */
-    if ($ok && $used !== null && reply_leaks($txt) && !identity_question($messages)) {
+    /* (not for Agent Mode on Gemini: its replies carry tool calls and code, where words like "openai" are normal) */
+    $agentGemini = strpos((string)$used, 'gemini:') === 0;
+    if ($ok && $used !== null && !$agentGemini && reply_leaks($txt) && !identity_question($messages)) {
         list($ok2, $txt2, $h2, $u2) = call_engine($cfg, prexzy_engine_from_id('aiapk'), $messages, '');
         if ($ok2 && trim($txt2) !== '') { $txt = $txt2; $used = $u2; $hint = $h2; }
     }
