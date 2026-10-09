@@ -407,6 +407,36 @@ function sbx_fetch_image(string $prompt): array {
     return ['ok' => false, 'error' => 'all image services failed or timed out'];
 }
 
+/** make several images AT ONCE (parallel requests); failures fall back to the one-by-one fetcher while time is left */
+function sbx_fetch_images(array $prompts): array {
+    $isImg = static function (string $b): bool {
+        return strncmp($b, "\x89PNG", 4) === 0 || strncmp($b, "\xFF\xD8\xFF", 3) === 0 || (strncmp($b, 'RIFF', 4) === 0 && substr($b, 8, 4) === 'WEBP');
+    };
+    $t0 = microtime(true);
+    $budget = function_exists('devil_time_left') ? max(20, devil_time_left(90) - 10) : 80;
+    $mh = curl_multi_init(); $hs = []; $out = [];
+    foreach ($prompts as $k => $pr) {
+        $ch = curl_init('https://prexzyapis.com/ai/aiappgen');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => (int)min(45, $budget - 5), CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_USERAGENT => 'DevilAI/1.0', CURLOPT_POST => true, CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => (string)json_encode(['prompt' => mb_substr((string)$pr, 0, 1500), 'width' => '1024', 'height' => '1024'])]);
+        curl_multi_add_handle($mh, $ch); $hs[$k] = $ch;
+    }
+    do { $st = curl_multi_exec($mh, $run); if ($run) { curl_multi_select($mh, 1.0); } } while ($run && $st === CURLM_OK);
+    foreach ($hs as $k => $ch) {
+        $b = (string)curl_multi_getcontent($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_multi_remove_handle($mh, $ch); curl_close($ch);
+        $out[$k] = ($code === 200 && $isImg($b)) ? ['ok' => true, 'data' => $b] : ['ok' => false, 'error' => 'image service failed'];
+    }
+    curl_multi_close($mh);
+    foreach ($out as $k => $r) {
+        if (!empty($r['ok'])) { continue; }
+        if (microtime(true) - $t0 > $budget - 25) { $out[$k] = ['ok' => false, 'error' => 'not made in time — call generate_image again for this one']; continue; }
+        $out[$k] = sbx_fetch_image((string)$prompts[$k]);
+    }
+    return $out;
+}
+
 /** normalise a user/agent path to a workspace-relative path */
 function sbx_rel(string $p): string {
     $p = trim(str_replace("\0", '', $p));
@@ -436,7 +466,7 @@ function sbx_agent_tools_all(): array {
         'start_server'   => 'Start a long-running app/dev server in the background and get its public preview URL. INPUT: first line = port, second line = command (bind to 0.0.0.0).',
         'deploy_site'    => 'Publish a finished website to the USER\'S OWN hosting server (their FTP/SFTP account from Settings → Hosting) and get its live URL. Use only when the user wants the site hosted/published/deployed on their server. INPUT: first line = folder inside /home/user/work to upload (e.g. site or app/dist — for React/Vite run the build first and deploy dist), optional second line = site name (letters, numbers, dashes; it becomes the sub-folder and URL path).',
         'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors, failed files, BROKEN IMAGES, sideways overflow and saves a screenshot. INPUT: line 1 = URL; optional next lines = actions run in order to TEST the page like a user: "mobile" (phone screen 390px), "click <css selector>", "fill <css selector> = <text>", "select <css selector> = <value>", "check <css selector>", "press Enter", "wait 1000", "goto <url>". Example — test a form: line 2 "fill #name = Ravi", line 3 "click button[type=submit]".',
-        'generate_image' => 'Generate an image from a text prompt and save it in the workspace. INPUT: first line = output path (e.g. images/hero.png), second line = the prompt.',
+        'generate_image' => 'Generate an image from a text prompt and save it in the workspace. INPUT: first line = output path (e.g. images/hero.png), second line = the prompt. SEVERAL IMAGES? Make them in ONE call (much faster, made at the same time, max 8): one image per line as "path | prompt", e.g. "images/g1.jpg | cozy cafe interior" newline "images/g2.jpg | latte art close-up".',
         'full_internet'  => 'Move this chat to a sandbox with FULL internet (2 CPU, 4 GB RAM). Use it only when the task needs websites/APIs that the current sandbox cannot reach. Your /home/user/work files are copied (node_modules / venvs are not); running servers must be restarted. INPUT: one short reason.',
         'ask_user'       => 'Ask the user a clarifying question (or for something you need) and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- " (optional " — explanation"). For secrets add lines "need: ENV_NAME | label" instead of options.',
     ];
@@ -518,6 +548,17 @@ function sbx_file_check(string $path, string $content, bool $cut = false): strin
  * missing local files referenced by HTML/CSS, cut-off HTML/CSS, JavaScript syntax errors, placeholder text.
  * $roots: folders relative to the work folder ('.' = top level). Returns a list of problems (max 30).
  */
+/** right after a .js/.html write: do the ids in JS and HTML still match? (catches the #1 bug class at write time) */
+function sbx_id_check_after_write(array $cfg, string $sid, string $path, string $content): string {
+    if (!preg_match('/\.(js|html?)$/i', $path) || strpos($path, 'node_modules/') !== false || preg_match('/\.min\.js$/i', $path)) { return ''; }
+    if (preg_match('/\.html?$/i', $path) && stripos($content, '</html>') === false) { return ''; } /* still being written in parts */
+    $root = strpos($path, '/') !== false ? strstr($path, '/', true) : '.';
+    try { $iss = sbx_site_doctor($cfg, $sid, [$root]); } catch (\Throwable $e) { return ''; }
+    $keep = [];
+    foreach ($iss as $x) { if (strpos((string)$x, 'uses ids that NO HTML page has') !== false || strpos((string)$x, 'DUPLICATE id') !== false) { $keep[] = (string)$x; } }
+    return $keep ? "\n⚠ ID CHECK (JS and HTML must use the same ids):\n- " . implode("\n- ", array_slice($keep, 0, 4)) : '';
+}
+
 function sbx_site_doctor(array $cfg, string $sid, array $roots): array {
     $roots = array_values(array_unique(array_filter(array_map('strval', $roots), static function ($r) { return $r !== '' && strpos($r, '..') === false; })));
     if (!$roots) { return []; }
@@ -531,6 +572,34 @@ CSSU = re.compile(r"""url\(\s*["']?([^"')]+)["']?\s*\)""", re.I)
 SCRIPT = re.compile(r"""<script[^>]+src\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'>]+))""", re.I)
 PLACE = re.compile(r"lorem ipsum|coming soon|\bTODO\b|your content here|placeholder text", re.I)
 issues, seen, jsfiles = [], set(), set()
+allids, inline_js = set(), []
+FW = ("react", "vue", "next", "vite", "svelte", "@sveltejs/kit", "@angular/core", "nuxt", "astro", "parcel", "webpack", "solid-js", "preact", "gatsby", "@remix-run/react", "react-scripts")
+def is_framework(top):
+    pj = os.path.join(top, "package.json")
+    if not os.path.exists(pj):
+        return False
+    try:
+        d = json.load(open(pj, encoding="utf-8"))
+        deps = {}
+        deps.update(d.get("dependencies") or {}); deps.update(d.get("devDependencies") or {})
+        return any(k in deps for k in FW)
+    except Exception:
+        return True
+def id_words(x):
+    return [w.lower() for w in re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])", x)]
+def same_id_meaning(a, b):
+    """expense-form = expenseForm; expList = expenseList (short form of a word, all other words equal)"""
+    if norm_id(a) == norm_id(b):
+        return True
+    wa, wb = id_words(a), id_words(b)
+    if len(wa) != len(wb) or len(wa) < 2:
+        return False
+    for x, y in zip(wa, wb):
+        if not (x == y or (len(x) >= 2 and len(y) >= 2 and (x.startswith(y) or y.startswith(x)))):
+            return False
+    return True
+def norm_id(x):
+    return re.sub(r"[-_\s]", "", x).lower()
 node = shutil.which("node")
 def local(ref):
     r = ref.strip()
@@ -547,7 +616,7 @@ for root in roots:
     top = os.path.normpath(os.path.join(W, root))
     if not os.path.isdir(top):
         continue
-    framework = os.path.exists(os.path.join(top, "package.json"))
+    framework = is_framework(top)
     depth0 = top.count(os.sep)
     for dp, dn, fn in os.walk(top):
         dn[:] = [d for d in dn if d not in SKIP and not d.startswith(".")]
@@ -575,6 +644,10 @@ for root in roots:
                     cnt = {}
                     for i in re.findall(r'\bid\s*=\s*["\']([^"\']+)["\']', t):
                         cnt[i] = cnt.get(i, 0) + 1
+                        allids.add(i)
+                    for blk in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", t, re.S | re.I):
+                        if blk.strip():
+                            inline_js.append((rel + " (inline script)", blk))
                     dups = [k for k, v in cnt.items() if v > 1]
                     if dups:
                         issues.append(rel + ": DUPLICATE id(s) " + ", ".join("#" + k for k in dups[:8]) + " - a section/form was written twice (write_file + append_file overlap?); keep ONE copy")
@@ -614,6 +687,43 @@ if node:
                 issues.append(os.path.relpath(jp, W) + ": JavaScript syntax error " + where.replace("[stdin]", "line") + ": " + err[:160])
         except Exception:
             pass
+# JavaScript asks for ids that no HTML page has (getElementById returns null → the feature silently does nothing)
+IDREF = re.compile(r"""getElementById\(\s*['"`]([\w-]+)['"`]\s*\)|querySelector(?:All)?\(\s*['"`]#([\w-]+)['"`]\s*\)""")
+if allids:
+    srcs = []
+    for jp in sorted(jsfiles)[:30]:
+        try:
+            srcs.append((os.path.relpath(jp, W), open(jp, encoding="utf-8", errors="replace").read()))
+        except Exception:
+            pass
+    srcs += inline_js[:20]
+    normmap = {}
+    for i in allids:
+        normmap.setdefault(norm_id(i), i)
+    for name, txt in srcs:
+        bad = []
+        # helpers like  const $ = id => document.getElementById(id)  /  function byId(x) { return document.getElementById(x) }
+        helpers = set(re.findall(r"(?:const|let|var)\s+([\w$]+)\s*=\s*(?:function\s*)?\(?\s*\w+\s*\)?\s*(?:=>)?\s*\{?\s*(?:return\s+)?document\.(?:getElementById|querySelector)\(", txt))
+        helpers |= set(re.findall(r"function\s+([\w$]+)\s*\(\s*\w+\s*\)\s*\{\s*return\s+document\.(?:getElementById|querySelector)\(", txt))
+        hre = re.compile(r"(?<![\w$.])(?:" + "|".join(re.escape(h) for h in helpers) + r")\(\s*['\"`]#?([\w-]+)['\"`]\s*\)") if helpers else None
+        for ln_no, ln in enumerate(txt.split("\n"), 1):
+            found = [m.group(1) or m.group(2) for m in IDREF.finditer(ln)] + ([m.group(1) for m in hre.finditer(ln)] if hre else [])
+            for i in found:
+                if i in allids or any(i == b[0] for b in bad):
+                    continue
+                if re.search(r"""(?:\bid\s*[=:]\s*\\?['"`]|\.id\s*=\s*['"`]|setAttribute\(\s*['"]id['"]\s*,\s*['"`])""" + re.escape(i) + r"\b", txt):
+                    continue
+                bad.append((i, ln_no))
+        if bad:
+            parts, sure = [], []
+            for i, ln_no in bad[:12]:
+                cands = [h for h in sorted(allids) if same_id_meaning(i, h)]
+                sim = cands[0] if len(cands) == 1 else None
+                if sim:
+                    sure.append((i, sim))
+                parts.append("#" + i + " (line " + str(ln_no) + ")" + (" = #" + sim + " in the HTML" if sim else ""))
+            issues.append(name + ": uses ids that NO HTML page has, so that code silently does nothing: " + ", ".join(parts) + ". Ids in the HTML: " + ", ".join("#" + x for x in sorted(allids)[:40]) + ". Make the ids match: keep the HTML, change only the names in the JS (pick the HTML id with the SAME meaning; if the element really is missing, add it to the HTML). Do NOT rewrite both files - that invents new mismatches."
+                + ((" QUICK FIX - run exactly this bash command: perl -pi -e '" + "; ".join("s/(?<=[#\"\\x27\\x60])" + a + "(?=[\"\\x27\\x60])/" + b + "/g" for a, b in sure) + "' " + name) if sure and "(inline" not in name else ""))
 print(json.dumps(issues[:30]))
 PY;
     $cmd = "mkdir -p .devil && cat > .devil/doctor.py <<'DEVILPY'\n" . $py . "\nDEVILPY\ncat > .devil/doctor.json <<'DEVILJS'\n" . json_encode($roots, JSON_UNESCAPED_SLASHES) . "\nDEVILJS\npython3 .devil/doctor.py .devil/doctor.json 2>/dev/null | tail -c 8000";
@@ -773,7 +883,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
             if ($content !== '' && substr($content, -1) !== "\n") { $content .= "\n"; }
             $r = sbx_write($cfg, $sid, $path, $content);
             if (empty($r['ok'])) { return ['ok' => false, 'text' => 'Could not write ' . $path . ': ' . (string)($r['error'] ?? '')]; }
-            return ['ok' => true, 'text' => 'Wrote ' . $path . ' (' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . sbx_file_check($path, $content, !empty($ctx['cut'])), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
+            return ['ok' => true, 'text' => 'Wrote ' . $path . ' (' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . sbx_file_check($path, $content, !empty($ctx['cut'])) . sbx_id_check_after_write($cfg, $sid, $path, $content), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
         }
         case 'append_file': {
             $lines = preg_split('/\r?\n/', ltrim($input, "\r\n"), 2);
@@ -801,7 +911,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
                 if (stripos($add, '<!doctype') !== false || stripos($add, '<head') !== false) { $bits[] = 'it starts a second <head>/<!DOCTYPE> page inside the same file'; }
                 if ($bits) { $dupWarn = "\n⚠ DUPLICATE CONTENT: " . implode('; ', $bits) . '. You probably repeated a part that was already written. Read the file (bash: grep -n \'id=\' ' . $path . ') and remove the repeated part, or rewrite the file cleanly with write_file.'; }
             }
-            return ['ok' => true, 'text' => 'Appended ' . strlen($add) . ' bytes to ' . $path . ' (now ' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . $dupWarn . sbx_file_check($path, $content, !empty($ctx['cut'])), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
+            return ['ok' => true, 'text' => 'Appended ' . strlen($add) . ' bytes to ' . $path . ' (now ' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . $dupWarn . sbx_file_check($path, $content, !empty($ctx['cut'])) . sbx_id_check_after_write($cfg, $sid, $path, $content), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
         }
         case 'read_file': {
             $path = sbx_rel(strtok(trim($input), "\n") ?: '');
@@ -959,6 +1069,33 @@ async def main(url, shot, acts):
                     return d; })""")
             except Exception:
                 pass
+        if True:
+            try:
+                out["missingIds"] = await pg.evaluate("""async () => {
+                    const srcs = [];
+                    for (const s of document.scripts) {
+                        if (s.src) { try { const u = new URL(s.src, location.href); if (u.origin !== location.origin) continue; const r = await fetch(u.href); srcs.push([u.pathname.split('/').pop() || 'script', await r.text()]); } catch (e) {} }
+                        else if (s.textContent.trim()) srcs.push(['inline <script>', s.textContent]);
+                    }
+                    const miss = [], seen = {}, fixes = [];
+                    const re = /getElementById\(\s*['"`]([\w-]+)['"`]\s*\)|querySelector(?:All)?\(\s*['"`]#([\w-]+)['"`]\s*\)/g;
+                    for (const [name, txt] of srcs) {
+                        const hs = new Set(); let hm;
+                        const hr1 = /(?:const|let|var)\s+([\w$]+)\s*=\s*(?:function\s*)?\(?\s*\w+\s*\)?\s*(?:=>)?\s*\{?\s*(?:return\s+)?document\.(?:getElementById|querySelector)\(/g;
+                        const hr2 = /function\s+([\w$]+)\s*\(\s*\w+\s*\)\s*\{\s*return\s+document\.(?:getElementById|querySelector)\(/g;
+                        while ((hm = hr1.exec(txt))) hs.add(hm[1]); while ((hm = hr2.exec(txt))) hs.add(hm[1]);
+                        const esc = x => x.replace(/[$]/g, '\\\\$&');
+                        const hre = hs.size ? new RegExp('(?<![\\\\w$.])(?:' + [...hs].map(esc).join('|') + ')\\\\(\\\\s*[\\\\x27\\\\x22\\\\x60]#?([\\\\w-]+)[\\\\x27\\\\x22\\\\x60]\\\\s*\\\\)', 'g') : null;
+                        txt.split('\\n').forEach((ln, i) => { const ids = []; re.lastIndex = 0; let m; while ((m = re.exec(ln))) ids.push(m[1] || m[2]); if (hre) { hre.lastIndex = 0; while ((m = hre.exec(ln))) ids.push(m[1]); } for (const id of ids) {
+                            if (seen[id] || document.getElementById(id)) continue;
+                            if (txt.includes('id="' + id + '"') || txt.includes("id='" + id + "'") || txt.includes('.id = "' + id) || txt.includes(".id = '" + id) || txt.includes('id=\\"' + id)) continue;
+                            seen[id] = 1; const nm = x => x.replace(/[-_]/g, '').toLowerCase(); const all = [...document.querySelectorAll('[id]')].map(e => e.id); const words = x => (x.match(/[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])/g) || []).map(w => w.toLowerCase()); const same = (a, b) => { if (nm(a) === nm(b)) return true; const A = words(a), B = words(b); if (A.length !== B.length || A.length < 2) return false; return A.every((x, k) => x === B[k] || (x.length >= 2 && B[k].length >= 2 && (x.startsWith(B[k]) || B[k].startsWith(x)))); }; const cands = all.filter(x => same(id, x)); const sim = cands.length === 1 ? cands[0] : null; if (sim && !name.startsWith('inline')) fixes.push([id, sim, name]);
+                            miss.push('#' + id + ' (' + name + ' line ' + (i + 1) + ')' + (sim ? ' = #' + sim + ' on this page' : '')); } });
+                    }
+                    return {miss: miss.slice(0, 20), fixes: fixes.slice(0, 12), ids: [...document.querySelectorAll('[id]')].map(e => '#' + e.id).slice(0, 40)};
+                }""")
+            except Exception:
+                pass
         try:
             out["checks"] = await pg.evaluate("""() => {
                 const bad = [...document.images].filter(i => i.complete && i.naturalWidth === 0 && (i.getAttribute('src') || '').trim() !== '' && (i.currentSrc || i.src) !== location.href).map(i => (i.currentSrc || i.src).slice(0, 160));
@@ -1017,6 +1154,19 @@ PY;
             $j = json_decode($line, true);
             if (!is_array($j)) { return ['ok' => false, 'text' => 'Browser failed: ' . mb_substr($raw, -2000)]; }
             $t = 'Page: ' . ($j['title'] ?? '') . ' (' . $url . ', HTTP ' . ($j['status'] ?? '?') . ")\n";
+            $idFix = '';
+            if (isset($j['missingIds']['miss'])) {
+                $fx = (array)($j['missingIds']['fixes'] ?? []);
+                $byFile = [];
+                foreach ($fx as $f) { if (is_array($f) && count($f) === 3 && preg_match('/^[\w-]+$/', (string)$f[0]) && preg_match('/^[\w-]+$/', (string)$f[1])) { $byFile[(string)$f[2]][] = 's/(?<=[#"\x27\x60])' . $f[0] . '(?=["\x27\x60])/' . $f[1] . '/g'; } }
+                foreach ($byFile as $fn => $subs) { $idFix .= "\nQUICK FIX — run exactly this bash command (in the folder that has " . $fn . "; find it with: find . -name " . escapeshellarg($fn) . " -not -path '*/node_modules/*'): perl -pi -e '" . implode('; ', $subs) . "' " . escapeshellarg($fn); }
+                $pageIds = implode(', ', array_map('strval', (array)($j['missingIds']['ids'] ?? [])));
+                if ($pageIds !== '') { $idFix = ' Ids on this page: ' . $pageIds . ' (pick the one with the SAME meaning; if the element really is missing, add it to the HTML).' . $idFix; }
+                $j['missingIds'] = (array)$j['missingIds']['miss'];
+            }
+            $nullErr = false; foreach ((array)($j['errors'] ?? []) as $e0) { if (stripos((string)$e0, 'null') !== false) { $nullErr = true; } }
+            if (!empty($j['missingIds']) && !$nullErr) { $t .= '⚠ The JavaScript looks for ids that are NOT on this page: ' . implode(', ', (array)$j['missingIds']) . " — getElementById returns null, so that feature silently does nothing (buttons/forms/lists that never react). Make them match: keep the HTML, change only the names in the JS (sed -i), do NOT rewrite both files (unless that code is meant for a different page)." . $idFix . "\n"; }
+            if (!empty($j['missingIds']) && $nullErr) { $j['errors'] = (array)($j['errors'] ?? []); array_unshift($j['errors'], 'LIKELY CAUSE of the "null" error: the JavaScript looks for these ids, but NO element on this page has them: ' . implode(', ', (array)$j['missingIds']) . ' — make them match: keep the HTML and change only the names in the JS (bash: sed -i "s/\'old-id\'/\'newId\'/g" path/script.js). Do NOT rewrite both files — that invents new mismatches. (If the script is shared by several pages, wrap that code in if (element) { … }.)' . $idFix); }
             if (!empty($j['errors'])) { $t .= "Page errors:\n- " . implode("\n- ", array_slice((array)$j['errors'], 0, 8)) . "\n(These are REAL JavaScript errors in this page — the code after them does not run. They are never a false alarm: fix them. Note: top-level const/let in separate classic <script> tags share ONE global scope, so the same name declared twice breaks the page.)\n"; }
             if (!empty($j['console'])) { $t .= "Console:\n- " . implode("\n- ", array_slice((array)$j['console'], 0, 10)) . "\n"; }
             if (!empty($j['failed'])) { $t .= "Failed to load (fix these paths / files):\n- " . implode("\n- ", array_slice(array_unique((array)$j['failed']), 0, 10)) . "\n"; }
@@ -1053,6 +1203,33 @@ PY;
                 . 'Restart any servers with start_server (for Vite keep server.allowedHosts: true).', 'meta' => ['internet' => true]];
         }
         case 'generate_image': {
+            /* batch mode: one "path | prompt" per line → all made at the same time */
+            $batch = [];
+            foreach (preg_split('/\r?\n/', trim($input)) as $bl) {
+                if (preg_match('/^\s*[-*]?\s*`?([^\s|`]+\.(?:png|jpe?g|webp))`?\s*(?:\||::|=>)\s*(.+)$/i', $bl, $bm)) { $batch[sbx_rel($bm[1])] = trim($bm[2]); }
+            }
+            if (count($batch) >= 2 && sbx_is_cloud($cfg)) {
+                $batch = array_slice($batch, 0, 8, true);
+                $res = sbx_fetch_images($batch);
+                $done = []; $fail = []; $big = [];
+                foreach ($res as $bp => $img) {
+                    if (empty($img['ok'])) { $fail[] = $bp . ' (' . (string)($img['error'] ?? 'failed') . ')'; continue; }
+                    $data = sbx_compress_image((string)$img['data'], $bp);
+                    $w = sbx_write($cfg, $sid, $bp, $data);
+                    if (empty($w['ok'])) { $fail[] = $bp . ' (could not save)'; continue; }
+                    $done[$bp] = (int)round(strlen($data) / 1024);
+                    if ($done[$bp] > 200 && preg_match('/\.(png|jpe?g)$/i', $bp)) { $big[] = $bp; }
+                }
+                if ($big && $done) {
+                    /* shrink the big ones inside the sandbox in ONE command */
+                    $sh = 'command -v convert >/dev/null 2>&1 || exit 0; for f in ' . implode(' ', array_map('escapeshellarg', $big)) . "; do convert \"\$f\" -resize '1600x1600>' -strip -interlace Plane -quality 80 \"\$f.tmp.jpg\" && [ \$(stat -c %s \"\$f.tmp.jpg\") -lt \$(stat -c %s \"\$f\") ] && mv -f \"\$f.tmp.jpg\" \"\$f\"; rm -f \"\$f.tmp.jpg\"; echo \"S \$f \$(stat -c %s \"\$f\")\"; done";
+                    $cr = sbx_exec($cfg, $sid, $sh, 40);
+                    if (preg_match_all('/^S (\S+) (\d+)$/m', (string)($cr['stdout'] ?? ''), $cm, PREG_SET_ORDER)) { foreach ($cm as $x) { if (isset($done[$x[1]])) { $done[$x[1]] = (int)round((int)$x[2] / 1024); } } }
+                }
+                $t = $done ? 'Saved ' . count($done) . ' image(s) (optimised for fast loading): ' . implode(', ', array_map(static function ($p, $kb) { return $p . ' ' . $kb . ' KB'; }, array_keys($done), $done)) . '.' : '';
+                if ($fail) { $t .= ($t !== '' ? "\n" : '') . '⚠ NOT made: ' . implode('; ', $fail) . ' — call generate_image again for these (or remove them from the page).'; }
+                return ['ok' => $done !== [], 'text' => $t, 'meta' => ['image' => (string)array_key_first($done ?: ['' => 0])]];
+            }
             $lines = preg_split('/\r?\n/', trim($input), 2);
             $path = sbx_rel((string)($lines[0] ?? ''));
             $prompt = trim((string)($lines[1] ?? ''));

@@ -646,6 +646,7 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
         $L[] = '- First understand what the user really wants (goal, audience, must-haves). For a bigger task, start your first reply with a short plan (3-6 bullets), then make the first tool call.';
         $L[] = '- Before every tool call write 1-3 short sentences: what the last result told you and what you will do next and why. Notice surprises (errors, empty output, wrong versions) and adapt the plan instead of pushing on blindly.';
         $L[] = '- Verify your work (run it, open it with the browser tool, check the output) before saying it is done. Test interactive parts like a user: the browser tool takes extra action lines after the URL ("fill #email = a@b.com", "click button[type=submit]", "mobile") — submit forms, click buttons/menus, check the phone layout.';
+        $L[] = '- Several images? ONE generate_image call with one "path | prompt" per line (max 8) — they are made at the same time. Before writing a JS file, list the HTML ids (bash: grep -o \'id="[^"]*"\' FILE.html) and use EXACTLY those. When a tool gives a QUICK FIX command, run it as is instead of rewriting files.';
         $L[] = '- When a tool lists several problems (missing files, broken images…), fix ALL of them, not just the first few.';
         $L[] = '';
         $L[] = 'ASK WHEN SOMETHING IS UNCLEAR (ask_user):';
@@ -769,7 +770,7 @@ function agent_tool_short(string $name, string $desc): string {
         'list_files' => 'List files. INPUT: folder or ".".',
         'start_server' => 'Start a dev server in the background and get its preview URL. INPUT: line 1 = port, line 2 = command (bind 0.0.0.0).',
         'browser' => 'Open a URL in Chromium: returns text, errors, failed files, broken images, sideways overflow, styling. INPUT: line 1 = URL; extra lines = actions to test like a user: mobile | click <css> | fill <css> = <text> | select <css> = <value> | check <css> | press Enter | wait 1000.',
-        'generate_image' => 'Make an image. INPUT: line 1 = output path, line 2 = prompt.',
+        'generate_image' => 'Make an image. INPUT: line 1 = output path, line 2 = prompt. Several images: ONE call, one "path | prompt" per line (max 8, made in parallel — much faster).',
         'deploy_site' => 'Publish a finished site to the user\'s own FTP/SFTP hosting (Settings → Hosting). INPUT: line 1 = folder, line 2 = optional site name.',
         'full_internet' => 'Move to a sandbox with full internet (only when a needed website/API is blocked).',
         'ask_user' => 'Ask the user one question and stop. INPUT: the question, then up to 4 "- option — why" lines; for secrets add "need: ENV_NAME | label" lines.',
@@ -791,6 +792,7 @@ function agent_system_prompt_compact(bool $sandbox, array $env = []): string {
         $L[] = '- Your replies are cut at ~5,000 characters: keep each write_file under ~4,000 characters and write big files in parts (write_file, then append_file continuing exactly where it ended). Read the tool result: if it says a file is UNFINISHED, append the missing rest — do NOT rewrite the whole file.';
         $L[] = '- Websites: styles in style.css / script.js linked with relative paths. Then start_server (python3 -m http.server PORT --bind 0.0.0.0 inside the site folder) and check pages with the browser tool; fix anything it reports as failed or UNSTYLED. Vite: server.allowedHosts = true.';
         $L[] = '- TEST like a real user before finishing: forms (browser with fill … / click submit lines → check the success/error message), buttons, menus, tabs, and the mobile view (browser with a "mobile" line: no sideways overflow, menu works). Fix everything that fails, then test again.';
+        $L[] = '- Several images? ONE generate_image call with one "path | prompt" per line (max 8) — they are made at the same time. Before writing a JS file, list the HTML ids (bash: grep -o \'id="[^"]*"\' FILE.html) and use EXACTLY those. When a tool gives a QUICK FIX command, run it as is instead of rewriting files.';
         $L[] = '- When a tool lists several problems (missing files, broken images…), fix ALL of them — keep your own list and tick them off; never fix only some and move on.';
         $L[] = '- Keep one consistent brand name, nav menu, colors and class names across all pages — put them in your checklist, and read_file an earlier file when unsure instead of guessing.';
         $L[] = '- Create files with write_file, not shell heredocs. Run commands yourself. Never claim done/fixed/styled without a tool result showing it.';
@@ -802,7 +804,7 @@ function agent_system_prompt_compact(bool $sandbox, array $env = []): string {
     foreach (agent_tools_for($sandbox, (array)($env['cfg'] ?? []), (string)($env['sid'] ?? '')) as $name => $desc) { $L[] = '- ' . $name . ': ' . agent_tool_short($name, $desc); }
     $L[] = 'FORMAT: 1-2 short sentences, then exactly ONE tool call at the very end:';
     $L[] = "TOOL: <name>\nINPUT: <input (may span lines)>";
-    $L[] = 'When everything is done and verified: reply to the user with NO tool call — a short summary in the user\'s language (mention files and the preview).';
+    $L[] = 'When everything is done and verified: reply to the user with NO tool call — a short summary in the user\'s language AND script (Roman-letter Hinglish like "Aapka app ready hai" if they wrote Hinglish in English letters — never switch to Devanagari unless they wrote Devanagari). Mention files and the preview. If something still does not work, say it plainly.';
     return implode("\n", $L);
 }
 function agent_clip(string $t, int $max, bool $keepEnd = false): string {
@@ -897,6 +899,21 @@ function agent_web_roots(array $trace): array {
     return array_slice(array_keys($roots), 0, 6);
 }
 
+/** the user must always get the live link: if the final answer has none, add the newest preview URL a tool returned */
+function agent_add_preview_link(array $trace, string $final): string {
+    $re = '#https://[a-z0-9-]+\.preview\.[a-z0-9.-]+[a-z](?:/[^\s)\]"\'<>`]*)?#i';
+    if (preg_match($re, $final)) { return $final; }
+    $url = '';
+    for ($i = count($trace) - 1; $i >= 0 && $url === ''; $i--) {
+        $st = (array)$trace[$i];
+        if (!in_array((string)($st['tool'] ?? ''), ['start_server', 'browser', 'bash'], true) || empty($st['ok']) && ($st['tool'] ?? '') === 'start_server') { continue; }
+        if (preg_match_all($re, (string)($st['output'] ?? '') . ' ' . json_encode($st['meta'] ?? []), $m)) { $url = rtrim((string)end($m[0]), '.,;:/') ; }
+    }
+    if ($url === '') { return $final; }
+    $url = preg_replace('#/(index\.html?)?$#i', '', $url);
+    return rtrim($final) . "\n\n🔗 **Preview:** " . $url;
+}
+
 /* self-check is worth a model call only after real building, at most twice a run, and only if new work happened since the last check */
 function agent_should_selfcheck(array $job, int $max): bool {
     $trace = (array)($job['trace'] ?? []);
@@ -985,6 +1002,7 @@ function agent_job_advance(array &$job, array $deps): array {
         if ($call === null) {
             $final = agent_strip_tool_lines($txt);
             if ($final === '') { $final = trim($txt); }
+            if ($sandbox) { $final = agent_add_preview_link((array)$job['trace'], $final); }
             $job['state'] = 'done';
             $job['reply'] = $final;
             return ['type' => 'final', 'reply' => $final];
