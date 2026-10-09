@@ -1655,7 +1655,7 @@ function call_engine(array $cfg, array $engine, array $messages, string $image =
 const GEMINI_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
 function gemini_api_key(array $cfg): string {
     $k = trim((string)($cfg['gemini_api_key'] ?? ''));
-    return preg_match('/^[A-Za-z0-9_\-]{20,100}$/', $k) ? $k : '';
+    return preg_match('/^[A-Za-z0-9_.\-]{20,300}$/', $k) ? $k : '';   /* old AIza… keys and the newer auth-key format */
 }
 /* best available models, newest stable Flash first — refreshed once a day from the models list */
 function gemini_models(array $cfg): array {
