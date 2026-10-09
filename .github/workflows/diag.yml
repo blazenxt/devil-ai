@@ -20,13 +20,15 @@ jobs:
           SFTP_TARGET: ${{ secrets.SFTP_TARGET }}
           DIAG_KEY: ${{ secrets.DIAG_KEY }}
         run: |
+          set +e
           set -uo pipefail
           [ -n "${DIAG_KEY:-}" ] || { echo "DIAG_KEY missing"; exit 1; }
           mkdir -p d && cd d
-          lftp -u "$SFTP_USERNAME","$SFTP_PASSWORD" -p "$SFTP_PORT" "sftp://$SFTP_HOST" > listing.txt 2>&1 <<LF
+          lftp -u "$SFTP_USERNAME","$SFTP_PASSWORD" -p "$SFTP_PORT" "sftp://$SFTP_HOST" > listing.txt 2>&1 <<LF || true
           set sftp:auto-confirm yes
           set net:timeout 30
           set net:max-retries 2
+          set cmd:fail-exit no
           cls -l "$SFTP_TARGET/"
           cls -l "$SFTP_TARGET/data/"
           cls -l "$SFTP_TARGET/data/security/"
