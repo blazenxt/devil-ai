@@ -169,10 +169,12 @@ jobs:
           DEVIL_VERCEL_TEAM_ID: ${{ secrets.DEVIL_VERCEL_TEAM_ID }}
           DEVIL_VERCEL_PROJECT_ID: ${{ secrets.DEVIL_VERCEL_PROJECT_ID }}
           DEVIL_E2B_API_KEY: ${{ secrets.DEVIL_E2B_API_KEY }}
+          DEVIL_CSB_API_KEY: ${{ secrets.DEVIL_CSB_API_KEY }}
+          DEVIL_CSB_TEMPLATE: ${{ secrets.DEVIL_CSB_TEMPLATE }}
           DEVIL_PREVIEW_KEY: ${{ secrets.DEVIL_PREVIEW_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ] && [ -z "${DEVIL_VERCEL_TOKEN:-}" ] && [ -z "${DEVIL_E2B_API_KEY:-}" ]; then
+          if [ -z "${DEVIL_SANDBOX_SECRET:-}" ] && [ -z "${DEVIL_DAYTONA_API_KEY:-}" ] && [ -z "${DEVIL_VERCEL_TOKEN:-}" ] && [ -z "${DEVIL_E2B_API_KEY:-}" ] && [ -z "${DEVIL_CSB_API_KEY:-}" ]; then
             echo "No sandbox secrets set; skipping sandbox config patch."
             exit 0
           fi
@@ -217,10 +219,16 @@ jobs:
               cfg.setdefault('e2b_template', 'devil-box')
           else:
               cfg.pop('e2b_api_key', None)
-          n = int(has_d) + int(has_e) + int(has_v)
+          has_c = all(os.environ.get(k) for k in ('DEVIL_CSB_API_KEY', 'DEVIL_CSB_TEMPLATE'))
+          if has_c:
+              cfg['csb_api_key'] = os.environ['DEVIL_CSB_API_KEY']
+              cfg['csb_template'] = os.environ['DEVIL_CSB_TEMPLATE']
+          else:
+              cfg.pop('csb_api_key', None)
+          n = int(has_d) + int(has_e) + int(has_c) + int(has_v)
           if n:
-              # chain: Daytona (main) -> E2B (backup + full internet) -> Vercel (last backup); single provider when only one is set
-              cfg['sandbox_provider'] = 'auto' if n > 1 else ('daytona' if has_d else ('e2b' if has_e else 'vercel'))
+              # chain: Daytona (main) -> E2B (backup + full internet) -> CodeSandbox -> Vercel (last backup); single provider when only one is set
+              cfg['sandbox_provider'] = 'auto' if n > 1 else ('daytona' if has_d else ('e2b' if has_e else ('csb' if has_c else 'vercel')))
           else:
               cfg.update({
                   'sandbox_provider': 'devil',
