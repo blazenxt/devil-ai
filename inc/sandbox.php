@@ -171,10 +171,10 @@ function sbx_move_to_backup(array $cfg, string $sid): array {
         /* E2B failed → try the next backup (Vercel) */
         $alt = '';
         foreach (sbx_chain($cfg) as $b) { if ($b !== 'daytona' && $b !== $to) { $alt = $b; break; } }
-        if ($alt === '') { return ['ok' => false, 'error' => 'the full-internet sandbox did not start: ' . (string)($o['error'] ?? '')]; }
+        if ($alt === '') { return ['ok' => false, 'error' => 'the full-internet sandbox did not start: ' . sbx_scrub((string)($o['error'] ?? ''))]; }
         $to = $alt; $px = sbx_px($to);
         $o = ($px . '_open')($cfg, $sid);
-        if (empty($o['ok'])) { return ['ok' => false, 'error' => 'the full-internet sandbox did not start: ' . (string)($o['error'] ?? '')]; }
+        if (empty($o['ok'])) { return ['ok' => false, 'error' => 'the full-internet sandbox did not start: ' . sbx_scrub((string)($o['error'] ?? ''))]; }
     }
     $copied = false;
     if (strlen($zip) > 22) {
@@ -501,7 +501,12 @@ function sbx_file_check(string $path, string $content, bool $cut = false): strin
 }
 
 function sbx_scrub(string $t, array $cfg = []): string {
-    if ($t === '' || !preg_match('/daytona|vercel|e2b/i', $t)) { return $t; }
+    if ($t === '') { return $t; }
+    /* provider billing text ("Hobby plan usage limit exceeded … upgrade …") never reaches the user */
+    if (stripos($t, 'usage limit exceeded') !== false) {
+        $t = (string)preg_replace('/\b[A-Za-z]+ plan usage limit exceeded[^\n]*/i', 'the workspace service is temporarily unavailable', $t);
+    }
+    if (!preg_match('/daytona|vercel|e2b/i', $t)) { return $t; }
     $t = (string)preg_replace_callback('#https?://[a-z0-9.-]+\.(?:vercel\.run|daytonaproxy\d*\.net|e2b\.app)(?::\d+)?[^\s"\'<>)\]]*#i', static function ($m) use ($cfg) {
         $u = $cfg ? sbx_public_url($cfg, $m[0]) : $m[0];
         return $u !== $m[0] ? $u : 'the preview link';

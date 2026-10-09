@@ -363,6 +363,7 @@ function devil_security_verify_recaptcha(string $token, string $ip = ''): bool {
     $raw = @file_get_contents('https://www.google.com/recaptcha/api/siteverify', false, $ctx);
     if ($raw === false) { return false; }
     $j = json_decode($raw, true);
+    $GLOBALS['devil_recaptcha_last'] = is_array($j) ? $j : [];
     if (!is_array($j) || empty($j['success'])) { return false; }
     if (isset($j['score']) && (float)$j['score'] < (float)($cfg['recaptcha_min_score'] ?? 0.45)) { return false; }
     return true;

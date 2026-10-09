@@ -34,6 +34,7 @@ jobs:
           cls -l "$SFTP_TARGET/data/security/"
           lcd .
           get -e "$SFTP_TARGET/data/mail.log" -o mail.log
+          get -e "$SFTP_TARGET/data/auth_block.log" -o auth_block.log
           get -e "$SFTP_TARGET/data/authrl.json" -o authrl.json
           get -e "$SFTP_TARGET/data/otps.json" -o otps.json
           get -e "$SFTP_TARGET/data/users.json" -o users.json

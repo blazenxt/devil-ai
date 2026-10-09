@@ -96,19 +96,87 @@ function vcl_remember(string $sid, array $j): array {
 
 function vcl_timeout_ms(array $cfg): int { return max(5, min(45, (int)($cfg['vercel_timeout_min'] ?? 15))) * 60000; }
 
+/** user-facing text for a provider error — never shows plan names, provider names or URLs */
+function vcl_friendly_error(string $err, string $fallback = 'The workspace could not start right now. Please try again in a minute.'): string {
+    if ($err === '') { return $fallback; }
+    if (preg_match('/snapshot|storage|quota|usage limit|payment|billing|plan|upgrade|hobby|credit|suspend|blocked/i', $err)) { return 'The workspace service is temporarily unavailable. Please try again in a minute.'; }
+    if (preg_match('/concurren|rate limit|too many|limit/i', $err)) { return 'All workspaces are busy right now. Please try again in a minute.'; }
+    if (preg_match('/vercel|https?:\/\//i', $err) || strlen($err) > 200) { return $fallback; }
+    return $err;
+}
+
+/** true when the account cannot store more snapshots (persistent sandboxes are refused) */
+function vcl_is_snap_limit(int $st, string $err, string $code): bool {
+    return ($st === 402 || $code === 'payment_required') && preg_match('/snapshot/i', $err) === 1;
+}
+
+/**
+ * keep the snapshot storage small:
+ *  - snapshots that no sandbox uses any more are deleted
+ *  - stopped sandboxes of this app that were not used for vercel_keep_days (3) are deleted with their snapshot
+ * runs at most every 6 h, or right away when $force (snapshot storage full)
+ */
+function vcl_cleanup(array $cfg, bool $force = false): int {
+    $last = (int)(vcl_map_get('_cleanup')['t'] ?? 0);
+    if (!$force && $last > time() - 21600) { return 0; }
+    if ($force && $last > time() - 120) { return 0; }
+    vcl_map_set('_cleanup', ['t' => time(), 'exp' => time() + 86400 * 30]);
+    $days = max(1, min(30, (int)($cfg['vercel_keep_days'] ?? 3)));
+    $proj = (string)$cfg['vercel_project_id'];
+    $freed = 0;
+    [$st, $j] = vcl_http($cfg, 'GET', '/v2/sandboxes', ['project' => $proj, 'limit' => 100], null, 20);
+    if ($st !== 200 || !is_array($j)) { return 0; }
+    $inUse = [];
+    foreach ((array)($j['sandboxes'] ?? []) as $sb) {
+        if (!is_array($sb)) { continue; }
+        $mine = (($sb['tags']['app'] ?? '') === 'devil-ai') || strpos((string)($sb['name'] ?? ''), 'devil-') === 0;
+        $idle = (int)(((int)($sb['statusUpdatedAt'] ?? $sb['updatedAt'] ?? 0)) / 1000);
+        if ($mine && ($sb['status'] ?? '') === 'stopped' && $idle > 0 && $idle < time() - $days * 86400) {
+            [$ds] = vcl_http($cfg, 'DELETE', '/v2/sandboxes/' . rawurlencode((string)$sb['name']), ['projectId' => $proj, 'deleteOrphanSnapshots' => 'true'], null, 20);
+            if ($ds >= 200 && $ds < 300) { $freed++; continue; }
+        }
+        if (!empty($sb['currentSnapshotId'])) { $inUse[(string)$sb['currentSnapshotId']] = true; }
+    }
+    [$st, $j] = vcl_http($cfg, 'GET', '/v1/sandboxes/snapshots', ['project' => $proj, 'limit' => 100], null, 20);
+    if ($st === 200 && is_array($j)) {
+        foreach ((array)($j['snapshots'] ?? []) as $sn) {
+            $id = (string)($sn['id'] ?? '');
+            if ($id === '' || isset($inUse[$id]) || ($sn['status'] ?? '') !== 'created') { continue; }
+            /* a snapshot made in the last few minutes may be about to be attached — leave it */
+            if ((int)(((int)($sn['createdAt'] ?? 0)) / 1000) > time() - 600) { continue; }
+            [$ds] = vcl_http($cfg, 'DELETE', '/v1/sandboxes/snapshots/' . rawurlencode($id), [], null, 20);
+            if ($ds >= 200 && $ds < 300) { $freed++; }
+        }
+    }
+    return $freed;
+}
+
 function vcl_create(array $cfg, string $sid): array {
+    vcl_cleanup($cfg);
+    /* snapshot storage was full recently → start without a snapshot (files live for the session only) */
+    $noSnap = (int)(vcl_map_get('_snapfull')['t'] ?? 0) > time() - 3600;
     $body = [
         'projectId' => (string)$cfg['vercel_project_id'],
         'name' => vcl_name($sid),
         'ports' => VCL_PORTS,
         'timeout' => vcl_timeout_ms($cfg),
         'resources' => ['vcpus' => max(1, min(8, (int)($cfg['vercel_vcpus'] ?? 2)))],
-        'persistent' => true,
+        'persistent' => !$noSnap,
         'tags' => ['app' => 'devil-ai'],
     ];
     [$st, $j, , $err, $code] = vcl_http($cfg, 'POST', '/v3/sandboxes', [], $body, 60);
-    if ($st === 409 || $code === 'sandbox_already_exists') { return ['ok' => false, 'exists' => true, 'error' => $err]; }
-    if ($st < 200 || $st >= 300 || empty($j['session']['id'])) { return ['ok' => false, 'error' => $err ?: 'could not create the sandbox', 'down' => true]; }
+    if (!$noSnap && vcl_is_snap_limit($st, $err, $code)) {
+        /* free old snapshots, then retry once with a snapshot; if still full, go without one */
+        $freed = vcl_cleanup($cfg, true);
+        if ($freed > 0) { [$st, $j, , $err, $code] = vcl_http($cfg, 'POST', '/v3/sandboxes', [], $body, 60); }
+        if (vcl_is_snap_limit($st, $err, $code)) {
+            vcl_map_set('_snapfull', ['t' => time(), 'exp' => time() + 86400]);
+            $body['persistent'] = false;
+            [$st, $j, , $err, $code] = vcl_http($cfg, 'POST', '/v3/sandboxes', [], $body, 60);
+        }
+    }
+    if ($st === 409 || $code === 'sandbox_already_exists') { return ['ok' => false, 'exists' => true, 'error' => vcl_friendly_error($err)]; }
+    if ($st < 200 || $st >= 300 || empty($j['session']['id'])) { return ['ok' => false, 'error' => vcl_friendly_error($err, 'could not create the sandbox'), 'down' => true]; }
     return ['ok' => true, 'j' => $j];
 }
 
@@ -126,9 +194,9 @@ function vcl_get(array $cfg, string $sid, bool $wake): array {
             if (!$wake) { return ['ok' => false, 'asleep' => true, 'error' => 'sandbox is asleep']; }
             if (in_array($sst, ['failed', 'aborted'], true) && microtime(true) - $t0 > 5) { return ['ok' => false, 'down' => true, 'error' => 'sandbox session ' . $sst]; }
         } elseif ($st === 0 || $st === 401 || $st === 402 || $st === 403 || $st >= 500) {
-            return ['ok' => false, 'down' => true, 'error' => $err ?: 'sandbox unavailable'];
+            return ['ok' => false, 'down' => true, 'error' => vcl_friendly_error($err, 'sandbox unavailable')];
         } elseif ($st !== 409 && $st !== 423 && $st !== 429) {
-            return ['ok' => false, 'down' => true, 'error' => $err ?: ('sandbox error ' . $st . ' ' . $code)];
+            return ['ok' => false, 'down' => true, 'error' => vcl_friendly_error($err, 'sandbox error ' . $st)];
         }
         if (microtime(true) - $t0 > 40) { return ['ok' => false, 'error' => 'The sandbox is still starting — try again in a few seconds.']; }
         usleep(1500000);

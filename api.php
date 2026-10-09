@@ -2328,14 +2328,41 @@ function login_email(string $email): ?array {
 
 /* reCAPTCHA gate: accepts the invisible v3 token, with the visible v2
    checkbox token as a fallback when the auto verification fails. */
-function devil_api_recaptcha_gate(array $in): void {
+/* why a sign-in / signup request was blocked (masked email) — data/auth_block.log, kept small */
+function devil_auth_block_log(string $reason, string $email = '', array $extra = []): void {
+    $m = $email;
+    if (strpos($m, '@') !== false) { [$a, $d] = explode('@', $m, 2); $m = mb_substr($a, 0, 2) . '***@' . $d; }
+    $f = data_dir() . '/auth_block.log';
+    if (is_file($f) && filesize($f) > 400000) { @rename($f, $f . '.1'); }
+    @file_put_contents($f, gmdate('c') . ' ' . $reason . ' ip=' . client_ip() . ' email=' . $m . ($extra ? ' ' . json_encode($extra, JSON_UNESCAPED_SLASHES) : '') . "\n", FILE_APPEND | LOCK_EX);
+}
+
+/**
+ * reCAPTCHA v3 gives real people on new phones / VPN / incognito a low score, and without a v2 checkbox
+ * they could never get past it. When Cloudflare Turnstile already proved a human ($humanOk), the v3
+ * score is not used to block.
+ */
+function devil_api_recaptcha_gate(array $in, bool $humanOk = false, string $email = ''): void {
     if (!devil_security_recaptcha_required()) { return; }
     $v3ok = devil_security_verify_recaptcha((string)($in['recaptcha_token'] ?? ''), client_ip());
+    if ($v3ok) { return; }
     $v2token = (string)($in['recaptcha_v2_token'] ?? '');
-    $v2ok = $v2token !== '' && devil_security_verify_recaptcha_v2($v2token, client_ip());
-    if (!$v3ok && !$v2ok) {
-        json_out(['ok' => false, 'error' => 'Security verification failed. Please complete the verification and try again.'], 403);
+    if ($v2token !== '' && devil_security_verify_recaptcha_v2($v2token, client_ip())) { return; }
+    $last = (array)($GLOBALS['devil_recaptcha_last'] ?? []);
+    if ($humanOk) { devil_auth_block_log('recaptcha_low_allowed_by_turnstile', $email, ['score' => $last['score'] ?? null]); return; }
+    devil_auth_block_log('recaptcha_failed', $email, ['score' => $last['score'] ?? null, 'codes' => $last['error-codes'] ?? null, 'has_token' => (string)($in['recaptcha_token'] ?? '') !== '']);
+    json_out(['ok' => false, 'error' => 'Security verification failed. Please complete the verification and try again.'], 403);
+}
+
+/** Turnstile (when configured) then reCAPTCHA. Ends the request with 403 when the visitor is not verified. */
+function devil_api_human_gate(array $in, string $email = ''): void {
+    $tsOn = devil_security_turnstile_required();
+    $tsOk = $tsOn && devil_security_verify_turnstile((string)($in['turnstile_token'] ?? ''), client_ip());
+    if ($tsOn && !$tsOk) {
+        devil_auth_block_log('turnstile_failed', $email, ['has_token' => (string)($in['turnstile_token'] ?? '') !== '']);
+        json_out(['ok' => false, 'error' => 'Cloudflare security verification failed. Please complete the verification and try again.'], 403);
     }
+    devil_api_recaptcha_gate($in, $tsOk, $email);
 }
 
 /* Best-effort email when an existing account is used from a new device/browser. */
@@ -2471,13 +2498,10 @@ try {
         } else {
             $email = strtolower(trim((string)($in['email'] ?? '')));
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { json_out(['ok' => false, 'error' => 'Please enter a valid email address.']); }
-            devil_api_recaptcha_gate($in);
-            if (devil_security_turnstile_required() && !devil_security_verify_turnstile((string)($in['turnstile_token'] ?? ''), client_ip())) {
-                json_out(['ok' => false, 'error' => 'Cloudflare security verification failed. Please complete the verification and try again.'], 403);
-            }
+            devil_api_human_gate($in, $email);
             $existing = find_user_by_email($email) !== null;
             [$allowedEmail, $emailBlockMsg] = devil_security_email_auth_status($email, $existing);
-            if (!$allowedEmail) { json_out(['ok' => false, 'error' => $emailBlockMsg], 403); }
+            if (!$allowedEmail) { devil_auth_block_log('email_rule', $email); json_out(['ok' => false, 'error' => $emailBlockMsg], 403); }
         }
 
         /* rate limits: 10 requests / 15 min per IP, 3 / 15 min per email */
@@ -2852,10 +2876,7 @@ try {
 
     if ($action === 'dev_key_create' && $method === 'POST') {
         $in = input_json();
-        devil_api_recaptcha_gate($in);
-        if (devil_security_turnstile_required() && !devil_security_verify_turnstile((string)($in['turnstile_token'] ?? ''), client_ip())) {
-            json_out(['ok' => false, 'error' => 'Cloudflare security verification failed. Please complete the verification and try again.'], 403);
-        }
+        devil_api_human_gate($in);
         $all = load_dev_keys();
         $active = 0;
         foreach ($all as $rec) { if (is_array($rec) && (string)($rec['uid'] ?? '') === $uid && empty($rec['revoked'])) { $active++; } }
