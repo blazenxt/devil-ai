@@ -319,7 +319,7 @@ $('#deleteBtn').addEventListener('click',function(){modal.classList.remove('hidd
 $('#cancelDelete').addEventListener('click',function(){modal.classList.add('hidden')});
 modal.addEventListener('click',function(e){if(e.target===modal){modal.classList.add('hidden')}});
 $('#sendDeleteCode').addEventListener('click',function(){ms.className='status';ms.textContent='Sending code…';api('otp_request',{purpose:'delete'}).then(function(j){if(j.ok){ms.className='status ok';ms.textContent='Code sent to '+(j.masked||'your email')+'.'}else{ms.className='status bad';ms.textContent=j.error||'Could not send code.'}})});
-$('#confirmDelete').addEventListener('click',function(){var code=$('#deleteCode').value.replace(/\D/g,'');if(code.length!==6){ms.className='status bad';ms.textContent='Enter the 6-digit code.';return}ms.className='status';ms.textContent='Deleting…';api('account_delete',{code:code}).then(function(j){if(j.ok){location.href='index.php'}else{ms.className='status bad';ms.textContent=j.error||'Delete failed.'}})});
+$('#confirmDelete').addEventListener('click',function(){var code=$('#deleteCode').value.replace(/\D/g,'');if(code.length!==6){ms.className='status bad';ms.textContent='Enter the 6-digit code.';return}ms.className='status';ms.textContent='Deleting…';api('account_delete',{code:code}).then(function(j){if(j.ok){location.href='./'}else{ms.className='status bad';ms.textContent=j.error||'Delete failed.'}})});
 })();
 </script>
 <script>
