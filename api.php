@@ -1630,6 +1630,10 @@ function call_engine(array $cfg, array $engine, array $messages, string $image =
         }
         $txt = extract_ai_text($j);
         if (trim($txt) === '') { return [false, 'The engine returned an empty answer.', null, null]; }
+        /* some engines answer "busy" as if it were a normal reply — that is a failure, so retry/fallback kicks in */
+        if (mb_strlen($txt) < 220 && preg_match('/^\W*(at the moment i am not able to think|i am not able to think right now|please try again in a few minutes|too many requests|rate limit(ed)?|service (is )?(temporarily )?unavailable|server is busy|model is (currently )?overloaded)/i', trim($txt))) {
+            return [false, 'The engine is busy right now.', 'Devil AI will retry automatically — try again in a moment.', null];
+        }
         return [true, $txt, null, 'prexzy:' . (string)($engine['endpoint'] ?? 'custom')];
     }
 
