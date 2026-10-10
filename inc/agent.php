@@ -18,7 +18,7 @@ if (!function_exists('mb_strlen')) { function mb_strlen($s) { return strlen((str
 function agent_tools(): array {
     return [
         'web_search' => 'Search the web for current information. INPUT: one search query (plain text, one line).',
-        'fetch_url'  => 'Read the text content of a public web page. INPUT: one full http(s) URL. Internal/private addresses are blocked.',
+        'fetch_url'  => 'Read the text of a public web page or PDF. INPUT: one full http(s) URL; long pages come in parts — add a second line "part: 2" for the next part. PDFs are also saved in the workspace (downloads/). Internal/private addresses are blocked.',
         'calculator' => 'Evaluate a math expression safely (no code execution). INPUT: one arithmetic expression, e.g. 12 * (3 + 4) ^ 2.',
         'datetime'   => 'Get the current server date and time. INPUT: ignored, or a timezone name like Asia/Kolkata.',
     ];
@@ -484,18 +484,24 @@ function agent_tool_web_search(array $cfg, string $query): array {
     return ['ok' => true, 'text' => "Search results for \"{$q}\":\n" . implode("\n", $lines) . $tail, 'provider' => $used];
 }
 
-function agent_tool_fetch_url(array $cfg, string $url): array {
-    $url = trim(strtok(trim($url), "\n") ?: '');
+function agent_tool_fetch_url(array $cfg, string $input, ?array $sbx = null): array {
+    [$url, $part] = xt_fetch_args($input);
     if ($url !== '' && !preg_match('#^https?://#i', $url) && preg_match('#^[a-z0-9.-]+\.[a-z]{2,}(/|$)#i', $url)) { $url = 'https://' . $url; }
     if (!agent_url_safe($url)) { return ['ok' => false, 'text' => 'URL blocked: only public http(s) pages are allowed.']; }
     $max = max(1024, (int)($cfg['agent_fetch_max_bytes'] ?? 400000));
-    $r = agent_http_get($url, ['timeout' => 15, 'max' => $max, 'safe' => true, 'headers' => ['Accept: text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5']]);
+    $r = agent_http_get($url, ['timeout' => 15, 'max' => max($max, 15000000), 'safe' => true, 'headers' => ['Accept: text/html,application/xhtml+xml,text/plain;q=0.9,application/pdf;q=0.8,*/*;q=0.5']]);
     if (!$r['ok']) {
         $why = $r['status'] ? 'HTTP ' . $r['status'] : ($r['error'] !== '' ? $r['error'] : 'network error');
         return ['ok' => false, 'text' => 'Could not fetch the URL (' . $why . ').'];
     }
     $ct = $r['type'];
     $raw = $r['body'];
+    /* PDF: saved in the workspace, text pulled out page by page */
+    if (strpos($ct, 'application/pdf') !== false || strncmp($raw, '%PDF', 4) === 0) {
+        if ($sbx && !empty($sbx['sid'])) { return xt_pdf_text((array)$sbx['cfg'], (string)$sbx['sid'], (string)$r['url'], $raw, $part); }
+        return ['ok' => false, 'text' => 'The URL is a PDF (' . (int)round(strlen($raw) / 1024) . ' KB). PDFs can be read when the sandbox is on.'];
+    }
+    if (strlen($raw) > $max) { $raw = substr($raw, 0, $max); }
     if ($ct !== '' && !preg_match('#text/|application/(xhtml\+xml|json|xml|rss\+xml|atom\+xml|javascript|ld\+json)#i', $ct)) {
         return ['ok' => false, 'text' => 'The URL did not return a readable text page (content-type: ' . $ct . ').'];
     }
@@ -504,7 +510,7 @@ function agent_tool_fetch_url(array $cfg, string $url): array {
     if (strcasecmp($cs, 'utf-8') !== 0 && strcasecmp($cs, 'utf8') !== 0 && function_exists('mb_convert_encoding')) { $conv = @mb_convert_encoding($raw, 'UTF-8', $cs); if (is_string($conv)) { $raw = $conv; } }
     $title = preg_match('/<title[^>]*>(.*?)<\/title>/is', $raw, $tm) ? agent_clean_text($tm[1]) : '';
     $text = preg_match('#html#i', $ct) || stripos(substr($raw, 0, 500), '<html') !== false ? agent_html_to_text($raw) : trim($raw);
-    if (mb_strlen($text) > 12000) { $text = mb_substr($text, 0, 12000) . "\n…[truncated]"; }
+    if (trim($text) !== '') { [$text] = xt_text_part($text, $part); }
     if (trim($text) === '') { return ['ok' => false, 'text' => 'The page had no readable text content (it may need JavaScript — try the browser tool if the sandbox is on).']; }
     return ['ok' => true, 'text' => 'URL: ' . $r['url'] . ($title !== '' ? "\nTitle: {$title}" : '') . "\n\n{$text}"];
 }
@@ -517,12 +523,12 @@ function agent_tool_datetime(array $cfg, string $input): array {
     return ['ok' => true, 'text' => 'Current server time: ' . date('Y-m-d H:i:s T') . ' (' . date('l, F j, Y') . ')'];
 }
 
-function agent_run_tool(array $cfg, string $name, string $input): array {
+function agent_run_tool(array $cfg, string $name, string $input, ?array $sbx = null): array {
     switch ($name) {
         case 'web_search':
             return agent_tool_web_search($cfg, $input);
         case 'fetch_url':
-            return agent_tool_fetch_url($cfg, $input);
+            return agent_tool_fetch_url($cfg, $input, $sbx);
         case 'calculator':
             $r = agent_calc($input);
             return !empty($r['ok']) ? ['ok' => true, 'text' => 'Result: ' . $r['result']] : ['ok' => false, 'text' => 'Calculator error: ' . $r['error']];
@@ -587,6 +593,18 @@ function agent_tools_for(bool $sandbox, array $sbxCfg = [], string $sid = ''): a
     return $t;
 }
 
+/** several questions at once: lines "Q: …" each followed by "- option" lines → [[question, options[]], …] (empty when < 2 questions) */
+function agent_parse_ask_multi(string $input): array {
+    $qs = []; $cur = -1;
+    foreach (preg_split('/\r?\n/', trim($input)) as $l) {
+        $l = trim($l);
+        if ($l === '') { continue; }
+        if (preg_match('/^(?:Q\d*|Question\s*\d*)\s*[:.)]\s*(.+)$/i', $l, $m)) { $qs[] = [mb_substr(trim($m[1]), 0, 400), []]; $cur = count($qs) - 1; continue; }
+        if ($cur >= 0 && preg_match('/^(?:[-*•]|\d+[.)])\s*(.+)$/u', $l, $m)) { if (count($qs[$cur][1]) < 4) { $qs[$cur][1][] = mb_substr(trim($m[1]), 0, 160); } continue; }
+    }
+    return count($qs) >= 2 ? array_slice($qs, 0, 4) : [];
+}
+
 /** compact memory of one earlier agent turn: which tools ran and what came out (so a follow-up turn
     — e.g. the user answering an ask_user question — continues instead of starting from zero) */
 function agent_steps_digest(array $steps, int $cap = 2200): string {
@@ -643,6 +661,16 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
         $L[] = '- Vite dev server: also set server: { host: true, allowedHosts: true } in vite.config (and preview: { allowedHosts: true }) so the preview link is not blocked.';
         $L[] = '- Never say something is done, styled, fixed or working unless a tool result in THIS run shows it.';
         $L[] = '';
+        $L[] = 'ALL KINDS OF WORK — pick the right tool:';
+        $L[] = '- Changing an existing file: use edit_file (SEARCH/REPLACE) for fixes and small changes instead of rewriting the whole file. Copy the SEARCH lines exactly from the file (read_file or grep -n first).';
+        $L[] = '- Pictures: image_search for REAL photos (actual places, foods, landmarks, animals, products, people at work); generate_image for custom art, illustrations, logos, banners and scenes that do not exist. Check what a found photo shows before using it, and credit CC BY / BY-SA photos (e.g. a small credits line in the footer).';
+        $L[] = '- Voice / audio: generate_speech for voiceovers, narration, audiobooks, podcasts (two voices), pronunciation. Join parts or add music with ffmpeg in bash.';
+        $L[] = '- Documents and data: Word .docx (python-docx), PowerPoint .pptx (python-pptx), Excel .xlsx (openpyxl, with real formulas and formatting), PDF (reportlab), charts (matplotlib), data analysis (pandas). Install once with: pip install -q python-docx python-pptx openpyxl reportlab — then write a Python script with write_file, run it, and check the output file (e.g. re-open it with Python, or render a slide/page to PNG and look at it). Make them look professional: real content, headings, consistent fonts and colors, tables and charts where useful.';
+        $L[] = '- Research and reports: several web_search queries plus fetch_url on the best sources (PDFs work too); compare sources, note dates, and cite every key fact with its link. Long research → also save it as a file (report.md / .docx / .pdf).';
+        $L[] = '- Files the user uploads (PDF, CSV, images, code…) are in uploads/: read and analyse them with read_file / Python (pypdf, pandas, Pillow).';
+        $L[] = '- Games, tools, scripts, bots, APIs, data pipelines: build them in the sandbox, run them, and test them like a user would before saying they work.';
+        $L[] = '- When the main deliverable is a file (document, slides, sheet, report, audio, image, video), finish with present_file on it so the user sees it right away. For websites/apps the Preview tab already shows it.';
+        $L[] = '';
         $L[] = 'THINK LIKE A REAL ENGINEER:';
         $L[] = '- First understand what the user really wants (goal, audience, must-haves). For a bigger task, start your first reply with a short plan (3-6 bullets), then make the first tool call.';
         $L[] = '- Before every tool call write 1-3 short sentences: what the last result told you and what you will do next and why. Notice surprises (errors, empty output, wrong versions) and adapt the plan instead of pushing on blindly.';
@@ -654,6 +682,7 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
         $L[] = '- If the request is vague or missing details that would clearly change the result (what the site/app is for, its content, style, framework, scope, which data to use), ask BEFORE building. If the intent is clear, do not ask — just do the work.';
         $L[] = '- Also ask in the middle of a task when you hit a real fork: an unexpected finding, two very different ways forward, something risky or destructive (deleting data, overwriting the user\'s files), or when the user\'s files/instructions contradict each other.';
         $L[] = '- Ask ONE focused question with 2-4 concrete options (put the best one first and add "(Recommended)"). An option may have a short explanation after " — ". The user can also type their own answer.';
+        $L[] = '- Several things unclear at the start? Ask them together in ONE ask_user (max 4): each question on a line starting with "Q:", each followed by its "- option" lines. The user answers them all in one form.';
         $L[] = '';
         $L[] = 'ASK FOR WHAT YOU NEED (requirements):';
         $L[] = '- When the task needs something only the user can give — an API key or token, a password or login, account access, their own files or data, a domain, payment details, personal info — STOP and ask for it with ask_user. Say exactly what you need, why, and where they can get it.';
@@ -772,15 +801,21 @@ function agent_tool_short(string $name, string $desc): string {
         'write_file' => 'Create/overwrite a file. INPUT: line 1 = path, then the content (max ~4,000 characters per call).',
         'append_file' => 'Add text to the end of a file. INPUT: line 1 = path, then the text. Use it to write big files in parts.',
         'read_file' => 'Read a text file. INPUT: path.',
+        'edit_file' => 'Change part of a file. INPUT: line 1 = path, then blocks: <<<<<<< SEARCH / exact current lines / ======= / new lines / >>>>>>> REPLACE.',
+        'image_search' => 'Find real openly licensed photos and save them. INPUT: line 1 = what to find (simple English); optional "count: 3", "folder: images".',
+        'generate_speech' => 'Text → spoken audio. INPUT: line 1 = output .mp3/.wav; optional "voice: Kore" or "voices: Host=Kore, Guest=Puck" (dialogue lines start with "Host:"/"Guest:"); optional "style: …"; then the text (≤4,000 chars).',
+        'present_file' => 'Open a finished file in the user\'s viewer. INPUT: path.',
+        'github_pr' => 'Commit + push your branch of the connected repo and open/update the pull request. INPUT: line 1 PR title, then description.',
+        'stop_server' => 'Stop the server on a port. INPUT: port.',
         'list_files' => 'List files. INPUT: folder or ".".',
         'start_server' => 'Start a dev server in the background and get its preview URL. INPUT: line 1 = port, line 2 = command (bind 0.0.0.0).',
         'browser' => 'Open a URL in Chromium: returns text, errors, failed files, broken images, sideways overflow, styling. INPUT: line 1 = URL; extra lines = actions to test like a user: mobile | click <css> | fill <css> = <text> | select <css> = <value> | check <css> | press Enter | wait 1000.',
         'generate_image' => 'Make an image. INPUT: line 1 = output path, line 2 = prompt. Several images: ONE call, one "path | prompt" per line (max 8, made in parallel — much faster).',
         'deploy_site' => 'Publish a finished site to the user\'s own FTP/SFTP hosting (Settings → Hosting). INPUT: line 1 = folder, line 2 = optional site name.',
         'full_internet' => 'Move to a sandbox with full internet (only when a needed website/API is blocked).',
-        'ask_user' => 'Ask the user one question and stop. INPUT: the question, then up to 4 "- option — why" lines; for secrets add "need: ENV_NAME | label" lines.',
+        'ask_user' => 'Ask the user and stop. INPUT: the question, then up to 4 "- option — why" lines; for secrets add "need: ENV_NAME | label" lines; several questions: "Q: …" lines, each followed by its options (max 4).',
         'web_search' => 'Search the web. INPUT: short keywords.',
-        'fetch_url' => 'Read a web page. INPUT: URL.',
+        'fetch_url' => 'Read a web page or PDF. INPUT: URL (add a line "part: 2" for the next part of a long page).',
         'calculator' => 'Calculate. INPUT: expression.',
         'datetime' => 'Current date/time.',
     ];
@@ -799,6 +834,7 @@ function agent_system_prompt_compact(bool $sandbox, array $env = []): string {
         $L[] = '- TEST like a real user before finishing: forms (browser with fill … / click submit lines → check the success/error message), buttons, menus, tabs, and the mobile view (browser with a "mobile" line: no sideways overflow, menu works). Fix everything that fails, then test again.';
         $L[] = '- Several images? ONE generate_image call with one "path | prompt" per line (max 8) — they are made at the same time. Before writing a JS file, list the HTML ids (bash: grep -o \'id="[^"]*"\' FILE.html) and use EXACTLY those. When a tool gives a QUICK FIX command, run it as is instead of rewriting files.';
         $L[] = '- When a tool lists several problems (missing files, broken images…), fix ALL of them — keep your own list and tick them off; never fix only some and move on.';
+        $L[] = '- Small fixes: edit_file (not a full rewrite). Real photos: image_search; custom art: generate_image. Audio: generate_speech. Word/PowerPoint/Excel/PDF/charts: pip install -q python-docx python-pptx openpyxl reportlab, then a Python script. Finish file deliverables with present_file.';
         $L[] = '- Keep one consistent brand name, nav menu, colors and class names across all pages — put them in your checklist, and read_file an earlier file when unsure instead of guessing.';
         $L[] = '- Create files with write_file, not shell heredocs. Run commands yourself. Never claim done/fixed/styled without a tool result showing it.';
         $L[] = '- Ask with ask_user only when the request is truly unclear or you need something only the user has (API key → "need: ENV_NAME | label"; files → ask them to use Add files).';
@@ -810,6 +846,7 @@ function agent_system_prompt_compact(bool $sandbox, array $env = []): string {
     $L[] = 'FORMAT: 1-2 short sentences, then exactly ONE tool call at the very end:';
     $L[] = "TOOL: <name>\nINPUT: <input (may span lines)>";
     $L[] = 'When everything is done and verified: reply to the user with NO tool call — a short summary in the user\'s language AND script (Roman-letter Hinglish like "Aapka app ready hai" if they wrote Hinglish in English letters — never switch to Devanagari unless they wrote Devanagari). Mention files and the preview. If something still does not work, say it plainly.';
+    if (!empty($env['note'])) { $L[] = (string)$env['note']; }
     return implode("\n", $L);
 }
 function agent_clip(string $t, int $max, bool $keepEnd = false): string {
@@ -1030,6 +1067,13 @@ function agent_job_advance(array &$job, array $deps): array {
             $job['history'][] = ['role' => 'user', 'content' => "TOOL RESULT ({$call['name']}):\nUnknown tool '{$call['name']}'. Available tools: " . implode(', ', array_keys($tools)) . ". Call a valid tool or give the final answer."];
             return ['type' => 'retry', 'note' => 'Unknown tool requested.'];
         }
+        if ($call['name'] === 'ask_user' && ($multi = agent_parse_ask_multi($call['input']))) {
+            $reply = trim(($call['thought'] !== '' ? $call['thought'] . "\n\n" : '') . implode("\n", array_map(static function ($q, $i) { return ($i + 1) . '. ' . $q[0]; }, $multi, array_keys($multi))));
+            $job['state'] = 'done';
+            $job['reply'] = $reply;
+            $job['ask'] = ['question' => $multi[0][0], 'options' => [], 'questions' => array_map(static function ($q) { return ['question' => $q[0], 'options' => $q[1]]; }, $multi)];
+            return ['type' => 'final', 'reply' => $reply, 'ask' => $job['ask']];
+        }
         if ($call['name'] === 'ask_user') {
             $pa = function_exists('sbx_parse_ask') ? sbx_parse_ask($call['input']) : [trim($call['input']), [], []];
             list($q, $opts) = $pa; $needs = (array)($pa[2] ?? []);
@@ -1065,7 +1109,7 @@ function agent_job_advance(array &$job, array $deps): array {
             $result = $sandbox ? sbx_run_tool($deps['sbx'] + ['step' => count((array)$job['trace']) + 1, 'cut' => !empty($p['cut']) && in_array($name, ['write_file', 'append_file'], true)], $name, $input)
                                : ['ok' => false, 'text' => 'The sandbox is not available right now.'];
         } else {
-            $result = agent_run_tool($cfg, $name, trim($input));
+            $result = agent_run_tool($cfg, $name, trim($input), $sandbox ? (array)($deps['sbx'] ?? []) : null);
         }
         $ms = (int)round((microtime(true) - $t0) * 1000);
         $text = (string)($result['text'] ?? '');

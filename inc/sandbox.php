@@ -13,6 +13,7 @@
  * the sandbox of their own chats.
  */
 declare(strict_types=1);
+require_once __DIR__ . '/agent_tools_extra.php';
 
 const SBX_WORKDIR = '/home/user/work';
 require_once __DIR__ . '/sandbox_daytona.php';
@@ -453,6 +454,8 @@ function sbx_agent_tools(array $cfg = [], string $sid = ''): array {
     $t = sbx_agent_tools_all();
     /* full_internet only when this chat is on the limited-internet sandbox and the backup exists */
     if ($cfg !== [] && !(sbx_dual($cfg) && sbx_backend($cfg, $sid) === 'daytona')) { unset($t['full_internet']); }
+    /* github_pr only when this chat has a connected repository */
+    if ($cfg !== [] && empty($cfg['_gh'])) { unset($t['github_pr']); }
     return $t;
 }
 
@@ -461,14 +464,20 @@ function sbx_agent_tools_all(): array {
         'bash'           => 'Run a shell command in your Linux sandbox (cwd /home/user/work). Output and exit code come back. A command that is still running after ~25s keeps running in the background and you get its pid and log file — check it later with tail. Use start_server (not bash) for servers. INPUT: the command(s); several lines are fine.',
         'write_file'     => 'Create or overwrite a file. INPUT: first line = path (relative to /home/user/work), then the full file content on the following lines.',
         'append_file'    => 'Add text to the END of a file (creates it if missing). Use it to write a big file in parts: write_file the first part, then append_file the rest. INPUT: first line = path, then the text to add.',
+        'edit_file'      => 'Change PART of an existing file without rewriting it (best for fixes and small changes). INPUT: line 1 = path, then one or more blocks: a line "<<<<<<< SEARCH", the exact current lines, a line "=======", the new lines, a line ">>>>>>> REPLACE". The SEARCH lines must match the file (indentation may differ) and appear only once.',
         'read_file'      => 'Read a text file from the sandbox. INPUT: path.',
         'list_files'     => 'List files in the workspace. INPUT: a folder path, or "." for everything.',
         'start_server'   => 'Start a long-running app/dev server in the background and get its public preview URL. INPUT: first line = port, second line = command (bind to 0.0.0.0).',
         'deploy_site'    => 'Publish a finished website to the USER\'S OWN hosting server (their FTP/SFTP account from Settings → Hosting) and get its live URL. Use only when the user wants the site hosted/published/deployed on their server. INPUT: first line = folder inside /home/user/work to upload (e.g. site or app/dist — for React/Vite run the build first and deploy dist), optional second line = site name (letters, numbers, dashes; it becomes the sub-folder and URL path).',
         'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors, failed files, BROKEN IMAGES, sideways overflow and saves a screenshot. INPUT: line 1 = URL; optional next lines = actions run in order to TEST the page like a user: "mobile" (phone screen 390px), "click <css selector>", "fill <css selector> = <text>", "select <css selector> = <value>", "check <css selector>", "press Enter", "wait 1000", "goto <url>". Example — test a form: line 2 "fill #name = Ravi", line 3 "click button[type=submit]".',
         'generate_image' => 'Generate an image from a text prompt and save it in the workspace. INPUT: first line = output path (e.g. images/hero.png), second line = the prompt. SEVERAL IMAGES? Make them in ONE call (much faster, made at the same time, max 8): one image per line as "path | prompt", e.g. "images/g1.jpg | cozy cafe interior" newline "images/g2.jpg | latte art close-up".',
+        'image_search'   => 'Find REAL photos on the web (openly licensed: Openverse / Wikimedia Commons) and save them in the workspace — for real places, foods, animals, landmarks, products, people at work… INPUT: line 1 = what to look for in simple English (e.g. "masala chai glass"); optional lines "count: 3" (1-6) and "folder: images". Returns the saved paths with credit/license.',
+        'generate_speech'=> 'Turn text into natural spoken audio (voiceovers, narration, podcasts, pronunciation). INPUT: line 1 = output file (.mp3 or .wav, e.g. audio/intro.mp3); optional "voice: Kore" (voices: Kore firm, Puck upbeat, Charon informative, Zephyr bright, Aoede breezy, Leda youthful, Fenrir excitable, Sulafat warm, Achird friendly, Gacrux mature …); optional "voices: Host=Kore, Guest=Puck" for a two-person dialogue whose lines start with "Host:" / "Guest:"; optional "style: warm and slow"; then the text (up to ~4,000 characters, any language).',
+        'present_file'   => 'Open a finished file (report, document, slides, sheet, image, audio, video, PDF, page) in the user\'s viewer so they see the result right away. INPUT: path. Use it once for the main deliverable at the end.',
+        'stop_server'    => 'Stop the app/server listening on a port. INPUT: port.',
+        'github_pr'      => 'Commit all changes in the connected GitHub repository on your working branch, push it and open (or update) the pull request. INPUT: line 1 = PR title, then a short description (what changed, how it was tested). Returns the PR link.',
         'full_internet'  => 'Move this chat to a sandbox with FULL internet (2 CPU, 4 GB RAM). Use it only when the task needs websites/APIs that the current sandbox cannot reach. Your /home/user/work files are copied (node_modules / venvs are not); running servers must be restarted. INPUT: one short reason.',
-        'ask_user'       => 'Ask the user a clarifying question (or for something you need) and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- " (optional " — explanation"). For secrets add lines "need: ENV_NAME | label" instead of options.',
+        'ask_user'       => 'Ask the user a clarifying question (or for something you need) and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- " (optional " — explanation"). For secrets add lines "need: ENV_NAME | label" instead of options. Several questions at once (max 4): start each with "Q: " and put its "- " options under it.',
     ];
 }
 
@@ -951,6 +960,22 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
                 if ($bits) { $dupWarn = "\n⚠ DUPLICATE CONTENT: " . implode('; ', $bits) . '. You probably repeated a part that was already written. Read the file (bash: grep -n \'id=\' ' . $path . ') and remove the repeated part, or rewrite the file cleanly with write_file.'; }
             }
             return ['ok' => true, 'text' => 'Appended ' . strlen($add) . ' bytes to ' . $path . ' (now ' . strlen($content) . ' bytes, ' . substr_count($content, "\n") . ' lines).' . $dupWarn . sbx_file_check($path, $content, !empty($ctx['cut'])) . sbx_id_check_after_write($cfg, $sid, $path, $content), 'meta' => ['path' => $path, 'bytes' => strlen($content)]];
+        }
+        case 'edit_file':
+            return xt_tool_edit_file($cfg, $sid, $input, !empty($ctx['cut']));
+        case 'image_search':
+            return xt_tool_image_search($cfg, $sid, $input);
+        case 'generate_speech':
+            return xt_tool_speech($cfg, $sid, $input);
+        case 'present_file':
+            return xt_tool_present($cfg, $sid, $input);
+        case 'stop_server':
+            return xt_tool_stop_server($cfg, $sid, $input);
+        case 'github_pr': {
+            if (empty($cfg['_gh']) || empty($ctx['uid'])) { return ['ok' => false, 'text' => 'No GitHub repository is connected to this chat. The user can connect one with the GitHub button next to the message box.']; }
+            $r = gh_tool_pr($cfg, $sid, (string)$ctx['uid'], (array)$cfg['_gh'], $input);
+            if (!empty($r['meta']['pr']) && function_exists('gh_remember_pr')) { gh_remember_pr((string)$ctx['uid'], (array)$cfg['_gh'], (string)$r['meta']['pr']); }
+            return $r;
         }
         case 'read_file': {
             $path = sbx_rel(strtok(trim($input), "\n") ?: '');

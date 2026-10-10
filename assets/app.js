@@ -54,6 +54,7 @@ function syncModeUI() {
   bc.toggle('battle-mode', chatMode === 'battle');
   bc.toggle('sbs-mode', chatMode === 'sbs');
   if (!agentMode) { setWorkspace(false); }
+  if (typeof GH !== 'undefined' && GH) { ghRenderChip(); }
   syncEmptyState();
   if (typeof renderWorkspace === 'function') { renderWorkspace(); }
 }
@@ -1750,6 +1751,7 @@ function newChatView() {
   clearEdit();
   isTempChat = false;
   currentChat = null;
+  if (typeof GH !== 'undefined') { GH.link = null; GH.pending = null; ghRenderChip(); }
   msgs.innerHTML = '';
   welcome.style.display = '';
   renderList($('#searchInp').value);
@@ -2186,6 +2188,7 @@ function openChat(id, variant) {
     updateChatActions();
     scrollDown();
     SBX.lastList = 0; SBX.view = null; SBX.files = [];
+    GH.link = j.github || null; GH.pending = null; ghRenderChip();
     if (wsIsOpen()) { renderWorkspace(); }
     if (j.agent_job && chatMode === 'agent') { continueAgent(j.agent_job); }
   });
@@ -2862,6 +2865,12 @@ Object.assign(AGX_TOOLS, {
   start_server:   { verb: 'Started app', icon: 'play' },
   browser:        { verb: 'Opened in browser', icon: 'monitor' },
   generate_image: { verb: 'Generated image', icon: 'imageS' },
+  edit_file:      { verb: 'Edited file', icon: 'pencil' },
+  image_search:   { verb: 'Found photos', icon: 'imageS' },
+  generate_speech:{ verb: 'Made audio', icon: 'play' },
+  present_file:   { verb: 'Opened file', icon: 'fileText' },
+  github_pr:      { verb: 'Opened pull request', icon: 'prS' },
+  stop_server:    { verb: 'Stopped app', icon: 'terminal' },
   ask_user:       { verb: 'Asked you', icon: 'help' }
 });
 var agxArgBase = agxArg;
@@ -2869,7 +2878,8 @@ agxArg = function (s) {
   var inp = String(s.input || '');
   var first = inp.replace(/^\s*```[\w.+-]*\s*\n/, '').split('\n')[0].trim();
   if (s.tool === 'bash') { return first + (inp.trim().split('\n').length > 1 ? ' …' : ''); }
-  if (s.tool === 'write_file' || s.tool === 'append_file' || s.tool === 'read_file' || s.tool === 'generate_image') { return first; }
+  if (/^(write_file|append_file|edit_file|read_file|generate_image|image_search|generate_speech|present_file)$/.test(s.tool)) { return first; }
+  if (s.tool === 'stop_server') { return 'port ' + first; }
   if (s.tool === 'list_files') { return first || '.'; }
   if (s.tool === 'start_server') { var l = inp.trim().split('\n'); return 'port ' + (l[0] || '').trim() + (l[1] ? ' — ' + l[1].trim() : ''); }
   return agxArgBase(s);
@@ -2953,7 +2963,7 @@ var AGT = {
   send: agtSvg('<path d="M5 12h14M13 6l6 6-6 6"/>', 14),
   x: agtSvg('<path d="M18 6 6 18M6 6l12 12"/>', 13)
 };
-var AGT_SBX_TOOLS = /^(bash|write_file|append_file|read_file|deploy_site|list_files|start_server|browser|generate_image|ask_user)$/;
+var AGT_SBX_TOOLS = /^(bash|write_file|append_file|edit_file|read_file|deploy_site|list_files|start_server|stop_server|browser|generate_image|image_search|generate_speech|present_file|github_pr|ask_user)$/;
 function agtUse(steps, live) {
   if (live || agentMode) { return true; }
   return (steps || []).some(function (s) { return s && AGT_SBX_TOOLS.test(s.tool || ''); });
@@ -3077,6 +3087,29 @@ function agtRow(s, running) {
       if (!running && s.ok && /\.html?$/i.test(first)) { extra = agtHtmlCard(first); }
       break;
     }
+    case 'edit_file': {
+      verb = running ? 'Editing' : 'Edit'; openPath = running ? '' : first;
+      if (m.changes) { info = m.changes + ' change' + (m.changes === 1 ? '' : 's'); }
+      body = agtDiff(inp.replace(/^\s*[^\n]*\n?/, ''));
+      break;
+    }
+    case 'image_search': verb = running ? 'Searching photos' : 'Search photos';
+      body = out ? agtPre(out) : '';
+      if (m.images && m.images.length && SBX.on) { extra = agtImgGrid(m.images); }
+      break;
+    case 'generate_speech': verb = running ? 'Generating speech' : 'Generate speech'; arg = m.audio || first; openPath = running ? '' : (m.audio || '');
+      body = inp.split('\n').slice(1).join('\n').trim() ? '<div class="agt-lb">Script</div>' + agtPre(inp.split('\n').slice(1).join('\n').trim()) : '';
+      if (m.audio && SBX.on) { extra = agtAudio(m.audio); }
+      break;
+    case 'present_file': verb = running ? 'Opening' : 'Present'; openPath = running ? '' : first; break;
+    case 'github_pr': verb = running ? 'Opening pull request' : 'Pull request'; arg = first;
+      body = (inp.split('\n').slice(1).join('\n').trim() ? '<div class="agt-lb">Description</div>' + agtPre(inp.split('\n').slice(1).join('\n').trim()) : '') + (out ? '<div class="agt-lb">Result</div>' + agtPre(out) : '');
+      if (m.pr && /^https:\/\/github\.com\//.test(String(m.pr))) {
+        extra = document.createElement('div'); extra.className = 'agt-media';
+        extra.innerHTML = '<a class="agt-pr" href="' + esc(m.pr) + '" target="_blank" rel="noopener noreferrer">' + (I.prS || '') + '<span>' + esc(String(m.pr).replace(/^https:\/\/github\.com\//, '')) + '</span></a>';
+      }
+      break;
+    case 'stop_server': verb = running ? 'Stopping' : 'Stop server'; arg = 'port ' + first; body = out ? agtPre(out) : ''; break;
     case 'read_file': verb = running ? 'Reading' : 'Read'; openPath = running ? '' : first;
       if (out) { var rl = out.split('\n').length; info = rl + ' line' + (rl === 1 ? '' : 's'); body = agtCode(out); } break;
     case 'list_files': verb = running ? 'Exploring' : 'Explore'; arg = (first && first !== '.' && first !== './') ? first : 'files'; body = out ? agtPre(out) : ''; break;
@@ -3128,6 +3161,38 @@ function agtRow(s, running) {
   }
   if (extra) { r.appendChild(extra); }
   return r;
+}
+/* SEARCH/REPLACE blocks of edit_file → a small red/green diff */
+function agtDiff(txt) {
+  var re = /^[ \t]*<{5,9}[ \t]*SEARCH[ \t]*\n([\s\S]*?)^[ \t]*={5,9}[ \t]*\n([\s\S]*?)^[ \t]*>{5,9}[ \t]*REPLACE[ \t]*$/gm, m, h = '';
+  txt = String(txt || '').replace(/\r\n/g, '\n');
+  while ((m = re.exec(txt))) {
+    var a = m[1].replace(/\n$/, ''), b = m[2].replace(/\n$/, '');
+    h += '<div class="agt-diff">' + (a ? a.split('\n').map(function (l) { return '<div class="dl del"><i>−</i><span>' + (esc(l) || ' ') + '</span></div>'; }).join('') : '') +
+      (b ? b.split('\n').map(function (l) { return '<div class="dl add"><i>+</i><span>' + (esc(l) || ' ') + '</span></div>'; }).join('') : '') + '</div>';
+  }
+  return h || (txt.trim() ? agtPre(txt) : '');
+}
+function agtImgGrid(paths) {
+  var w = document.createElement('div');
+  w.className = 'agt-media grid';
+  paths.slice(0, 6).forEach(function (p) {
+    var im = document.createElement('img');
+    im.loading = 'lazy'; im.alt = ''; im.src = sbxFileUrl(p); im.title = p;
+    im.addEventListener('error', function () { im.remove(); });
+    im.addEventListener('click', function () { openImgView(im.src); });
+    w.appendChild(im);
+  });
+  return w;
+}
+function agtAudio(path) {
+  var w = document.createElement('div');
+  w.className = 'agt-media audio';
+  var a = document.createElement('audio');
+  a.controls = true; a.preload = 'metadata'; a.src = sbxFileUrl(path);
+  a.addEventListener('error', function () { w.remove(); });
+  w.appendChild(a);
+  return w;
 }
 function agtImg(path) {
   var w = document.createElement('div');
@@ -3225,9 +3290,55 @@ function agtAppend(el, node) {
   box.insertBefore(node, box.querySelector('.agt-live'));
 }
 
+/* ask_user with several questions → one form: pick an option (or type) per question, then Submit */
+function renderAskForm(el, qs) {
+  var w = document.createElement('div');
+  w.className = 'agt-ask multi';
+  var picked = qs.map(function () { return ''; });
+  w.innerHTML = '<div class="agt-askh"><span>' + qs.length + ' quick questions</span><button type="button" class="agt-skip">Skip</button></div>' +
+    qs.map(function (q, qi) {
+      return '<div class="agt-mq" data-q="' + qi + '"><div class="agt-mqt"></div>' +
+        (q.options || []).map(function (o, i) { return '<button type="button" role="radio" aria-checked="false" class="agt-opt" data-i="' + i + '"><span class="rd"></span><span class="ol"><span class="olt"></span><span class="old"></span></span></button>'; }).join('') +
+        '<input type="text" class="agt-mqi" maxlength="600" placeholder="' + ((q.options || []).length ? 'Or write your own…' : 'Your answer…') + '"></div>';
+    }).join('') +
+    '<div class="agt-nb"><span class="agt-nnote"></span><button type="button" class="agt-nsave">Submit answers</button></div>';
+  Array.prototype.forEach.call(w.querySelectorAll('.agt-mq'), function (box) {
+    var qi = Number(box.dataset.q), q = qs[qi];
+    box.querySelector('.agt-mqt').textContent = (qi + 1) + '. ' + q.question;
+    Array.prototype.forEach.call(box.querySelectorAll('.agt-opt'), function (b) {
+      var p = String(q.options[Number(b.dataset.i)]).split(/\s+[—–]\s+/);
+      b.querySelector('.olt').textContent = p[0];
+      var d = b.querySelector('.old'); if (p.length > 1) { d.textContent = p.slice(1).join(' — '); } else { d.remove(); }
+      b.addEventListener('click', function () {
+        Array.prototype.forEach.call(box.querySelectorAll('.agt-opt'), function (x) { x.setAttribute('aria-checked', 'false'); });
+        b.setAttribute('aria-checked', 'true'); picked[qi] = q.options[Number(b.dataset.i)]; box.querySelector('.agt-mqi').value = '';
+      });
+    });
+    box.querySelector('.agt-mqi').addEventListener('input', function (e) {
+      if (e.target.value.trim()) { Array.prototype.forEach.call(box.querySelectorAll('.agt-opt'), function (x) { x.setAttribute('aria-checked', 'false'); }); picked[qi] = ''; }
+    });
+  });
+  function finish(text) {
+    if (busy || !text) { return; }
+    Array.prototype.forEach.call(w.querySelectorAll('button,input'), function (x) { x.disabled = true; });
+    w.classList.add('done');
+    inp.value = text; resize(); send();
+  }
+  w.querySelector('.agt-nsave').addEventListener('click', function () {
+    var lines = qs.map(function (q, qi) {
+      var typed = w.querySelector('.agt-mq[data-q="' + qi + '"] .agt-mqi').value.trim();
+      return (qi + 1) + '. ' + q.question + ' → ' + (typed || picked[qi] || 'your choice (use your best judgement)');
+    });
+    finish('My answers:\n' + lines.join('\n'));
+  });
+  w.querySelector('.agt-skip').addEventListener('click', function () { finish('Skip these questions — use your best judgement and continue.'); });
+  var c0 = el.querySelector('.content');
+  c0.parentNode.insertBefore(w, c0.nextSibling);
+}
 /* ask_user → clarification card: radio options, "write your own", Skip */
 function renderAskChips(el, ask) {
   if (!el || !ask) { return; }
+  if (ask.questions && ask.questions.length > 1 && !(ask.needs || []).length) { renderAskForm(el, ask.questions); return; }
   var opts = ask.options || [], needs = ask.needs || [];
   var w = document.createElement('div');
   w.className = 'agt-ask' + (needs.length ? ' needs' : '');
@@ -3399,6 +3510,11 @@ function agtLiveLabel(tool, input) {
     case 'list_files': return ['Exploring files…'];
     case 'browser': return ['Browsing…', 'Taking a screenshot…'];
     case 'generate_image': return ['Generating image…'];
+    case 'image_search': return ['Searching photos…', 'Downloading photos…'];
+    case 'generate_speech': return ['Generating speech…', 'Recording the voice…'];
+    case 'present_file': return ['Opening the file…'];
+    case 'github_pr': return ['Committing changes…', 'Pushing the branch…', 'Opening the pull request…'];
+    case 'stop_server': return ['Stopping the server…'];
     case 'web_search': return ['Searching the web…'];
     case 'fetch_url': { var h = ''; try { h = new URL(first).hostname.replace(/^www\./, ''); } catch (e) {} return [h ? 'Reading ' + h + '…' : 'Reading the page…', 'Browsing…']; }
     case 'calculator': return ['Calculating…'];
@@ -3417,10 +3533,12 @@ function runAgent(payload) {
   resize();
   var el = agentLiveEl();
   agentRun = { job: null, el: el, seq: seq, steps: [], fails: 0 };
+  if (GH.pending) { payload.github = GH.pending; agentStatus(el, 'Cloning ' + GH.pending.repo + '…'); }
   api('agent_start', payload).then(function (j) {
     if (seq !== sendSeq) { return; }
     if (!j.ok) { el.remove(); addErr((j.error || 'Agent failed to start') + (j.hint ? '\nHint: ' + j.hint : '')); agentEnd(); return; }
     agentRun.job = j.job;
+    if (j.github) { GH.link = j.github; GH.pending = null; ghRenderChip(); if (wsIsOpen()) { renderWorkspace(); } }
     if (!currentChat) { currentChat = { id: j.id || null, title: j.title || 'New chat', temp: !!payload.temp, messages: [], branch_groups: {} }; }
     if (!currentChat.branch_groups) { currentChat.branch_groups = {}; }
     isTempChat = !!(payload.temp || j.temp || currentChat.temp);
@@ -3564,6 +3682,12 @@ function agentStop() {
 function sbxAfterStep(s) {
   if (!SBX.on) { return; }
   SBX.lastList = 0;
+  if (s.ok && s.meta && s.meta.pr && GH.link) { GH.link.pr = String(s.meta.pr); ghRenderChip(); }
+  if (s.ok && s.meta && s.meta.present) {
+    SBX.view = { path: String(s.meta.present) };
+    openWsTab('files');
+    return;
+  }
   if (s.ok && s.meta && s.meta.port && (s.tool === 'start_server' || s.meta.url)) {
     SBX.port = Number(s.meta.port);
     openWsTab('preview');
@@ -3838,6 +3962,173 @@ function renderWsPreview(box) {
   t.innerHTML = '<button type="button" data-tab="files">' + (I.folderS || '') + 'Files</button><button type="button" data-tab="preview">' + (I.monitor || '') + 'Preview</button><button type="button" data-tab="activity">' + (I.listS || '') + 'Activity</button>';
   head.parentNode.insertBefore(t, head.nextSibling);
   t.addEventListener('click', function (e) { var b = e.target.closest('button[data-tab]'); if (!b) { return; } SBX.tab = b.dataset.tab; if (SBX.tab !== 'files') { SBX.view = null; } renderWorkspace(); });
+})();
+
+/* ── GitHub: connect a repo to an agent chat, Diff tab, pull requests ── */
+var GH = { acct: undefined, link: null, pending: null, diffMode: 'turn' };
+function ghCur() { return GH.pending || GH.link; }
+function ghRenderChip() {
+  var c = document.getElementById('ghChip'); var b = document.getElementById('ghBtn');
+  var l = ghCur();
+  if (b) { b.classList.toggle('on', !!l); }
+  if (!c) { return; }
+  if (!l || !agentMode) { c.hidden = true; c.innerHTML = ''; return; }
+  c.hidden = false;
+  c.innerHTML = '<span class="ghc-in">' + (I.githubS || '') + '<b>' + esc(l.repo) + '</b><span class="ghc-br">' + (I.branchS || '') + esc(l.branch) + '</span>' +
+    (GH.pending ? '<span class="ghc-note">clones on send</span>' : (l.work_branch ? '<span class="ghc-note">working on ' + esc(l.work_branch) + '</span>' : '')) +
+    (l.pr ? '<a class="ghc-pr" href="' + esc(l.pr) + '" target="_blank" rel="noopener noreferrer">' + (I.prS || '') + 'PR</a>' : '') +
+    '</span><button type="button" class="ghc-x" title="Disconnect this repository from the chat" aria-label="Disconnect repository">' + (I.xS || '×') + '</button>';
+  c.querySelector('.ghc-x').addEventListener('click', function () {
+    if (GH.pending) { GH.pending = null; ghRenderChip(); return; }
+    if (!GH.link || !currentChat || !currentChat.id) { GH.link = null; ghRenderChip(); return; }
+    if (!confirm('Disconnect ' + GH.link.repo + ' from this chat? (Branches and pull requests on GitHub stay.)')) { return; }
+    api('gh_unlink', { id: currentChat.id }).then(function (j) { if (j.ok) { GH.link = null; ghRenderChip(); if (SBX.tab === 'diff') { SBX.tab = 'files'; } if (wsIsOpen()) { renderWorkspace(); } } else { toast(j.error || 'Could not disconnect', 'warning'); } });
+  });
+}
+function ghClosePop() { var p = document.getElementById('ghPop'); if (p) { p.remove(); } document.removeEventListener('mousedown', ghOutside, true); }
+function ghOutside(e) { var p = document.getElementById('ghPop'); if (p && !p.contains(e.target) && !e.target.closest('#ghBtn')) { ghClosePop(); } }
+function ghOpenPop() {
+  if (document.getElementById('ghPop')) { ghClosePop(); return; }
+  if (window.__GUEST) { guestGate(); return; }
+  var p = document.createElement('div');
+  p.id = 'ghPop'; p.className = 'gh-pop'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'GitHub repository');
+  p.innerHTML = '<div class="gh-h">' + (I.githubS || '') + '<b>GitHub</b><button type="button" class="gh-close" aria-label="Close">' + (I.xS || '×') + '</button></div><div class="gh-b"><div class="gh-load">Loading…</div></div>';
+  document.getElementById('composer').appendChild(p);
+  p.querySelector('.gh-close').addEventListener('click', ghClosePop);
+  setTimeout(function () { document.addEventListener('mousedown', ghOutside, true); }, 0);
+  var body = p.querySelector('.gh-b');
+  api('gh_get').then(function (j) {
+    GH.acct = j.ok ? j.github : null;
+    if (GH.acct) { ghPickRepo(body); } else { ghConnectForm(body); }
+  });
+}
+function ghConnectForm(body) {
+  body.innerHTML = '<p class="gh-p">Connect GitHub so Devil Agent can clone your repository, make the change on its own branch, show you the diff and open a pull request.</p>' +
+    '<ol class="gh-steps"><li><a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=Devil%20AI%20Agent" target="_blank" rel="noopener noreferrer">Create a token on GitHub</a> (scope <code>repo</code>), or a fine-grained token with <i>Contents</i> + <i>Pull requests</i> read &amp; write.</li><li>Paste it here.</li></ol>' +
+    '<input type="password" class="gh-in" placeholder="ghp_… or github_pat_…" autocomplete="off" spellcheck="false" maxlength="255">' +
+    '<div class="gh-row"><span class="gh-msg"></span><button type="button" class="gh-go">Connect</button></div>' +
+    '<p class="gh-fine">The token is stored encrypted, is never shown in chats, and you can remove it any time.</p>';
+  var inpT = body.querySelector('.gh-in'), go = body.querySelector('.gh-go'), msg = body.querySelector('.gh-msg');
+  inpT.focus();
+  function save() {
+    var t = inpT.value.trim(); if (!t) { inpT.focus(); return; }
+    go.disabled = true; msg.textContent = 'Checking…';
+    api('gh_save', { token: t }).then(function (j) {
+      go.disabled = false;
+      if (j.ok) { GH.acct = j.github; ghPickRepo(body); } else { msg.textContent = j.error || 'Could not connect.'; }
+    });
+  }
+  go.addEventListener('click', save);
+  inpT.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+}
+function ghPickRepo(body) {
+  var a = GH.acct || {};
+  body.innerHTML = '<div class="gh-acct">Signed in as <b>@' + esc(a.login || '') + '</b><button type="button" class="gh-off">Disconnect GitHub</button></div>' +
+    '<input type="search" class="gh-in gh-q" placeholder="Search your repositories…" spellcheck="false">' +
+    '<div class="gh-list"><div class="gh-load">Loading repositories…</div></div>' +
+    '<div class="gh-sel" hidden><div class="gh-selr"></div><label>Branch <select class="gh-brs"></select></label><div class="gh-row"><span class="gh-msg"></span><button type="button" class="gh-go">Use this repository</button></div></div>';
+  var list = body.querySelector('.gh-list'), q = body.querySelector('.gh-q'), sel = body.querySelector('.gh-sel'), brs = body.querySelector('.gh-brs');
+  var repos = [], chosen = null;
+  body.querySelector('.gh-off').addEventListener('click', function () {
+    if (!confirm('Remove your GitHub token from Devil AI?')) { return; }
+    api('gh_delete', {}).then(function () { GH.acct = null; ghConnectForm(body); });
+  });
+  function draw() {
+    var f = q.value.trim().toLowerCase();
+    var rs = repos.filter(function (r) { return !f || r.repo.toLowerCase().indexOf(f) !== -1; }).slice(0, 60);
+    list.innerHTML = rs.length ? rs.map(function (r, i) {
+      return '<button type="button" class="gh-repo' + (chosen && chosen.repo === r.repo ? ' on' : '') + '" data-r="' + esc(r.repo) + '">' + (I.githubS || '') + '<span class="gh-rn">' + esc(r.repo) + '</span>' + (r.private ? '<span class="gh-tag">private</span>' : '') + '</button>';
+    }).join('') : '<div class="gh-load">' + (repos.length ? 'No match.' : 'No repositories you can push to.') + '</div>';
+  }
+  q.addEventListener('input', draw);
+  list.addEventListener('click', function (e) {
+    var b = e.target.closest('.gh-repo'); if (!b) { return; }
+    chosen = repos.filter(function (r) { return r.repo === b.dataset.r; })[0]; if (!chosen) { return; }
+    draw();
+    sel.hidden = false;
+    sel.querySelector('.gh-selr').innerHTML = (I.githubS || '') + '<b>' + esc(chosen.repo) + '</b>';
+    brs.innerHTML = '<option>' + esc(chosen.branch) + '</option>';
+    api('gh_branches&repo=' + encodeURIComponent(chosen.repo)).then(function (j) {
+      if (!j.ok || !chosen) { return; }
+      var bl = j.branches || []; if (bl.indexOf(chosen.branch) === -1) { bl.unshift(chosen.branch); }
+      brs.innerHTML = bl.map(function (n) { return '<option' + (n === chosen.branch ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+    });
+  });
+  body.querySelector('.gh-go').addEventListener('click', function () {
+    if (!chosen) { return; }
+    GH.pending = { repo: chosen.repo, branch: brs.value || chosen.branch };
+    if (GH.link && GH.link.repo === GH.pending.repo && GH.link.branch === GH.pending.branch) { GH.pending = null; }
+    ghRenderChip(); ghClosePop(); inp.focus();
+    toast('Repository selected — it is cloned when you send your request', 'check');
+  });
+  api('gh_repos').then(function (j) {
+    if (!j.ok) { list.innerHTML = '<div class="gh-load">' + esc(j.error || 'Could not load repositories.') + '</div>'; if (j.connect) { ghConnectForm(body); } return; }
+    repos = j.repos || []; draw(); q.focus();
+  });
+}
+document.getElementById('ghBtn') && document.getElementById('ghBtn').addEventListener('click', function () { if (!busy) { ghOpenPop(); } });
+
+/* Diff tab: what the agent changed (last turn / whole branch) */
+function ghDiffHtml(diff) {
+  var files = String(diff || '').split(/^diff --git /m).filter(function (x) { return x.trim(); });
+  if (!files.length) { return '<div class="ws-empty"><div class="wi">' + (I.branchS || '') + '</div>No changes yet.</div>'; }
+  return files.map(function (f) {
+    var lines = f.split('\n');
+    var m = /^a\/(.+?) b\/(.+)$/.exec(lines[0]) || [];
+    var name = m[2] || lines[0];
+    var add = 0, del = 0, rows = [], started = false;
+    lines.slice(1).forEach(function (ln) {
+      if (/^@@/.test(ln)) { started = true; rows.push('<div class="gd-h">' + esc(ln) + '</div>'); return; }
+      if (!started) { if (/^(new|deleted) file|^rename|^Binary/.test(ln)) { rows.push('<div class="gd-meta">' + esc(ln) + '</div>'); } return; }
+      if (ln.charAt(0) === '+') { add++; rows.push('<div class="gd-a">' + esc(ln) + '</div>'); }
+      else if (ln.charAt(0) === '-') { del++; rows.push('<div class="gd-d">' + esc(ln) + '</div>'); }
+      else if (ln.charAt(0) !== '\\') { rows.push('<div class="gd-c">' + esc(ln) + '</div>'); }
+    });
+    return '<details class="gd-file" open><summary><span class="gd-n">' + esc(name) + '</span><span class="gd-s"><i class="p">+' + add + '</i> <i class="m">−' + del + '</i></span></summary><div class="gd-body">' + rows.join('') + '</div></details>';
+  }).join('');
+}
+function renderWsDiff(box) {
+  var l = GH.link || {};
+  box.innerHTML = wsToolbar('<div class="gd-seg"><button type="button" data-m="turn"' + (GH.diffMode === 'turn' ? ' class="on"' : '') + '>Last turn</button><button type="button" data-m="full"' + (GH.diffMode === 'full' ? ' class="on"' : '') + '>Full branch</button></div>' +
+    '<span class="gd-br">' + (I.branchS || '') + esc(l.work_branch || '') + ' → ' + esc(l.branch || '') + '</span>' +
+    (l.pr ? '<a class="gd-pr" href="' + esc(l.pr) + '" target="_blank" rel="noopener noreferrer">' + (I.prS || '') + 'Open PR</a>' : '') +
+    '<button type="button" class="gd-rf" title="Refresh">' + (I.retryS || '↻') + '</button>') + '<div class="gd-wrap"><div class="ws-empty">Loading diff…</div></div>';
+  Array.prototype.forEach.call(box.querySelectorAll('.gd-seg button'), function (b) { b.addEventListener('click', function () { GH.diffMode = b.dataset.m; renderWsDiff(box); }); });
+  box.querySelector('.gd-rf').addEventListener('click', function () { renderWsDiff(box); });
+  var wrap = box.querySelector('.gd-wrap');
+  var id = currentChat && currentChat.id;
+  if (!id) { wrap.innerHTML = '<div class="ws-empty">Send a request first.</div>'; return; }
+  api('sbx_diff&id=' + encodeURIComponent(id) + '&mode=' + GH.diffMode).then(function (j) {
+    if (SBX.tab !== 'diff') { return; }
+    if (!j.ok) { wrap.innerHTML = '<div class="ws-empty">' + esc(j.error || 'Could not load the diff.') + '</div>'; return; }
+    if (j.github) { GH.link = j.github; ghRenderChip(); }
+    wrap.innerHTML = (j.stat ? '<div class="gd-stat">' + esc(j.stat.split('\n').pop()) + '</div>' : '') + ghDiffHtml(j.diff) + (j.truncated ? '<div class="gd-meta">Diff is very large — showing the first part.</div>' : '');
+  });
+}
+(function () {
+  var t = document.getElementById('wsTabs');
+  if (t && !t.querySelector('[data-tab="diff"]')) {
+    var b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'diff'; b.hidden = true;
+    b.innerHTML = (I.branchS || '') + 'Diff';
+    t.insertBefore(b, t.querySelector('[data-tab="activity"]'));
+  }
+  var base = renderWorkspace;
+  renderWorkspace = function () {
+    var tabs = document.getElementById('wsTabs'), box = document.getElementById('wsBody'), panel = document.getElementById('wsPanel');
+    var has = !!(GH.link && GH.link.cloned && currentChat && currentChat.id);
+    var db = tabs && tabs.querySelector('[data-tab="diff"]');
+    if (db) { db.hidden = !has; }
+    if (SBX.tab === 'diff' && !has) { SBX.tab = 'files'; }
+    if (SBX.tab === 'diff' && SBX.on && agentMode && box && tabs && panel) {
+      tabs.hidden = false;
+      Array.prototype.forEach.call(tabs.querySelectorAll('button[data-tab]'), function (x) { x.classList.toggle('on', x.dataset.tab === 'diff'); });
+      panel.classList.add('wide');
+      document.body.style.setProperty('--wsw', 'min(760px,52vw)');
+      renderWsDiff(box);
+      return;
+    }
+    base();
+  };
 })();
 
 api('bootstrap').then(function (j) {

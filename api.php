@@ -47,6 +47,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/inc/session.php';
 require_once __DIR__ . '/inc/agent.php';
 require_once __DIR__ . '/inc/sandbox.php';
+require_once __DIR__ . '/inc/github.php';
 devil_session_boot();
 
 define('DEVIL_VERSION', '1.0.0.0');
@@ -2286,6 +2287,10 @@ function bootstrap_payload(): array {
 }
 
 /* one chat, ready for the browser (null = not found) */
+/* what the browser may see of a chat's GitHub link */
+function gh_link_public(array $l): array {
+    return ['repo' => (string)($l['repo'] ?? ''), 'branch' => (string)($l['branch'] ?? ''), 'work_branch' => (string)($l['work_branch'] ?? ''), 'pr' => (string)($l['pr'] ?? ''), 'cloned' => !empty($l['cloned'])];
+}
 function chat_load_payload(string $uid, string $id, string $variant): ?array {
     $chat = load_chat($uid, $id);
     if (!$chat) { return null; }
@@ -2296,7 +2301,8 @@ function chat_load_payload(string $uid, string $id, string $variant): ?array {
         $jf = data_dir() . '/agent_jobs/' . preg_replace('/[^A-Za-z0-9_-]/', '', $uid) . '/' . preg_replace('/[^a-z0-9]/', '', $pendingJob) . '.json';
         if (!is_file($jf) || @filemtime($jf) < time() - 1800) { $pendingJob = ''; }
     }
-    return ['ok' => true, 'chat' => compare_public_chat($displayChat), 'branch_groups' => $branchGroups, 'agent_job' => $pendingJob];
+    $gh = is_array($rootForLoad['github'] ?? null) ? gh_link_public($rootForLoad['github']) : null;
+    return ['ok' => true, 'chat' => compare_public_chat($displayChat), 'branch_groups' => $branchGroups, 'agent_job' => $pendingJob, 'github' => $gh];
 }
 
 /* app.php includes this file only for its functions */
@@ -2663,7 +2669,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['host_get', 'host_save', 'host_test', 'host_delete', 'chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+    if (in_array($action, ['gh_get', 'gh_save', 'gh_delete', 'gh_repos', 'gh_branches', 'gh_unlink', 'sbx_diff', 'host_get', 'host_save', 'host_test', 'host_delete', 'chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -2673,6 +2679,30 @@ try {
     if ($action !== 'account_delete' && session_status() === PHP_SESSION_ACTIVE) { @session_write_close(); }
 
     /* ─── Hosting (FTP / SFTP): the user's own server for the agent's deploy_site tool ─── */
+    /* ── GitHub account (Settings → GitHub) ── */
+    if (in_array($action, ['gh_get', 'gh_save', 'gh_delete', 'gh_repos', 'gh_branches'], true)) {
+        if ($action === 'gh_get') { json_out(['ok' => true, 'github' => gh_public(gh_load($uid))]); }
+        if ($action === 'gh_delete' && $method === 'POST') { gh_delete($uid); json_out(['ok' => true]); }
+        if ($action === 'gh_save' && $method === 'POST') {
+            $in = input_json();
+            $tok = trim((string)($in['token'] ?? ''));
+            if (!preg_match('/^[A-Za-z0-9_]{20,255}$/', $tok)) { json_out(['ok' => false, 'error' => 'That does not look like a GitHub token (it starts with ghp_ or github_pat_).'], 400); }
+            [$c, $u] = gh_api($tok, 'GET', '/user');
+            if ($c !== 200 || empty($u['login'])) { json_out(['ok' => false, 'error' => $c === 401 ? 'GitHub rejected this token (wrong or expired).' : 'Could not reach GitHub — try again.'], 400); }
+            if (!gh_save($uid, $tok, $u)) { json_out(['ok' => false, 'error' => 'Could not save the token.'], 500); }
+            json_out(['ok' => true, 'github' => gh_public(gh_load($uid))]);
+        }
+        $g = gh_load($uid);
+        if (!$g) { json_out(['ok' => false, 'error' => 'GitHub is not connected.', 'connect' => true], 400); }
+        if ($action === 'gh_repos') { json_out(['ok' => true, 'repos' => gh_repos((string)$g['token'], trim(mb_substr((string)($_GET['q'] ?? ''), 0, 100)))]); }
+        if ($action === 'gh_branches') {
+            $repo = (string)($_GET['repo'] ?? '');
+            if (!gh_valid_repo($repo)) { json_out(['ok' => false, 'error' => 'Invalid repository.'], 400); }
+            json_out(['ok' => true, 'branches' => gh_branches((string)$g['token'], $repo)]);
+        }
+        json_out(['ok' => false, 'error' => 'Bad request.'], 400);
+    }
+
     if (in_array($action, ['host_get', 'host_save', 'host_test', 'host_delete'], true)) {
         require_once __DIR__ . '/inc/hosting.php';
         if ($action === 'host_get') { json_out(['ok' => true, 'hosting' => host_public(host_load($uid)), 'caps' => host_caps()]); }
@@ -3311,7 +3341,7 @@ try {
 
     /* ═════════ Agent Mode v2: step-driven jobs + per-chat sandbox ═════════ */
 
-    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports', 'sbx_diff', 'gh_unlink'], true)) {
         $cfgAll = load_config();
         $sbxOn = sbx_enabled($cfgAll);
         $GLOBALS['DEVIL_SCRUB_SBX'] = $cfgAll + ['_' => 1];
@@ -3505,6 +3535,28 @@ try {
             }
             array_unshift($history, ['role' => 'system', 'content' => devil_persona()]);
 
+            /* GitHub repo for this chat: clone it into the sandbox (once) and snapshot it for the "last turn" diff */
+            $ghLink = null; $ghNote = '';
+            if ($sbxOn && $sid !== '') {
+                $want = is_array($in['github'] ?? null) ? $in['github'] : null;
+                $rootC = !$temp && $chatId !== '' ? load_chat($uid, $chatId) : null;
+                $ghLink = ($rootC && is_array($rootC['github'] ?? null)) ? $rootC['github'] : null;
+                if ($want && gh_valid_repo((string)($want['repo'] ?? '')) && gh_valid_branch((string)($want['branch'] ?? ''))
+                    && (!$ghLink || $ghLink['repo'] !== $want['repo'] || $ghLink['branch'] !== $want['branch'])) {
+                    $ghLink = ['repo' => (string)$want['repo'], 'branch' => (string)$want['branch']];
+                }
+                if ($ghLink) {
+                    $cl = gh_ensure_clone($cfgAll, $sid, $uid, $ghLink);
+                    if (empty($cl['ok'])) { json_out(['ok' => false, 'error' => (string)$cl['error']], 400); }
+                    $ghLink = $cl['link'];
+                    $ghLink['turn_tree'] = gh_snapshot($cfgAll, $sid, (string)$ghLink['dir']);
+                    if ($rootC) { $rc = load_chat($uid, $chatId) ?: $rootC; $rc['github'] = $ghLink; save_chat($uid, $rc); }
+                    $ghNote = 'GITHUB REPOSITORY: the user connected ' . $ghLink['repo'] . ' (base branch ' . $ghLink['branch'] . '). It is cloned at /home/user/work/' . $ghLink['dir']
+                        . ' and checked out on your working branch ' . $ghLink['work_branch'] . '. Work INSIDE that folder (cd ' . $ghLink['dir'] . ' && …): read the code first (README, structure, package files), follow its style, run its tests/build if it has them.'
+                        . ' The user watches your changes live in the Diff tab. When the requested change is done and checked, call github_pr (line 1 = PR title, then a short description of what changed and how it was tested) to commit, push and open the pull request — then give the user the PR link. Never push to ' . $ghLink['branch'] . ' directly and never print the token.';
+                }
+            }
+
             $displayLabel = ($model === 'custom') ? custom_model_label($customModel) : model_label($model);
             $job = [
                 'id' => $jid, 'uid' => $uid, 'chat_id' => $temp ? '' : $chatId, 'variant' => (string)($saved['variant'] ?? ''), 'temp' => $temp,
@@ -3514,6 +3566,7 @@ try {
                 'max_steps' => max(3, min(100, (static function ($v) { return ($v === 30 || $v === 50 || $v <= 0) ? 80 : $v; })((int)($cfgAll['agent_sandbox_max_steps'] ?? 80)))), 't0' => microtime(true), 'created' => time(), 'updated' => time(),
             ];
             if (!$sbxOn) { $job['max_steps'] = max(1, (int)($cfgAll['agent_max_steps'] ?? 6)); }
+            if ($ghLink) { $job['github'] = $ghLink; $job['note'] = trim((string)($job['note'] ?? '') . "\n" . $ghNote); $saved['github'] = gh_link_public($ghLink); }
             if (!save_json_atomic($jobPath($jid), $job)) { json_out(['ok' => false, 'error' => 'Could not create the agent job — check data/ permissions.'], 500); }
             /* tidy: drop finished jobs older than a day */
             foreach (glob($jobDir . '/j*.json*') ?: [] as $f) { if (@filemtime($f) < time() - 86400) { @unlink($f); } }   /* job + its .lock/.cancel files */
@@ -3557,6 +3610,7 @@ try {
             $GLOBALS['DEVIL_DEADLINE'] = (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)) + (float)max(40, min(85, (int)($cfgAll['agent_step_budget'] ?? 78)));
             $cfgAgent = $cfgAll;
             $cfgAgent['_prompt_limits'] = ['user_text' => 16000, 'assistant_text' => 9000, 'attachment_text' => 6000, 'latest_text' => 16000, 'latest_attachment' => 6000, 'turns' => 120, 'budget' => (int)($cfgAll['agent_prompt_budget'] ?? 42000)];
+            if (!empty($job['github'])) { $job['github']['chat_id'] = (string)($job['chat_id'] ?? ''); $cfgAgent['_gh'] = $job['github']; if ($sbxCtx) { $sbxCtx['cfg']['_gh'] = $job['github']; } }
             $event = agent_job_advance($job, [
                 'cfg' => $cfgAgent,
                 'responder' => static function ($c, $m, $msgs, $im) { return ai_respond($c, $m, $msgs, $im); },
@@ -3622,6 +3676,19 @@ try {
             header('Content-Length: ' . strlen((string)$r['data']));
             echo $r['data'];
             exit;
+        }
+        if ($action === 'sbx_diff' || $action === 'gh_unlink') {
+            $cid = (string)($q['id'] ?? '');
+            $c0 = $cid !== '' ? load_chat($uid, $cid) : null;
+            if (!$c0) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
+            $rid = chat_branch_root_id($c0);
+            $rc = load_chat($uid, $rid) ?: $c0;
+            $link = is_array($rc['github'] ?? null) ? $rc['github'] : null;
+            if ($action === 'gh_unlink') { unset($rc['github']); save_chat($uid, $rc); json_out(['ok' => true]); }
+            if (!$link || empty($link['dir'])) { json_out(['ok' => false, 'error' => 'No GitHub repository in this chat yet.'], 400); }
+            $d = gh_diff($cfgAll, $sid, $link, ((string)($q['mode'] ?? 'full')) === 'turn' ? 'turn' : 'full', (string)($link['turn_tree'] ?? ''));
+            $d = sbx_secret_mask(sbx_scrub_any($d, $cfgAll), sbx_secret_values($sid));
+            json_out($d + ['github' => gh_link_public($link)]);
         }
         if ($action === 'sbx_zip') {
             $r = sbx_zip($cfgAll, $sid);
