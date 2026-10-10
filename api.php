@@ -177,6 +177,12 @@ function model_catalog(): array {
         ['or-qwen-2-5-vl-72b-free', 'qwen/qwen-2.5-vl-72b-instruct:free', 'Qwen 2.5 VL 72B Instruct', 'Qwen', true, true, 'eye'],
         ['or-glm-4-flash-free', 'zhipuai/glm-4-flash:free', 'GLM 4 Flash', 'Zhipu AI', true, false, 'brain'],
     ];
+    $listedOpenRouter = [
+        'apodex/apodex-1.1-mini:free' => true,
+        'dots-studio/dots-3-note-preview:free' => true,
+        'inclusionai/ling-3.1-flash' => true,
+        'liquid/lfm-2.5-2.6b:free' => true,
+    ];
     foreach ($openrouter as $row) {
         [$id, $providerModel, $label, $company, $free, $vision, $icon] = $row;
         $models[] = [
@@ -185,6 +191,7 @@ function model_catalog(): array {
             'icon' => $icon, 'thinking' => false, 'vision' => $vision,
             'provider' => 'openrouter', 'provider_label' => 'OpenRouter',
             'provider_model' => $providerModel, 'free' => $free,
+            'listed' => isset($listedOpenRouter[$providerModel]),
         ];
     }
     return $models;
@@ -211,7 +218,10 @@ function model_resting(string $id): bool {
     return (int)($cool[$id] ?? 0) > time() + 3600;
 }
 function model_scope(array $m): string {
-    if (($m['provider'] ?? 'gemini') === 'openrouter') { return (string)$m['scope']; }
+    if (($m['provider'] ?? 'gemini') === 'openrouter') {
+        if (empty($m['listed'])) { return 'OpenRouter · Not in current list'; }
+        return (string)$m['scope'];
+    }
     return model_resting($m['id']) ? 'Daily limit reached — back tomorrow' : (string)$m['scope'];
 }
 
@@ -1897,7 +1907,7 @@ function battle_pool(): array {
     if ($pool !== null) { return $pool; }
     $pool = [];
     foreach (model_catalog() as $m) {
-        if (($m['provider'] ?? 'gemini') === 'openrouter' && empty($m['free'])) { continue; }
+        if (($m['provider'] ?? 'gemini') === 'openrouter' && (empty($m['free']) || empty($m['listed']))) { continue; }
         $pool[] = ['id' => 'custom:' . $m['id'], 'label' => $m['label'], 'icon' => $m['icon']];
     }
     return $pool;
