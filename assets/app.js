@@ -175,8 +175,7 @@ if (window.visualViewport) { window.visualViewport.addEventListener('resize', fi
 function battleLabel(id) { return (battleById[id] || {}).label || (id === 'flash' ? 'Gemini 3.5 Flash Lite' : (id === 'pro' ? 'Gemini 3.6 Flash' : 'AI model')); }
 function battleIcon(id) {
   var m = battleById[id];
-  if (m && I[m.icon]) { return I[m.icon]; }
-  return '<img src="assets/logo.svg" width="15" height="15" alt="">';
+  return modelCompanyIcon(m && m.company, 15);
 }
 function closeCmpPickers() { $$('.cmppick.open').forEach(function (w) { w.classList.remove('open'); }); }
 function renderCmpPickers() {
@@ -233,15 +232,20 @@ window.devilOnCookiePrefs = function (prefs) {
   if (personalOK && window.devilSyncPersonalCookies) { window.devilSyncPersonalCookies(); }
 };
 
-function providerIcon(key) {
-  var k = String(key || 'devil').toLowerCase();
-  var base = 'width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false"';
-  if (k === 'code') { return '<svg ' + base + ' fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 4l-4 16"/></svg>'; }
-  if (k === 'image') { return '<svg ' + base + ' fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-4-4a2 2 0 0 0-2.8 0L7 20"/></svg>'; }
-  if (k === 'music') { return '<svg ' + base + ' fill="none" stroke="#f472b6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>'; }
-  if (k === 'medical') { return '<svg ' + base + ' fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-3Z"/><path d="M12 8v8M8 12h8"/></svg>'; }
-  if (k === 'story') { return '<svg ' + base + ' fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M8 7h8M8 11h6"/></svg>'; }
-  return '<svg ' + base + ' fill="none" stroke="#fb7185" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c1 4-4 5.5-4 10a4 4 0 0 0 8 0c0-1.5-.6-2.6-1.3-3.6C13.6 9.7 13 8 13.5 6 12.8 6.6 12 7 12 2Z"/><path d="M12 22a6.5 6.5 0 0 0 6.5-6.5c0-2-1-4-2.5-5.5"/></svg>';
+function modelCompanyIcon(company, size) {
+  var key = String(company || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  var files = {
+    google: 'google.svg', meta: 'meta.svg', nvidia: 'nvidia.svg', mistralai: 'mistralai.svg', qwen: 'qwen.svg',
+    apodex: 'apodex.svg', arceeai: 'arcee-ai.svg', cognitivecomputations: 'cognitive-computations.svg',
+    dotsstudio: 'dots-studio.svg', inclusionai: 'inclusionai.svg', liquidai: 'liquid-ai.svg',
+    nousresearch: 'nousresearch.svg', zhipuai: 'zhipu-ai.svg', cohere: 'cohere.svg', poolside: 'poolside.svg',
+    thinkingmachineslab: 'thinking-machines-lab.svg'
+  };
+  var px = Math.max(14, Math.min(22, Number(size) || 20));
+  var file = files[key];
+  if (file) { return '<img class="company-svg" src="assets/company-icons/' + file + '" width="' + px + '" height="' + px + '" alt="" aria-hidden="true">'; }
+  var initial = key ? key.charAt(0).toUpperCase() : 'M';
+  return '<svg class="company-svg" width="' + px + '" height="' + px + '" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="1" y="1" width="22" height="22" rx="7" fill="#7055d9"/><text x="12" y="16" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#fff">' + initial + '</text></svg>';
 }
 
 function activeModelLabel() {
@@ -2235,7 +2239,7 @@ function renderModelMenu() {
     var b = document.createElement('button');
     b.className = 'mopt' + (m.id === currentModel ? ' on' : '');
     b.dataset.model = m.id;
-    b.innerHTML = '<span class="ic">' + (I[m.icon] || I.sparkles) + '</span>' +
+    b.innerHTML = '<span class="ic">' + modelCompanyIcon(m.company, 20) + '</span>' +
       '<span class="tx"><b></b><span></span></span><span class="tick">' + I.check + '</span>';
     b.querySelector('.tx b').textContent = m.label;
     b.querySelector('.tx span').textContent = m.tagline;
@@ -2261,7 +2265,7 @@ function setModelBtn() {
   var m = modelById[currentModel] || models[0];
   if (!m) { return; }
   $('#modelLbl').textContent = m.label;
-  $('#modelIco').innerHTML = I[m.icon] || I.sparkles;
+  $('#modelIco').innerHTML = modelCompanyIcon(m.company, 18);
   $('#customWrap').classList.toggle('show', currentModel === 'custom');
   document.body.classList.toggle('custom-on', currentModel === 'custom');
   setCustomBtn();
@@ -2272,7 +2276,7 @@ function setCustomBtn() {
   if (!m) { return; }
   currentCustom = m.id;
   $('#customLbl').textContent = m.label;
-  $('#customIco').innerHTML = providerIcon(m.icon);
+  $('#customIco').innerHTML = modelCompanyIcon(m.company, 20);
   syncModelMenu();
 }
 function renderCustomModelMenu(filter) {
@@ -2290,13 +2294,13 @@ function renderCustomModelMenu(filter) {
   list.className = 'cmlist';
   var shown = 0;
   customModels.forEach(function (m) {
-    var hay = (m.label + ' ' + m.scope).toLowerCase();
+    var hay = (m.label + ' ' + (m.company || '') + ' ' + m.scope).toLowerCase();
     if (filter && hay.indexOf(filter) === -1) { return; }
     shown++;
     var b = document.createElement('button');
     b.className = 'cmopt' + (m.id === currentCustom ? ' on' : '');
     b.dataset.custom = m.id;
-    b.innerHTML = '<span class="ic">' + providerIcon(m.icon) + '</span>' +
+    b.innerHTML = '<span class="ic">' + modelCompanyIcon(m.company, 20) + '</span>' +
       '<span class="tx"><b></b><span class="scope"></span></span><span class="tick">' + I.check + '</span>';
     b.querySelector('.tx b').textContent = m.label;
     b.querySelector('.scope').textContent = m.scope + (m.vision ? ' · vision' : '');
@@ -2452,12 +2456,12 @@ function openRetryWith(anchor) {
   var items = [{ head: 'Retry with' }];
   models.forEach(function (m) {
     if (m.id === 'custom') { return; }
-    items.push({ icon: I[m.icon] || I.sparkles, label: m.label, sub: m.tagline, on: currentModel === m.id, fn: function () { retryWith(m.id); } });
+    items.push({ icon: modelCompanyIcon(m.company, 18), label: m.label, sub: m.tagline, on: currentModel === m.id, fn: function () { retryWith(m.id); } });
   });
   if (customModels.length) {
     items.push({ sep: 1 }, { head: 'Custom engines' });
     customModels.forEach(function (m) {
-      items.push({ icon: providerIcon(m.icon), label: m.label, sub: m.scope, on: currentModel === 'custom' && currentCustom === m.id, fn: function () { retryWith('custom', m.id); } });
+      items.push({ icon: modelCompanyIcon(m.company, 18), label: m.label, sub: m.scope, on: currentModel === 'custom' && currentCustom === m.id, fn: function () { retryWith('custom', m.id); } });
     });
   }
   popMenu(anchor, items, { cls: 'pm-models' });

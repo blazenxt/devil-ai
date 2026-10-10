@@ -312,7 +312,7 @@ body.voice-open{overflow:hidden}
 .mopt:hover,.cmopt:hover{background:rgba(244,63,94,.1)}
 .mopt.on,.cmopt.on{background:rgba(244,63,94,.14)}
 .mopt .ic,.cmopt .ic{width:32px;height:32px;border-radius:9px;background:rgba(244,63,94,.1);display:flex;align-items:center;justify-content:center;color:var(--pink);flex-shrink:0;overflow:hidden}
-.cmopt .ic svg,#customIco svg{display:block}
+.cmopt .ic svg,#customIco svg{display:block}.company-svg{display:block;object-fit:contain;flex:0 0 auto}
 .mopt .tx,.cmopt .tx{flex:1;min-width:0}
 .mopt .tx b,.cmopt .tx b{display:block;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mopt .tx span,.cmopt .tx span{display:block;font-size:.7rem;color:var(--dim2);margin-top:1px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

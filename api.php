@@ -177,12 +177,30 @@ function model_catalog(): array {
         ['or-qwen-2-5-coder-32b-free', 'qwen/qwen-2.5-coder-32b-instruct:free', 'Qwen 2.5 Coder 32B Instruct', 'Qwen', true, false, 'code'],
         ['or-qwen-2-5-vl-72b-free', 'qwen/qwen-2.5-vl-72b-instruct:free', 'Qwen 2.5 VL 72B Instruct', 'Qwen', true, true, 'eye'],
         ['or-glm-4-flash-free', 'zhipuai/glm-4-flash:free', 'GLM 4 Flash', 'Zhipu AI', true, false, 'brain'],
+        ['or-cohere-north-mini-code-free', 'cohere/north-mini-code:free', 'North Mini Code', 'Cohere', true, false, 'code'],
+        ['or-nemotron-3-nano-omni-free', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 'Nemotron 3 Nano Omni 30B A3B', 'NVIDIA', true, true, 'brain'],
+        ['or-nemotron-3-super-free', 'nvidia/nemotron-3-super-120b-a12b:free', 'Nemotron 3 Super 120B A12B', 'NVIDIA', true, false, 'brain'],
+        ['or-nemotron-3-ultra-free', 'nvidia/nemotron-3-ultra-550b-a55b:free', 'Nemotron 3 Ultra 550B A55B', 'NVIDIA', true, false, 'brain'],
+        ['or-nemotron-3-5-lightning-free', 'nvidia/nemotron-3.5-lightning:free', 'Nemotron 3.5 Lightning', 'NVIDIA', true, false, 'zap'],
+        ['or-laguna-s-2-1-free', 'poolside/laguna-s-2.1:free', 'Laguna S 2.1', 'Poolside', true, false, 'code'],
+        ['or-laguna-xs-2-1-free', 'poolside/laguna-xs-2.1:free', 'Laguna XS 2.1', 'Poolside', true, false, 'code'],
+        ['or-inkling-free', 'thinkingmachines/inkling:free', 'Inkling', 'Thinking Machines Lab', true, true, 'sparkles'],
+        ['or-inkling-small-free', 'thinkingmachines/inkling-small:free', 'Inkling Small', 'Thinking Machines Lab', true, true, 'sparkles'],
     ];
     $listedOpenRouter = [
         'apodex/apodex-1.1-mini:free' => true,
         'dots-studio/dots-3-note-preview:free' => true,
         'inclusionai/ling-3.1-flash' => true,
         'liquid/lfm-2.5-2.6b:free' => true,
+        'cohere/north-mini-code:free' => true,
+        'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' => true,
+        'nvidia/nemotron-3-super-120b-a12b:free' => true,
+        'nvidia/nemotron-3-ultra-550b-a55b:free' => true,
+        'nvidia/nemotron-3.5-lightning:free' => true,
+        'poolside/laguna-s-2.1:free' => true,
+        'poolside/laguna-xs-2.1:free' => true,
+        'thinkingmachines/inkling:free' => true,
+        'thinkingmachines/inkling-small:free' => true,
     ];
     foreach ($openrouter as $row) {
         [$id, $providerModel, $label, $company, $free, $vision, $icon] = $row;
@@ -231,7 +249,7 @@ function public_models(): array {
     $out = [];
     foreach (['flash' => 'zap', 'pro' => 'sparkles', 'ultra' => 'crown'] as $slot => $icon) {
         $m = catalog_model(slot_model($slot));
-        $out[] = ['id' => $slot, 'label' => (string)($m['label'] ?? 'Gemini'), 'tagline' => $m ? model_scope($m) : '', 'icon' => $icon];
+        $out[] = ['id' => $slot, 'label' => (string)($m['label'] ?? 'Gemini'), 'company' => (string)($m['company'] ?? 'Google'), 'tagline' => $m ? model_scope($m) : '', 'icon' => $icon];
     }
     $out[] = ['id' => 'custom', 'label' => 'More models', 'tagline' => 'Pick any model from the full list', 'icon' => 'layers'];
     return $out;
@@ -1909,7 +1927,7 @@ function battle_pool(): array {
     $pool = [];
     foreach (model_catalog() as $m) {
         if (($m['provider'] ?? 'gemini') === 'openrouter' && (empty($m['free']) || empty($m['listed']))) { continue; }
-        $pool[] = ['id' => 'custom:' . $m['id'], 'label' => $m['label'], 'icon' => $m['icon']];
+        $pool[] = ['id' => 'custom:' . $m['id'], 'label' => $m['label'], 'company' => (string)($m['company'] ?? 'Google'), 'icon' => $m['icon']];
     }
     return $pool;
 }
