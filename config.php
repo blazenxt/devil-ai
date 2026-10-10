@@ -28,6 +28,9 @@ return [
     /* Gemini settings (also used by Agent Mode and the quick picks).
        Free key: https://aistudio.google.com/apikey */
     'gemini_api_key' => '',
+    /* Extra Gemini keys, added from Admin settings. Key #1 (above) answers every request; the next one
+       takes over automatically when that key hits its quota or rate limit. */
+    'gemini_api_keys' => [],
     'gemini_model'   => 'gemini-2.5-flash',
 
     /* OpenRouter models use this key. Set it in Admin settings; never commit a real key here. */

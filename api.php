@@ -1519,9 +1519,56 @@ function openrouter_api_key(array $cfg): string {
     $key = trim((string)($cfg['openrouter_api_key'] ?? ''));
     return preg_match('/^[A-Za-z0-9._-]{20,500}$/', $key) ? $key : '';
 }
+/* Every configured Gemini key, in the order they should be tried. The legacy single field stays key #1;
+   `gemini_api_keys` (an array, or a newline/comma separated string) holds the extra keys added in Admin. */
+function gemini_api_keys(array $cfg): array {
+    $out = [];
+    $add = static function ($value) use (&$out) {
+        $parts = is_array($value) ? $value : (preg_split('/[\r\n,]+/', (string)$value) ?: []);
+        foreach ($parts as $k) {
+            $k = trim((string)$k);
+            /* old AIza… keys and the newer auth-key format */
+            if ($k === '' || !preg_match('/^[A-Za-z0-9_.\-]{20,300}$/', $k) || in_array($k, $out, true)) { continue; }
+            $out[] = $k;
+        }
+    };
+    $add($cfg['gemini_api_key'] ?? '');
+    $add($cfg['gemini_api_keys'] ?? '');
+    return $out;
+}
 function gemini_api_key(array $cfg): string {
-    $k = trim((string)($cfg['gemini_api_key'] ?? ''));
-    return preg_match('/^[A-Za-z0-9_.\-]{20,300}$/', $k) ? $k : '';   /* old AIza… keys and the newer auth-key format */
+    $keys = gemini_api_keys($cfg);
+    return $keys ? (string)$keys[0] : '';
+}
+/* Gemini quotas reset at midnight Pacific, so a key that used up its daily limit is parked until then. */
+function gemini_quota_reset_in(): int {
+    $t = strtotime('tomorrow 00:00 America/Los_Angeles');
+    $left = $t ? $t - time() : 21600;
+    return max(300, min(86400, $left));
+}
+function gemini_key_state_path(): string { return data_dir() . '/gemini_keys.json'; }
+/* Key to use right now: the first one, unless an earlier request had to fall back to a backup key. */
+function gemini_active_key(array $cfg): string {
+    $keys = gemini_api_keys($cfg);
+    if (!$keys) { return ''; }
+    $i = 0;
+    if (count($keys) > 1) {
+        $j = is_readable(gemini_key_state_path()) ? json_decode((string)@file_get_contents(gemini_key_state_path()), true) : null;
+        $want = (int)($j['i'] ?? 0);
+        $until = (int)($j['until'] ?? 0);
+        if ($want > 0 && $want < count($keys) && $until > time()) { $i = $want; }
+    }
+    return (string)$keys[$i];
+}
+/* Remember that key $failedIndex is unusable so the next request starts on the backup instead of wasting
+   one request on a dead key every time. Falling past the last key clears the note and starts over. */
+function gemini_key_advance(array $cfg, int $failedIndex, int $cooldown): void {
+    $keys = gemini_api_keys($cfg);
+    $n = count($keys);
+    if ($n < 2 || $failedIndex < 0 || $failedIndex >= $n) { return; }
+    $next = $failedIndex + 1;
+    $state = $next < $n ? ['i' => $next, 'until' => time() + max(60, $cooldown)] : ['i' => 0, 'until' => 0];
+    @file_put_contents(gemini_key_state_path(), json_encode($state), LOCK_EX);
 }
 /* best available models, newest stable Flash first — refreshed once a day from the models list */
 function gemini_models(array $cfg): array {
@@ -1529,7 +1576,7 @@ function gemini_models(array $cfg): array {
     $cache = data_dir() . '/gemini_models.json';
     $c = is_readable($cache) ? json_decode((string)@file_get_contents($cache), true) : null;
     if (is_array($c) && !empty($c['models']) && (time() - (int)($c['at'] ?? 0)) < 86400) { return (array)$c['models']; }
-    $key = gemini_api_key($cfg);
+    $key = gemini_active_key($cfg);
     $raw = '';
     if (function_exists('curl_init')) {
         $ch = curl_init(GEMINI_ROOT . '/models?pageSize=200');
@@ -1598,11 +1645,30 @@ function gemini_contents(array $messages, string $image): array {
 }
 /* $system: text, or a Closure(model id) → text so each model gets its own identity */
 function gemini_call(array $cfg, array $models, array $messages, string $image = '', $system = '', int $tryCap = 0): array {
-    $key = gemini_api_key($cfg);
-    if ($key === '') { return [false, 'The engine is not configured.', null, null]; }
+    $keys = gemini_api_keys($cfg);
+    if (!$keys) { return [false, 'The engine is not configured.', null, null]; }
     $models = array_values(array_filter($models, 'is_string'));
     if (!$models || !function_exists('curl_init')) { return [false, 'The engine failed while the agent was working.', null, null]; }
     $contents = gemini_contents($messages, $image);
+    /* start on whichever key the last request fell back to (see gemini_key_advance) */
+    $active = gemini_active_key($cfg);
+    $first = 0;
+    foreach ($keys as $n => $k) { if ($k === $active) { $first = $n; break; } }
+    $last = 'The engine is busy right now.';
+    $retry = 'Devil AI will retry automatically — try again in a moment.';
+    for ($pass = 0; $pass < count($keys); $pass++) {
+        $idx = ($first + $pass) % count($keys);
+        $res = gemini_call_with_key($cfg, (string)$keys[$idx], $idx, $models, $contents, $system, $tryCap);
+        if ($res[0]) { return [$res[0], $res[1], $res[2], $res[3]]; }
+        $last = (string)$res[1];
+        $retry = $res[2];
+        if (empty($res[4])) { break; }   /* not a key problem: another key would fail the same way */
+    }
+    return [false, $last, $retry, null];
+}
+/* One key against every candidate model. $tryNextKey (slot 4) tells gemini_call the key itself is the
+   problem (quota, rate limit or a rejected key), so the request should be handed to the next key. */
+function gemini_call_with_key(array $cfg, string $key, int $keyIndex, array $models, array $contents, $system, int $tryCap): array {
     $last = 'The engine is busy right now.';
     $tries = 0;
     foreach ($models as $mdl) {
@@ -1616,7 +1682,7 @@ function gemini_call(array $cfg, array $models, array $messages, string $image =
         $sysTxt = $system instanceof Closure ? (string)$system($mdl) : (string)$system;
         if (trim($sysTxt) !== '') { $req['systemInstruction'] = ['parts' => [['text' => $sysTxt]]]; }
         $body = json_encode($req, JSON_UNESCAPED_UNICODE);
-        if ($body === false) { return [false, 'The engine failed while the agent was working.', null, null]; }
+        if ($body === false) { return [false, 'The engine failed while the agent was working.', null, null, false]; }
         $ch = curl_init(GEMINI_ROOT . '/models/' . rawurlencode($mdl) . ':generateContent');
         curl_setopt_array($ch, [
             CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true,
@@ -1629,16 +1695,33 @@ function gemini_call(array $cfg, array $models, array $messages, string $image =
         $raw = curl_exec($ch);
         $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+        $rawStr = is_string($raw) ? $raw : '';
         $j = is_string($raw) ? json_decode($raw, true) : null;
         if ($raw === false || $status === 0 || $status === 404 || $status === 429 || $status >= 500 || !is_array($j)) {
             /* a long answer that ran out of time is not "busy" — only real busy/limit errors (or a quick failure) rest the model */
             $slow = $tryCap === 0 && ($status === 0 || $raw === false) && (microtime(true) - $t0) > 30;
+            if ($status === 429) {
+                /* the key (not the model) is out of quota or rate limited — hand the request to the next key.
+                   The model is left alone here: with a different key it may well answer. */
+                $day = stripos($rawStr, 'PerDay') !== false || stripos($rawStr, 'RESOURCE_EXHAUSTED') !== false;
+                gemini_key_advance($cfg, $keyIndex, $day ? gemini_quota_reset_in() : 900);
+                return [false, 'The engine is busy right now.', 'Devil AI will retry automatically — try again in a moment.', null, true];
+            }
             /* daily quota used up → rest until the reset (midnight Pacific); other busy errors → a few minutes */
-            if (!$slow) { gemini_mark($mdl, false, $status === 429 && is_string($raw) && stripos($raw, 'PerDay') !== false); }
+            if (!$slow) { gemini_mark($mdl, false, false); }
             $last = $slow ? 'This step ran out of time — retrying.' : 'The engine is busy right now.';
             continue;
         }
-        if ($status >= 400) { $last = 'The engine could not answer this request.'; break; }   /* bad request/key: other models won't differ */
+        if ($status >= 400) {
+            /* a rejected or disabled key is a key problem too — but a plain bad request is not */
+            $keyProblem = $status === 403 || (bool)preg_match('/api[ _-]?key|permission denied|consumer|service is disabled|unauthorized/i', $rawStr);
+            $last = 'The engine could not answer this request.';
+            if ($keyProblem) {
+                gemini_key_advance($cfg, $keyIndex, gemini_quota_reset_in());
+                return [false, $last, 'Devil AI will retry automatically — try again in a moment.', null, true];
+            }
+            break;   /* bad request/key: other models won't differ */
+        }
         $txt = '';
         foreach ((array)($j['candidates'][0]['content']['parts'] ?? []) as $part) {
             if (!empty($part['thought'])) { continue; }   /* skip thinking summaries */
@@ -1646,11 +1729,10 @@ function gemini_call(array $cfg, array $models, array $messages, string $image =
         }
         if (trim($txt) === '') { $last = 'The engine returned an empty answer.'; continue; }
         gemini_mark($mdl, true);
-        return [true, $txt, null, 'gemini:' . $mdl];
+        return [true, $txt, null, 'gemini:' . $mdl, false];
     }
-    return [false, $last, 'Devil AI will retry automatically — try again in a moment.', null];
+    return [false, $last, 'Devil AI will retry automatically — try again in a moment.', null, false];
 }
-
 function openrouter_call(array $cfg, string $providerModel, string $catalogId, array $messages, string $image = '', string $system = '', bool $vision = false): array {
     $key = openrouter_api_key($cfg);
     if ($key === '') { return [false, 'The OpenRouter key is not configured. Add it in Admin settings.', null, null]; }
@@ -2695,6 +2777,8 @@ try {
                 'smtp_password_set' => (string)($cfg['smtp_password'] ?? '') !== '',
                 'resend_api_key_set' => (string)($cfg['resend_api_key'] ?? '') !== '',
                 'openrouter_api_key_set' => openrouter_api_key($cfg) !== '',
+                'gemini_api_key_count' => count(gemini_api_keys($cfg)),
+                'gemini_api_key_tails' => array_map(static function (string $k): string { return '••••' . substr($k, -4); }, gemini_api_keys($cfg)),
             ],
         ]);
     }
@@ -2784,6 +2868,33 @@ try {
             }
         } elseif (!empty($in['openrouter_api_key_clear'])) {
             $new['openrouter_api_key'] = '';
+        }
+        /* Gemini keys: pasted keys are added to the saved list (deduped) unless "replace" is ticked.
+           Stored back as the legacy single key + the extras, so older code paths keep working. */
+        if (isset($in['gemini_api_keys']) && is_string($in['gemini_api_keys'])) {
+            $raw = trim($in['gemini_api_keys']);
+            $incoming = [];
+            if ($raw !== '') {
+                foreach ((preg_split('/[\r\n,]+/', $raw) ?: []) as $piece) {
+                    $k = trim((string)$piece);
+                    if ($k === '') { continue; }
+                    if (!preg_match('/^[A-Za-z0-9_.\-]{20,300}$/', $k)) {
+                        json_out(['ok' => false, 'error' => 'One of the Gemini API keys has an invalid format. Keys are 20–300 characters of letters, digits, dot, dash or underscore.'], 400);
+                    }
+                    $incoming[] = $k;
+                }
+            }
+            $replace = !empty($in['gemini_api_keys_replace']);
+            if ($incoming || $replace) {
+                $all = array_values(array_unique(array_merge($replace ? [] : gemini_api_keys($cfg), $incoming)));
+                $new['gemini_api_key'] = $all ? (string)$all[0] : '';
+                $new['gemini_api_keys'] = array_slice($all, 1);
+            }
+        }
+        if (!empty($in['gemini_api_keys_clear'])) {
+            $new['gemini_api_key'] = '';
+            $new['gemini_api_keys'] = [];
+            @unlink(gemini_key_state_path());
         }
         if (isset($in['new_admin_password']) && is_string($in['new_admin_password'])) {
             $np = trim($in['new_admin_password']);

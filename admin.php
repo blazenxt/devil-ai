@@ -87,6 +87,12 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <div class="row"><div><label>Quick pick 1 (fast)</label><select id="aFlash"></select></div><div><label>Quick pick 2 (balanced)</label><select id="aPro"></select></div></div>
         <label>Quick pick 3 (best)</label><select id="aUltra"></select>
         <hr class="divider">
+        <label>Gemini API keys <span style="color:var(--dim2);font-weight:500">(one per line — pasted keys are added to the saved ones)</span></label>
+        <textarea id="geminiKeys" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste a Gemini API key here"></textarea>
+        <p class="hint">Saved only in this server's private settings. The first key answers every request; if it hits its quota or rate limit the app switches to the next key automatically and keeps using it until the limit resets. <span id="geminiKeyInfo"></span></p>
+        <div class="switchrow"><span><b>Replace saved Gemini keys</b><small>Overwrite the saved list with what you pasted instead of adding to it.</small></span><button class="switch" id="replaceGeminiKeys" type="button" aria-pressed="false"></button></div>
+        <div class="switchrow"><span><b>Remove all saved Gemini keys</b><small>Clear every Gemini key when you save settings.</small></span><button class="switch" id="clearGeminiKeys" type="button" aria-pressed="false"></button></div>
+        <hr class="divider">
         <label>OpenRouter API key <span style="color:var(--dim2);font-weight:500">(leave empty to keep saved)</span></label>
         <input id="openrouterKey" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Not set">
         <p class="hint">Saved only in this server's private settings. Agent Mode and the three quick picks continue using Gemini. Models without a :free tag are marked and are not selected randomly in Battle.</p>
@@ -188,6 +194,13 @@ function fill(cfg, sec, adminUser) {
   $('#openrouterKey').value = '';
   $('#openrouterKey').placeholder = CFG.openrouter_api_key_set ? 'Key saved — leave blank to keep' : 'Paste the API key here';
   setSwitch($('#clearOpenrouterKey'), false);
+  var gk = CFG.gemini_api_key_count || 0;
+  var gkTails = CFG.gemini_api_key_tails || [];
+  $('#geminiKeys').value = '';
+  $('#geminiKeys').placeholder = gk ? (gk === 1 ? '1 key saved — paste another to add it' : gk + ' keys saved — paste another to add it') : 'Paste a Gemini API key here';
+  $('#geminiKeyInfo').textContent = gkTails.length ? ('Saved: ' + gkTails.join(', ')) : '';
+  setSwitch($('#replaceGeminiKeys'), false);
+  setSwitch($('#clearGeminiKeys'), false);
   $('#adminEmails').value = joinLines(CFG.admin_emails || []);
   $('#aPw').value = '';
   setSwitch($('#recaptchaToggle'), !!CFG.security_require_recaptcha);
@@ -251,7 +264,10 @@ function payload() {
     smtp_password: $('#smtpPass').value,
     resend_api_key: $('#resendKey').value.trim(),
     openrouter_api_key: $('#openrouterKey').value.trim(),
-    openrouter_api_key_clear: getSwitch($('#clearOpenrouterKey'))
+    openrouter_api_key_clear: getSwitch($('#clearOpenrouterKey')),
+    gemini_api_keys: $('#geminiKeys').value.trim(),
+    gemini_api_keys_replace: getSwitch($('#replaceGeminiKeys')),
+    gemini_api_keys_clear: getSwitch($('#clearGeminiKeys'))
   };
 }
 function unlock() {
@@ -277,6 +293,9 @@ $$('.saveBtn').forEach(function (b) { b.addEventListener('click', function () {
     status('#modelStatus', msg, ok ? 'ok' : 'bad'); status('#securityStatus', msg, ok ? 'ok' : 'bad'); status('#adminStatus', msg, ok ? 'ok' : 'bad'); status('#mailStatus', msg, ok ? 'ok' : 'bad');
     if (ok && j.security) { SEC = j.security; renderSecurity(); }
     $('#aPw').value = ''; $('#recSecret').value = ''; $('#smtpPass').value = '';
+    if (ok) {   /* re-read the saved settings so the "N keys saved" counters are up to date */
+      post('auth', { admin_password: PW }).then(function (r) { if (r.ok && r.config) { fill(r.config, r.security || {}, !!r.admin_user); } });
+    }
   });
 }); });
 $('#refreshBtn').addEventListener('click', function () { post('auth', { admin_password: PW }).then(function (j) { if (j.ok) { fill(j.config, j.security || {}, !!j.admin_user); status('#overviewStatus', 'Refreshed.', 'ok'); } }); });

@@ -230,7 +230,8 @@ function xt_pcm_to_wav(string $pcm, int $rate = 24000): string {
 
 /** Gemini TTS → ['ok', 'wav', 'model'].  $lines = [[speaker, text], …] for a dialogue (newer models want one part per speaker line) */
 function xt_tts(array $cfg, string $text, array $voice, array $lines = []): array {
-    $key = function_exists('gemini_api_key') ? gemini_api_key($cfg) : '';
+    /* uses whichever key is currently active, so a key that hit its quota doesn't break speech */
+    $key = function_exists('gemini_active_key') ? gemini_active_key($cfg) : (function_exists('gemini_api_key') ? gemini_api_key($cfg) : '');
     if ($key === '') { return ['ok' => false, 'error' => 'speech is not configured on this site']; }
     $speech = isset($voice['multi'])
         ? ['multiSpeakerVoiceConfig' => ['speakerVoiceConfigs' => array_map(static function ($sp, $vn) { return ['speaker' => $sp, 'voiceConfig' => ['prebuiltVoiceConfig' => ['voiceName' => $vn]]]; }, array_keys($voice['multi']), $voice['multi'])]]
