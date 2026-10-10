@@ -296,21 +296,6 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
           <button id="sendBtn" title="Send (Enter)" type="button" disabled hidden><?= icon('send', 17) ?></button>
         </div>
       </div>
-      <div id="agentTasks" aria-label="Agent task ideas">
-        <button type="button" class="atask" data-fill="Research the latest news about "><span class="ai"><?= icon('globe', 16) ?></span><span><b>Research a topic</b><small>Latest news, cited sources</small></span></button>
-        <button type="button" class="atask" data-fill="Compare the current prices and specs of "><span class="ai"><?= icon('layers', 16) ?></span><span><b>Compare products</b><small>Prices, specs, pros &amp; cons</small></span></button>
-        <button type="button" class="atask" data-fill="Read this page and summarize the key points: https://"><span class="ai"><?= icon('file-text', 16) ?></span><span><b>Summarize a page</b><small>Paste any public link</small></span></button>
-        <button type="button" class="atask" data-fill="Plan a 3-day trip to  with a day-by-day itinerary and a budget in INR"><span class="ai"><?= icon('list', 16) ?></span><span><b>Plan a trip</b><small>Day-by-day itinerary + budget</small></span></button>
-        <button type="button" class="atask" data-fill="Fact-check this claim with sources: "><span class="ai"><?= icon('shield-check', 16) ?></span><span><b>Fact-check a claim</b><small>Verify with real sources</small></span></button>
-        <button type="button" class="atask" data-fill="Calculate the EMI for a loan of ₹10,00,000 at 9% for 5 years and show the formula"><span class="ai"><?= icon('calculator', 16) ?></span><span><b>Crunch numbers</b><small>EMI, percentages, conversions</small></span></button>
-      </div>
-      <div class="starters" id="starters" aria-label="Get started">
-        <button type="button" data-start="Create a sleek, modern landing page for a coffee shop called Brew & Bean — hero, menu highlights, testimonials and a contact section."><?= icon('monitor', 14) ?> Create a landing page</button>
-        <button type="button" data-start="Build an interactive sales dashboard with charts for revenue, orders and top products, using sample data."><?= icon('gauge', 14) ?> Build a dashboard</button>
-        <button type="button" data-start="Make a playable browser game: a colourful Snake game with score, levels and a restart button."><?= icon('play', 14) ?> Make a game</button>
-        <button type="button" data-start="Build a full-stack to-do app with a small backend API, saving tasks, filters and a clean UI."><?= icon('layers', 14) ?> Build a fullstack app</button>
-        <button type="button" data-start="Create a beautiful online shop for handmade jewellery — product grid, product page, cart and checkout form."><?= icon('sparkles', 14) ?> Launch a storefront</button>
-      </div>
       <p class="hint"><span class="hk">Enter = new line • Ctrl/⌘ + Enter = send • </span>Devil AI can make mistakes.</p>
     </div>
   </main>

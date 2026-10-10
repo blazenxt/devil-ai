@@ -641,6 +641,8 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
         $L[] = '';
         $L[] = function_exists('sbx_env_text') ? sbx_env_text((array)($env['cfg'] ?? []), (string)($env['sid'] ?? '')) : 'Your sandbox: Linux, working folder /home/user/work.';
         $L[] = 'Privacy rule: never name or guess the company, cloud or service that runs your sandbox or its previews (no vendor names, no raw provider URLs/hostnames). If the user asks, say it is the Devil AI sandbox. Always give preview links exactly as the tools return them.';
+        $L[] = 'Authorized browser logins: do NOT blanket-refuse just because a site uses an external domain or IP. If the user asks to log in and authorization is not clear, ask them to confirm they own the account/system or are allowed to access it; proceed only after confirmation. Never bypass CAPTCHA, MFA, SSO, IP restrictions or other access controls, guess credentials, or automate bulk logins. Ask before destructive/sensitive actions after login.';
+        $L[] = 'Login secrets: never repeat credentials in a reply, tool activity, URL, file, screenshot, or log. If the user already typed them in chat, do not copy them into browser actions; ask them to re-enter via secure fields (need: LOGIN_USERNAME | account username; need: LOGIN_PASSWORD | account password). Use browser fill actions with {{LOGIN_USERNAME}} / {{LOGIN_PASSWORD}} placeholders; the browser tool resolves them securely. Never print secrets.';
         $L[] = 'Files the user uploads are in /home/user/work/uploads/. Everything in /home/user/work appears in the user\'s Files panel, where they can open and download it.';
         $L[] = 'To show a website or app: write the files, then use start_server (bind to 0.0.0.0, e.g. "python3 -m http.server 3000 --bind 0.0.0.0" or "npx vite --host 0.0.0.0 --port 5173"). The user sees it live in the Preview tab. Check it with the browser tool.';
         $L[] = 'Never give the user localhost / 127.0.0.1 links — they cannot open them. Point them to the Preview tab (and the preview URL from start_server) instead. Long-running servers always go through start_server, never plain bash.';
@@ -686,7 +688,7 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
         $L[] = '';
         $L[] = 'ASK FOR WHAT YOU NEED (requirements):';
         $L[] = '- When the task needs something only the user can give — an API key or token, a password or login, account access, their own files or data, a domain, payment details, personal info — STOP and ask for it with ask_user. Say exactly what you need, why, and where they can get it.';
-        $L[] = '- For secrets (API keys, tokens, passwords) add one line per secret: "need: ENV_NAME | short label". The user gets a secure field; the value is saved inside the sandbox (never shown in chat) and every bash / start_server command automatically has it as the environment variable ENV_NAME. Use it in code via the environment (e.g. os.environ["ENV_NAME"], process.env.ENV_NAME); never print or echo secret values. If a tool like dotenv needs a .env file, write it from the variable: echo "ENV_NAME=$ENV_NAME" > .env';
+        $L[] = '- For secrets (API keys, tokens, passwords) add one line per secret: "need: ENV_NAME | short label". The user gets a secure field; the app keeps a private per-chat copy for redaction and injects it only into sandbox commands as ENV_NAME. It never goes into chat history, tool arguments or visible activity. Use it in code via the environment (e.g. os.environ["ENV_NAME"], process.env.ENV_NAME); never print or echo secret values. If a tool like dotenv needs a .env file, write it from the variable: echo "ENV_NAME=$ENV_NAME" > .env';
         $L[] = '- For files, ask the user to upload them with "Add files" (they arrive in /home/user/work/uploads/).';
         $L[] = '- Never invent fake keys, fake credentials or made-up data to get past a missing requirement, and never silently skip a feature because something is missing — ask.';
         $L[] = '- After the user answers, continue exactly where you stopped (use the work log of earlier turns; do not redo finished work).';
@@ -809,7 +811,7 @@ function agent_tool_short(string $name, string $desc): string {
         'stop_server' => 'Stop the server on a port. INPUT: port.',
         'list_files' => 'List files. INPUT: folder or ".".',
         'start_server' => 'Start a dev server in the background and get its preview URL. INPUT: line 1 = port, line 2 = command (bind 0.0.0.0).',
-        'browser' => 'Open a URL in Chromium: returns text, errors, failed files, broken images, sideways overflow, styling. INPUT: line 1 = URL; extra lines = actions to test like a user: mobile | click <css> | fill <css> = <text> | select <css> = <value> | check <css> | press Enter | wait 1000.',
+        'browser' => 'Open a URL in Chromium: returns text, errors, failed files, broken images, sideways overflow, styling. INPUT: line 1 = URL; extra lines = actions: mobile | click <css> | fill <css> = <text> | select <css> = <value> | check <css> | press Enter | wait 1000. For credentials use fill <css> = {{ENV_NAME}} after saving the value with ask_user secure need fields; never include literal passwords.',
         'generate_image' => 'Make an image. INPUT: line 1 = output path, line 2 = prompt. Several images: ONE call, one "path | prompt" per line (max 8, made in parallel — much faster).',
         'deploy_site' => 'Publish a finished site to the user\'s own FTP/SFTP hosting (Settings → Hosting). INPUT: line 1 = folder, line 2 = optional site name.',
         'full_internet' => 'Move to a sandbox with full internet (only when a needed website/API is blocked).',
@@ -837,6 +839,8 @@ function agent_system_prompt_compact(bool $sandbox, array $env = []): string {
         $L[] = '- Small fixes: edit_file (not a full rewrite). Real photos: image_search; custom art: generate_image. Audio: generate_speech. Word/PowerPoint/Excel/PDF/charts: pip install -q python-docx python-pptx openpyxl reportlab, then a Python script. Finish file deliverables with present_file.';
         $L[] = '- Keep one consistent brand name, nav menu, colors and class names across all pages — put them in your checklist, and read_file an earlier file when unsure instead of guessing.';
         $L[] = '- Create files with write_file, not shell heredocs. Run commands yourself. Never claim done/fixed/styled without a tool result showing it.';
+        $L[] = '- Browser logins: do not refuse merely because the URL is external. If authorization is unclear, ask the user to confirm they own the account/system or are authorized. Never bypass CAPTCHA/MFA/SSO, guess credentials or automate bulk logins; ask before sensitive/destructive account actions.';
+        $L[] = '- Login secrets: never echo or put passwords in browser tool inputs/logs/screenshots. Ask for credentials using secure need fields (need: LOGIN_USERNAME | username; need: LOGIN_PASSWORD | password), then browser fill actions use {{LOGIN_USERNAME}} and {{LOGIN_PASSWORD}}. Never copy a password the user posted in chat into a tool call.';
         $L[] = '- Ask with ask_user only when the request is truly unclear or you need something only the user has (API key → "need: ENV_NAME | label"; files → ask them to use Add files).';
         $L[] = '- Never name the company or service behind the sandbox; give preview links exactly as tools return them. No localhost links for the user. Hosting on the user\'s server: deploy_site.';
     }
@@ -968,6 +972,62 @@ function agent_should_selfcheck(array $job, int $max): bool {
     return $built >= 2;
 }
 
+function agent_public_browser_url(string $url): string {
+    $url = (string)preg_replace('~(https?://)[^/@\\s]+@~i', '$1[hidden]@', $url);
+    return (string)preg_replace('/([?&](?:password|passwd|token|secret|api[_-]?key|auth|code|username|user|email)=)[^&\s]+/i', '$1[hidden]', $url);
+}
+function agent_public_tool_input(string $name, string $input): string {
+    if ($name !== 'browser') { return $input; }
+    $lines = preg_split('/\r?\n/', trim($input));
+    if (!$lines) { return ''; }
+    $out = [agent_public_browser_url(trim((string)array_shift($lines)))];
+    foreach ($lines as $line) {
+        if (preg_match('/^\s*(fill|type|select)\s+(.+?)\s*(?:=|=>)\s*(.*)$/i', (string)$line, $m)) {
+            $value = trim((string)$m[3]);
+            $safe = preg_match('/^\{\{[A-Z_][A-Z0-9_]*\}\}$/', $value) ? $value : '[hidden]';
+            $out[] = trim($m[1] . ' ' . $m[2]) . ' = ' . $safe;
+        } elseif (preg_match('/^\s*goto\s+(.+)$/i', (string)$line, $m)) {
+            $out[] = 'goto ' . agent_public_browser_url(trim((string)$m[1]));
+        } else { $out[] = (string)$line; }
+    }
+    return implode("\n", $out);
+}
+function agent_browser_input_secrets(string $input): array {
+    $lines = preg_split('/\r?\n/', trim($input));
+    $urls = [trim((string)($lines[0] ?? ''))];
+    foreach (array_slice($lines, 1) as $line) { if (preg_match('/^\s*goto\s+(.+)$/i', (string)$line, $m)) { $urls[] = trim((string)$m[1]); } }
+    $out = [];
+    foreach ($urls as $url) {
+        $parts = @parse_url($url);
+        if (!is_array($parts)) { continue; }
+        foreach (['user', 'pass'] as $key) { if (!empty($parts[$key])) { $out[] = rawurldecode((string)$parts[$key]); } }
+        $query = []; parse_str((string)($parts['query'] ?? ''), $query);
+        foreach ($query as $key => $value) {
+            if (preg_match('/password|passwd|token|secret|api[_-]?key|auth|code|username|user|email/i', (string)$key)) {
+                foreach ((array)$value as $v) { if (is_scalar($v) && (string)$v !== '') { $out[] = (string)$v; } }
+            }
+        }
+    }
+    foreach (array_slice($lines, 1) as $line) {
+        if (preg_match('/^\s*(?:fill|type|select)\s+.+?\s*(?:=|=>)\s*(.*)$/i', (string)$line, $m)) {
+            $value = trim((string)$m[1]);
+            if ($value !== '' && !preg_match('/^\{\{[A-Z_][A-Z0-9_]*\}\}$/', $value)) { $out[] = $value; }
+        }
+    }
+    return array_values(array_unique($out));
+}
+function agent_public_tool_message(string $name, string $text, string $input, array $secretValues = []): string {
+    if ($name !== 'browser') { return $text; }
+    foreach (array_merge(agent_browser_input_secrets($input), $secretValues) as $secret) {
+        $secret = (string)$secret;
+        if ($secret !== '') { $text = str_replace($secret, '[hidden]', $text); }
+    }
+    if (trim($input) === '') { return $text; }
+    $pos = strrpos($text, 'INPUT:');
+    if ($pos === false) { return str_replace($input, agent_public_tool_input($name, $input), $text); }
+    return substr($text, 0, $pos + 6) . ' ' . agent_public_tool_input($name, $input);
+}
+
 function agent_job_advance(array &$job, array $deps): array {
     $cfg = $deps['cfg'];
     $sandbox = !empty($job['sandbox']) && !empty($deps['sbx']);
@@ -1071,7 +1131,10 @@ function agent_job_advance(array &$job, array $deps): array {
             $job['reply'] = $final;
             return ['type' => 'final', 'reply' => $final];
         }
-        $job['history'][] = ['role' => 'assistant', 'content' => $txt];
+        $secureValues = $sandbox && function_exists('sbx_secret_values') ? sbx_secret_values((string)($deps['sbx']['sid'] ?? ''), (array)($deps['sbx']['cfg'] ?? [])) : [];
+        $safeTxt = agent_public_tool_message((string)$call['name'], $txt, (string)$call['input'], $secureValues);
+        $safeThought = agent_public_tool_message((string)$call['name'], (string)$call['thought'], (string)$call['input'], $secureValues);
+        $job['history'][] = ['role' => 'assistant', 'content' => $safeTxt];
         if (!empty($call['unknown'])) {
             $job['history'][] = ['role' => 'user', 'content' => "TOOL RESULT ({$call['name']}):\nUnknown tool '{$call['name']}'. Available tools: " . implode(', ', array_keys($tools)) . ". Call a valid tool or give the final answer."];
             return ['type' => 'retry', 'note' => 'Unknown tool requested.'];
@@ -1093,11 +1156,11 @@ function agent_job_advance(array &$job, array $deps): array {
             $job['ask'] = ['question' => $q, 'options' => $opts] + ($needs ? ['needs' => $needs] : []);
             return ['type' => 'final', 'reply' => $reply, 'ask' => $job['ask']];
         }
-        if (empty($job['plan']) && preg_match_all('/^\s*(?:[-*•]|\d+[.)])\s+\S/m', (string)$call['thought']) >= 2) { $job['plan'] = mb_substr(trim((string)$call['thought']), 0, 900); }
-        $job['pending'] = ['tool' => $call['name'], 'input' => $call['input'], 'thought' => mb_substr($call['thought'], 0, 600),
+        if (empty($job['plan']) && preg_match_all('/^\s*(?:[-*•]|\d+[.)])\s+\S/m', $safeThought) >= 2) { $job['plan'] = mb_substr(trim($safeThought), 0, 900); }
+        $job['pending'] = ['tool' => $call['name'], 'input' => $call['input'], 'thought' => mb_substr($safeThought, 0, 600),
             'cut' => strlen($txt) >= 4900 && !agent_long_replies($cfg), 'multi' => preg_match_all('/^[ \t]*(?:\*\*)?TOOL:?(?:\*\*)?[ \t]*`?[a-z_]+`?[ \t]*$/mi', $txt) > 1];
         $job['state'] = 'tool';
-        return ['type' => 'tool_start', 'step' => count((array)$job['trace']) + 1, 'tool' => $call['name'], 'input' => mb_substr($call['input'], 0, 600), 'thought' => mb_substr($call['thought'], 0, 600)];
+        return ['type' => 'tool_start', 'step' => count((array)$job['trace']) + 1, 'tool' => $call['name'], 'input' => mb_substr(agent_public_tool_input((string)$call['name'], (string)$call['input']), 0, 600), 'thought' => mb_substr($safeThought, 0, 600)];
     }
 
     if (($job['state'] ?? '') === 'tool') {
@@ -1125,12 +1188,12 @@ function agent_job_advance(array &$job, array $deps): array {
         $step = [
             'step' => count((array)$job['trace']) + 1,
             'tool' => $name,
-            'input' => mb_substr($input, 0, ($name === 'write_file' || $name === 'append_file') ? 4000 : 1500),
+            'input' => mb_substr(agent_public_tool_input($name, $input), 0, ($name === 'write_file' || $name === 'append_file') ? 4000 : 1500),
             'ok' => !empty($result['ok']),
             'output' => mb_substr($text, 0, 4000),
             'ms' => $ms,
         ];
-        if (!empty($p['thought'])) { $step['thought'] = (string)$p['thought']; }
+        if (!empty($p['thought'])) { $step['thought'] = agent_public_tool_message($name, (string)$p['thought'], $input, $sandbox && function_exists('sbx_secret_values') ? sbx_secret_values((string)($deps['sbx']['sid'] ?? ''), (array)($deps['sbx']['cfg'] ?? [])) : []); }
         if (!empty($result['meta']) && is_array($result['meta'])) { $step['meta'] = $result['meta']; }
         $job['trace'][] = $step;
         if ($sameFails === 1 && empty($result['ok'])) { $text .= "\n\n⚠ This is the SECOND time this exact call failed the same way. Do not repeat it — try a different approach."; }

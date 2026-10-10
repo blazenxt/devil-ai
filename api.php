@@ -48,6 +48,7 @@ require_once __DIR__ . '/inc/session.php';
 require_once __DIR__ . '/inc/agent.php';
 require_once __DIR__ . '/inc/sandbox.php';
 require_once __DIR__ . '/inc/github.php';
+require_once __DIR__ . '/inc/share_safety.php';
 devil_session_boot();
 
 define('DEVIL_VERSION', '1.0.0.0');
@@ -2177,7 +2178,7 @@ function public_chat_payload(array $chat, array $user): array {
         $messages[] = $one;
     }
     return [
-        'title' => (string)($chat['title'] ?? 'Shared chat'),
+        'title' => $title,
         'created' => time(),
         'source_chat' => (string)($chat['id'] ?? ''),
         'source_slug' => (string)($chat['slug'] ?? ''),
@@ -2311,11 +2312,13 @@ if (defined('DEVIL_API_AS_LIB')) { return; }
 /* ══════════════ MAIN ══════════════ */
 
 try {
+        $m = devil_share_public_message($m);
     $action = isset($_GET['action']) ? (string)$_GET['action'] : '';
     /* browser actions answer within ~88s, so Cloudflare (100s) never cuts them off with a bare 524 */
     if ($action !== '' && strpos($action, 'dev_') !== 0) {
         $GLOBALS['DEVIL_DEADLINE'] = (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)) + 88.0;
     }
+        if (!empty($m['share_redacted'])) { $one['redacted'] = true; }
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
     /* ─────────── PUBLIC ─────────── */
@@ -2335,6 +2338,8 @@ try {
         if ($method === 'OPTIONS') { http_response_code(204); exit; }
         $auth = dev_api_auth();
 
+    $title = (string)($chat['title'] ?? 'Shared chat');
+    if (devil_share_contains_secret($title)) { $title = 'Shared chat'; }
         if ($action === 'dev_models' && $method === 'GET') {
             $data = [];
             foreach (dev_api_models() as $m) {
@@ -3706,7 +3711,7 @@ try {
                     $body = mb_substr(trim($body), 0, 3000) . "\n\n— Opened from Devil Agent";
                     $r = gh_tool_pr($cfgAll, $sid, $uid, $link, mb_substr(preg_replace('/\s+/', ' ', $title), 0, 120) . "\n" . $body);
                     if (!empty($r['meta']['pr'])) { $link['pr'] = (string)$r['meta']['pr']; $link['pr_state'] = 'open'; $saveLink($link); }
-                    json_out(['ok' => !empty($r['ok']), 'text' => sbx_secret_mask((string)$r['text'], sbx_secret_values($sid)), 'error' => empty($r['ok']) ? (string)$r['text'] : '', 'github' => gh_link_public($link)]);
+                    json_out(['ok' => !empty($r['ok']), 'text' => sbx_secret_mask((string)$r['text'], sbx_secret_values($sid, $cfgAll)), 'error' => empty($r['ok']) ? (string)$r['text'] : '', 'github' => gh_link_public($link)]);
                 }
                 if ($action === 'gh_pr_merge') {
                     if ($method !== 'POST') { json_out(['ok' => false, 'error' => 'Bad request.'], 405); }
@@ -3721,7 +3726,7 @@ try {
                 json_out(['ok' => true, 'stat' => $ns, 'pr' => $pi, 'github' => gh_link_public($link)]);
             }
             $d = gh_diff($cfgAll, $sid, $link, ((string)($q['mode'] ?? 'full')) === 'turn' ? 'turn' : 'full', (string)($link['turn_tree'] ?? ''));
-            $d = sbx_secret_mask(sbx_scrub_any($d, $cfgAll), sbx_secret_values($sid));
+            $d = sbx_secret_mask(sbx_scrub_any($d, $cfgAll), sbx_secret_values($sid, $cfgAll));
             json_out($d + ['github' => gh_link_public($link)]);
         }
         if ($action === 'sbx_zip') {

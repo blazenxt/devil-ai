@@ -129,12 +129,24 @@ function fitMenu(m) {
   var list = m.querySelector('.cmlist');
   if (list) { list.style.removeProperty('max-height'); st.setProperty('max-height', 'none', 'important'); }
   if (getComputedStyle(m).display === 'none') { return; }
-  var par = m.offsetParent || m.parentNode, pr = par.getBoundingClientRect(), r = m.getBoundingClientRect();
-  var vh = window.innerHeight || document.documentElement.clientHeight, pad = 8, gap = 8;
+  var par = m.offsetParent || m.parentNode;
+  if (m.closest('#modeSw')) { st.removeProperty('left'); st.removeProperty('right'); }
+  var pr = par.getBoundingClientRect(), r = m.getBoundingClientRect();
+  var vh = window.innerHeight || document.documentElement.clientHeight, vw = window.innerWidth || document.documentElement.clientWidth, pad = 8, gap = 8;
   var up = r.top < pr.top - 1;
   var spaceUp = pr.top - gap - pad, spaceDown = vh - pr.bottom - gap - pad;
   var need = m.scrollHeight;
-  if (m.closest('#modeSw')) { up = false; spaceDown = vh - r.top - pad; }
+  if (m.closest('#modeSw')) {
+    up = false; spaceDown = vh - r.top - pad;
+    var targetLeft = Math.max(pad, Math.min(pr.left, vw - pad - r.width));
+    var shiftX = targetLeft - r.left;
+    if (Math.abs(shiftX) > 1) {
+      var baseLeft = parseFloat(getComputedStyle(m).left) || 0;
+      st.setProperty('left', (baseLeft + shiftX) + 'px', 'important');
+      st.setProperty('right', 'auto', 'important');
+      r = m.getBoundingClientRect();
+    }
+  }
   else if (up ? need > spaceUp && spaceDown > spaceUp : need > spaceDown && spaceUp > spaceDown) {
     up = !up;
     st.setProperty('top', up ? 'auto' : 'calc(100% + ' + gap + 'px)', 'important');
@@ -1764,25 +1776,6 @@ function newChatView() {
 }
 $('#newChatBtn').addEventListener('click', function () { window.location.href = newChatPath(); });
 
-$$('#agentTasks .atask').forEach(function (c) {
-  c.addEventListener('click', function () {
-    var t = c.dataset.fill || '';
-    inp.value = t; resize(); inp.focus();
-    var gap = t.indexOf('  ');
-    var pos = gap >= 0 ? gap + 1 : t.length;
-    try { inp.setSelectionRange(pos, pos); } catch (e) {}
-    if (typeof updateSendButton === 'function') { updateSendButton(); }
-  });
-});
-/* "Get started" chips: build tasks open in Agent Mode */
-$$('#starters [data-start]').forEach(function (b) {
-  b.addEventListener('click', function () {
-    if (chatMode !== 'agent' && agentEnabled && !busy) { chooseMode('agent'); }
-    inp.value = b.getAttribute('data-start');
-    resize();
-    inp.focus();
-  });
-});
 $$('#welcome .card').forEach(function (c) {
   c.addEventListener('click', function () { inp.value = c.dataset.fill; resize(); send(); });
 });
@@ -3363,7 +3356,7 @@ function renderAskChips(el, ask) {
       '<form class="agt-need">' + needs.map(function (n, i) {
         return '<label class="agt-nf"><span class="nl"></span><span class="nn"></span><input type="password" autocomplete="off" spellcheck="false" data-i="' + i + '" required></label>';
       }).join('') +
-      '<div class="agt-nb"><span class="agt-nnote">Saved only inside your sandbox — never shown in the chat.</span><button type="submit" class="agt-nsave">Save &amp; continue</button></div><div class="agt-nerr" hidden></div></form>';
+      '<div class="agt-nb"><span class="agt-nnote">Stored privately for this chat and passed to the sandbox; never shown in chat.</span><button type="submit" class="agt-nsave">Save &amp; continue</button></div><div class="agt-nerr" hidden></div></form>';
     Array.prototype.forEach.call(w.querySelectorAll('.agt-nf'), function (lb, i) {
       lb.querySelector('.nl').textContent = needs[i].label || needs[i].name;
       lb.querySelector('.nn').textContent = needs[i].name;
@@ -3374,8 +3367,8 @@ function renderAskChips(el, ask) {
       e.preventDefault();
       if (busy) { return; }
       var ins = Array.prototype.slice.call(fm.querySelectorAll('input'));
-      var vals = ins.map(function (x) { return x.value.trim(); });
-      if (vals.some(function (v) { return !v; })) { er.hidden = false; er.textContent = 'Fill in every field.'; return; }
+      var vals = ins.map(function (x) { return x.value; });
+      if (vals.some(function (v) { return !v.length; })) { er.hidden = false; er.textContent = 'Fill in every field.'; return; }
       sv.disabled = true; sv.textContent = 'Saving…'; er.hidden = true;
       var i = 0;
       (function next() {

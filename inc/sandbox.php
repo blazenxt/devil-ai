@@ -469,7 +469,7 @@ function sbx_agent_tools_all(): array {
         'list_files'     => 'List files in the workspace. INPUT: a folder path, or "." for everything.',
         'start_server'   => 'Start a long-running app/dev server in the background and get its public preview URL. INPUT: first line = port, second line = command (bind to 0.0.0.0).',
         'deploy_site'    => 'Publish a finished website to the USER\'S OWN hosting server (their FTP/SFTP account from Settings → Hosting) and get its live URL. Use only when the user wants the site hosted/published/deployed on their server. INPUT: first line = folder inside /home/user/work to upload (e.g. site or app/dist — for React/Vite run the build first and deploy dist), optional second line = site name (letters, numbers, dashes; it becomes the sub-folder and URL path).',
-        'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors, failed files, BROKEN IMAGES, sideways overflow and saves a screenshot. INPUT: line 1 = URL; optional next lines = actions run in order to TEST the page like a user: "mobile" (phone screen 390px), "click <css selector>", "fill <css selector> = <text>", "select <css selector> = <value>", "check <css selector>", "press Enter", "wait 1000", "goto <url>". Example — test a form: line 2 "fill #name = Ravi", line 3 "click button[type=submit]".',
+        'browser'        => 'Open a page in a headless Chromium inside the sandbox (works for http://localhost:PORT too): returns title, visible text, console errors, failed files, BROKEN IMAGES, sideways overflow and saves a screenshot. INPUT: line 1 = URL; optional next lines = actions: "mobile", "click <css selector>", "fill <css selector> = <text>", "select <css selector> = <value>", "check <css selector>", "press Enter", "wait 1000", "goto <url>". Authorized logins are allowed only after user authorization is clear. For credentials use secure ask_user need fields and fill with {{ENV_NAME}} placeholders — never put literal passwords in actions. CAPTCHA/MFA/access controls must not be bypassed.',
         'generate_image' => 'Generate an image from a text prompt and save it in the workspace. INPUT: first line = output path (e.g. images/hero.png), second line = the prompt. SEVERAL IMAGES? Make them in ONE call (much faster, made at the same time, max 8): one image per line as "path | prompt", e.g. "images/g1.jpg | cozy cafe interior" newline "images/g2.jpg | latte art close-up".',
         'image_search'   => 'Find REAL photos on the web (openly licensed: Openverse / Wikimedia Commons) and save them in the workspace — for real places, foods, animals, landmarks, products, people at work… INPUT: line 1 = what to look for in simple English (e.g. "masala chai glass"); optional lines "count: 3" (1-6) and "folder: images". Returns the saved paths with credit/license.',
         'generate_speech'=> 'Turn text into natural spoken audio (voiceovers, narration, podcasts, pronunciation). INPUT: line 1 = output file (.mp3 or .wav, e.g. audio/intro.mp3); optional "voice: Kore" (voices: Kore firm, Puck upbeat, Charon informative, Zephyr bright, Aoede breezy, Leda youthful, Fenrir excitable, Sulafat warm, Achird friendly, Gacrux mature …); optional "voices: Host=Kore, Guest=Puck" for a two-person dialogue whose lines start with "Host:" / "Guest:"; optional "style: warm and slow"; then the text (up to ~4,000 characters, any language).',
@@ -867,7 +867,7 @@ function sbx_run_tool(array $ctx, string $name, string $input): array {
         $input = str_replace('/home/sandbox', $real, $input);
     }
     $r = sbx_run_tool_raw($ctx, $name, $input);
-    return sbx_secret_mask(sbx_scrub_any($r, (array)$ctx['cfg']), sbx_secret_values((string)$ctx['sid']));
+    return sbx_secret_mask(sbx_scrub_any($r, (array)$ctx['cfg']), sbx_secret_values((string)$ctx['sid'], (array)$ctx['cfg']), $name === 'browser' ? 1 : 6);
 }
 function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
     $cfg = $ctx['cfg']; $sid = $ctx['sid'];
@@ -1038,14 +1038,39 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
         case 'browser': {
             $blines = preg_split('/\r?\n/', trim($input));
             $url = trim((string)array_shift($blines));
+            if (preg_match('~^https?://[^/?#]*@~i', $url) || preg_match('/[?&](?:password|passwd|token|secret|api[_-]?key|auth|code|username|user|email)=/i', $url)) {
+                return ['ok' => false, 'text' => 'For security, do not put account credentials or tokens in a URL. Ask for secure fields, then fill the page with {{ENV_NAME}} placeholders.'];
+            }
             if (!preg_match('#^https?://#i', $url)) { $url = 'http://' . ltrim($url, '/'); }
             $acts = sbx_browser_actions($blines);
+            foreach ($acts as $act) {
+                $nav = (string)($act[1] ?? '');
+                if (($act[0] ?? '') === 'goto' && (preg_match('~^https?://[^/?#]*@~i', $nav) || preg_match('/[?&](?:password|passwd|token|secret|api[_-]?key|auth|code|username|user|email)=/i', $nav))) {
+                    return ['ok' => false, 'text' => 'For security, do not put account credentials or tokens in a URL. Use secure fields and browser fill placeholders.'];
+                }
+            }
             $shot = '.devil/screens/shot-' . date('His') . '-' . substr(bin2hex(random_bytes(3)), 0, 4) . '.png';
             $py = <<<'PY'
-import asyncio, json, sys, os
+import asyncio, json, sys, os, re
 from playwright.async_api import async_playwright
+def scrub_urls(v, secrets=()):
+    if isinstance(v, str):
+        for secret in secrets:
+            if secret: v = v.replace(secret, "[hidden]")
+        v = re.sub(r"(https?://)[^/\s@]+@", r"\1[hidden]@", v, flags=re.I)
+        return re.sub(r"([?&](?:password|passwd|token|secret|api[_-]?key|auth|code|username|user|email)=)[^&\s<>\"']+", r"\1[hidden]", v, flags=re.I)
+    if isinstance(v, list): return [scrub_urls(x, secrets) for x in v]
+    if isinstance(v, dict): return {k: scrub_urls(x, secrets) for k, x in v.items()}
+    return v
 async def main(url, shot, acts):
     out = {"url": url, "console": [], "errors": [], "failed": [], "actions": [], "dialogs": []}
+    secret_used = False
+    secret_values_used = []
+    def action_label(a):
+        kind = str(a[0]) if len(a) > 0 else ""
+        sel = str(a[1]) if len(a) > 1 else ""
+        if kind in ("fill", "select"): return kind + " " + sel + " = [hidden]"
+        return " ".join(str(x) for x in a if x)
     mobile = any(a[0] == "mobile" for a in acts)
     async with async_playwright() as p:
         try:
@@ -1070,6 +1095,11 @@ async def main(url, shot, acts):
         except Exception as e:
             out["errors"].append("navigation: " + str(e)[:300])
         try:
+            if await pg.locator('input[type=password]').count():
+                secret_used = True
+        except Exception:
+            pass
+        try:
             # scroll through the page so lazy images and scroll animations load, then back to the top
             await pg.evaluate("""async () => { const h = document.body ? document.body.scrollHeight : 0;
                 for (let y = 0; y < h; y += 700) { window.scrollTo(0, y); await new Promise(r => setTimeout(r, 60)); }
@@ -1083,12 +1113,28 @@ async def main(url, shot, acts):
             if kind == "mobile":
                 continue
             if fails >= 3:
-                out["actions"].append("SKIP " + " ".join(x for x in a if x) + " (3 actions in a row failed)")
+                out["actions"].append("SKIP " + action_label(a) + " (3 actions in a row failed)")
                 continue
             try:
                 if kind == "click":
                     await pg.click(sel, timeout=3000)
                 elif kind == "fill":
+                    m = re.fullmatch(r"\{\{([A-Z_][A-Z0-9_]*)\}\}", val)
+                    info = await pg.locator(sel).evaluate("(e) => ({type:e.type||'',name:e.name||'',id:e.id||'',placeholder:e.placeholder||'',label:e.getAttribute('aria-label')||''})", timeout=3000)
+                    hints = " ".join(str(info.get(k, "")) for k in ("type", "name", "id", "placeholder", "label"))
+                    password_target = str(info.get("type", "")).lower() == "password" or bool(re.search(r"pass(?:word)?|secret|token|api.?key|auth", hints, re.I))
+                    login_form = await pg.locator('input[type=password]').count() > 0
+                    if login_form:
+                        secret_used = True
+                    if m:
+                        env_name = m.group(1)
+                        secret_used = True
+                        if env_name not in os.environ: raise Exception("secure input missing: " + env_name)
+                        val = os.environ[env_name]
+                        secret_values_used.append(val)
+                    elif password_target or login_form:
+                        secret_used = True
+                        raise Exception("use a secure need field and a {{ENV_NAME}} placeholder")
                     await pg.fill(sel, val, timeout=3000)
                 elif kind == "select":
                     try:
@@ -1110,14 +1156,14 @@ async def main(url, shot, acts):
                 elif kind == "goto":
                     await pg.goto(sel, wait_until="networkidle", timeout=20000)
                 await pg.wait_for_timeout(350)
-                out["actions"].append("OK   " + " ".join(x for x in a if x))
+                out["actions"].append("OK   " + action_label(a))
                 fails = 0
             except Exception as e:
                 fails += 1
                 msg = str(e).splitlines()[0][:120]
                 if "Timeout" in msg:
                     msg = "element not found or not visible/enabled (hidden, covered, or the selector is wrong)"
-                out["actions"].append("FAIL " + " ".join(x for x in a if x) + " -> " + msg)
+                out["actions"].append("FAIL " + action_label(a) + " -> " + msg)
         if acts:
             try:
                 await pg.wait_for_load_state("networkidle", timeout=5000)
@@ -1181,17 +1227,21 @@ async def main(url, shot, acts):
                 return { sheets: document.styleSheets.length, rules: rules, bg: b.backgroundColor, color: b.color, font: b.fontFamily.slice(0, 60) }; }""")
         except Exception:
             pass
-        os.makedirs(os.path.dirname(shot), exist_ok=True)
-        try:
-            await pg.screenshot(path=shot)
-            out["screenshot"] = shot
-        except Exception:
-            pass
+        if secret_used:
+            out["screenshot_suppressed"] = "Secure fields were filled; screenshot omitted for privacy."
+        else:
+            os.makedirs(os.path.dirname(shot), exist_ok=True)
+            try:
+                await pg.screenshot(path=shot)
+                out["screenshot"] = shot
+            except Exception:
+                pass
         await b.close()
-    print(json.dumps(out))
+    print(json.dumps(scrub_urls(out, secret_values_used)))
 asyncio.run(main(sys.argv[1], sys.argv[2], json.load(open(sys.argv[3])) if len(sys.argv) > 3 else []))
 PY;
             $cmd = "python3 -c 'import playwright' 2>/dev/null || pip install -q playwright >/dev/null 2>&1; mkdir -p .devil && cat > .devil/browse.py <<'DEVILPY'\n" . $py . "\nDEVILPY\ncat > .devil/acts.json <<'DEVILACT'\n" . json_encode($acts, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\nDEVILACT\npython3 .devil/browse.py " . escapeshellarg($url) . ' ' . escapeshellarg($shot) . ' .devil/acts.json 2>&1 | tail -c 14000';
+            $cmd = sbx_env_prefix($cfg, $sid) . "\n" . $cmd;
             if (sbx_is_cloud($cfg) && sbx_backend($cfg, $sid) === 'e2b') {
                 /* small-RAM VM: Chromium needs memory overcommit; stock image (no custom template) gets Playwright on first use */
                 $ready = 'python3 -c "import playwright" 2>/dev/null && ls -d ${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}/chromium* >/dev/null 2>&1';
@@ -1366,40 +1416,73 @@ function sbx_parse_ask(string $input): array {
     return [mb_substr($q, 0, 600), $opts, $needs];
 }
 
-/* ── secrets the user typed into a "need:" field: kept inside the sandbox (never in chat history) ── */
+/* ── secure values are encrypted in a private per-chat server file for output masking and kept in the sandbox environment file; never add them to chat history ── */
 const SBX_SECRETS_FILE = '/home/user/.secrets/env';
 function sbx_secret_store_path(string $sid): string { return dirname(__DIR__) . '/data/agent_secrets/' . hash('sha256', $sid) . '.json'; }
-function sbx_secret_values(string $sid): array {
+function sbx_secret_store_key(array $cfg): string {
+    $master = trim((string)($cfg['sandbox_secret'] ?? ''));
+    return $master !== '' ? hash_hmac('sha256', 'agent-secret-store-v1', $master, true) : '';
+}
+function sbx_secret_values(string $sid, array $cfg = []): array {
     $f = sbx_secret_store_path($sid);
     if (!is_file($f)) { return []; }
-    $j = json_decode((string)@file_get_contents($f), true);
-    return is_array($j) ? $j : [];
+    $raw = (string)@file_get_contents($f);
+    $j = json_decode($raw, true);
+    if (!is_array($j)) { return []; }
+    if (($j['v'] ?? null) === 1 && isset($j['iv'], $j['tag'], $j['data'])) {
+        $key = sbx_secret_store_key($cfg);
+        if ($key === '' || !function_exists('openssl_decrypt')) { return []; }
+        $iv = base64_decode((string)$j['iv'], true); $tag = base64_decode((string)$j['tag'], true); $ct = base64_decode((string)$j['data'], true);
+        if ($iv === false || $tag === false || $ct === false) { return []; }
+        $plain = openssl_decrypt($ct, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, $sid);
+        $values = $plain === false ? null : json_decode($plain, true);
+        return is_array($values) ? $values : [];
+    }
+    /* read old per-chat files so existing sessions keep working; the next save migrates them to encrypted storage */
+    return $j;
+}
+function sbx_secret_store_write(string $sid, array $cfg, array $values): bool {
+    $key = sbx_secret_store_key($cfg);
+    if ($key === '' || !function_exists('openssl_encrypt')) { return false; }
+    try { $iv = random_bytes(12); } catch (\Throwable $e) { return false; }
+    $tag = '';
+    $plain = (string)json_encode($values, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $cipher = openssl_encrypt($plain, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, $sid, 16);
+    if ($cipher === false) { return false; }
+    $data = json_encode(['v' => 1, 'iv' => base64_encode($iv), 'tag' => base64_encode($tag), 'data' => base64_encode($cipher)]);
+    $path = sbx_secret_store_path($sid); $dir = dirname($path);
+    if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) { return false; }
+    @chmod($dir, 0700);
+    if (!is_file($dir . '/.htaccess')) { @file_put_contents($dir . '/.htaccess', "Require all denied\n"); @chmod($dir . '/.htaccess', 0600); }
+    $tmp = $path . '.tmp.' . bin2hex(random_bytes(4));
+    if (@file_put_contents($tmp, (string)$data, LOCK_EX) === false) { return false; }
+    @chmod($tmp, 0600);
+    if (!@rename($tmp, $path)) { @unlink($tmp); return false; }
+    @chmod($path, 0600);
+    return true;
 }
 function sbx_secret_set(array $cfg, string $sid, string $name, string $value): array {
     $name = strtoupper(trim($name));
     if (!preg_match('/^[A-Z_][A-Z0-9_]{0,63}$/', $name)) { return ['ok' => false, 'error' => 'Invalid name.']; }
     if ($value === '' || strlen($value) > 8000 || strpos($value, "\n") !== false || strpos($value, "\0") !== false) { return ['ok' => false, 'error' => 'Invalid value (one line, up to 8000 characters).']; }
+    if (sbx_secret_store_key($cfg) === '') { return ['ok' => false, 'error' => 'Secure secret storage is not configured.']; }
     $line = 'export ' . $name . '=' . "'" . str_replace("'", "'\\''", $value) . "'\n";
     $F = SBX_SECRETS_FILE;
     $cmd = 'umask 077; mkdir -p ' . dirname($F) . '; touch ' . $F . '; chmod 600 ' . $F . '; '
         . 'grep -v "^export ' . $name . '=" ' . $F . ' > ' . $F . '.t 2>/dev/null; echo ' . base64_encode($line) . ' | base64 -d >> ' . $F . '.t; mv ' . $F . '.t ' . $F . '; echo ok';
     $r = sbx_exec($cfg, $sid, $cmd, 40);
     if (empty($r['ok']) || strpos((string)($r['stdout'] ?? ''), 'ok') === false) { return ['ok' => false, 'error' => sbx_scrub((string)($r['error'] ?? ($r['stderr'] ?? 'could not save the secret')), $cfg)]; }
-    /* remember the value (server side only) so it can be masked if a tool ever prints it */
-    $vals = sbx_secret_values($sid); $vals[$name] = $value;
-    $dir = dirname(sbx_secret_store_path($sid));
-    if (!is_dir($dir)) { @mkdir($dir, 0700, true); @file_put_contents($dir . '/.htaccess', "Require all denied\n"); }
-    @file_put_contents(sbx_secret_store_path($sid), json_encode($vals), LOCK_EX);
-    @chmod(sbx_secret_store_path($sid), 0600);
+    $vals = sbx_secret_values($sid, $cfg); $vals[$name] = $value;
+    if (!sbx_secret_store_write($sid, $cfg, $vals)) { return ['ok' => false, 'error' => 'The sandbox received the value, but private masking storage failed. Try again; do not repeat the value in chat.']; }
     return ['ok' => true, 'name' => $name];
 }
-function sbx_secret_mask($v, array $vals) {
+function sbx_secret_mask($v, array $vals, int $minLen = 6) {
     if (!$vals) { return $v; }
     if (is_string($v)) {
-        foreach ($vals as $sv) { $sv = (string)$sv; if (strlen($sv) >= 6) { $v = str_replace($sv, '••••••', $v); } }
+        foreach ($vals as $sv) { $sv = (string)$sv; if (strlen($sv) >= max(1, $minLen)) { $v = str_replace($sv, '••••••', $v); } }
         return $v;
     }
-    if (is_array($v)) { foreach ($v as $k => $x) { $v[$k] = sbx_secret_mask($x, $vals); } }
+    if (is_array($v)) { foreach ($v as $k => $x) { $v[$k] = sbx_secret_mask($x, $vals, $minLen); } }
     return $v;
 }
 

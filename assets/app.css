@@ -449,16 +449,16 @@ body.voice-open{overflow:hidden}
 body.devil-ui{
   --bg:#262624; --bg2:#2a2a28; --sb:#262624; --panel:#30302e; --panel2:#2c2c2a; --panel3:#3a3a37;
   --border:rgba(255,255,255,.1); --border-hi:rgba(255,255,255,.22);
-  --text:#ecebe7; --dim:#a8a59e; --dim2:#85827b; --soft:#e6e3dc; --pink:#e6e3dc;
-  --ag-accent:#f43f5e; --ag-head:#d6d2c9; --ag-line:rgba(255,255,255,.11); --ag-hover:rgba(255,255,255,.06); --ag-user:#353532;
+  --text:#ecebe7; --dim:#b2afa8; --dim2:#a8a59e; --soft:#e6e3dc; --pink:#e6e3dc;
+  --ag-accent:#ff8095; --ag-head:#d6d2c9; --ag-line:rgba(255,255,255,.11); --ag-hover:rgba(255,255,255,.06); --ag-user:#353532;
   --ag-mark:#f43f5e; --ag-mark-text:#1c1b1a;
   background:var(--bg)
 }
 [data-theme=light] body.devil-ui{
   --bg:#faf9f7; --bg2:#f5f4f0; --sb:#faf9f7; --panel:#ffffff; --panel2:#f3f1ec; --panel3:#ebe8e2;
   --border:#e6e3dc; --border-hi:#cfcac0;
-  --text:#2f2d29; --dim:#77726a; --dim2:#9a958c; --soft:#3d3a35; --pink:#3d3a35;
-  --ag-accent:#e11d48; --ag-head:#615c54; --ag-line:#e6e3dc; --ag-hover:rgba(0,0,0,.035); --ag-user:#f0eee9;
+  --text:#2f2d29; --dim:#6b665e; --dim2:#6a655d; --soft:#3d3a35; --pink:#3d3a35;
+  --ag-accent:#be123c; --ag-head:#615c54; --ag-line:#e6e3dc; --ag-hover:rgba(0,0,0,.035); --ag-user:#f0eee9;
   --ag-mark:#fb7185; --ag-mark-text:#1f1d1a;
   background:var(--bg)
 }
@@ -946,16 +946,6 @@ body.devil-ui #backdrop{background:rgba(0,0,0,.42)}
 .srccard.more{align-items:flex-start;color:var(--dim)}
 .srccard.more .st{font-weight:600}
 
-/* agent task templates (empty state) */
-#agentTasks{display:none;max-width:680px;margin:14px auto 0;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-body.agent-mode.agent-empty #agentTasks{display:grid}
-.atask{display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--panel);color:var(--text);text-align:left;transition:.14s}
-.atask:hover{background:var(--panel2);border-color:var(--border-hi,var(--border));transform:translateY(-1px)}
-.atask .ai{width:30px;height:30px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--panel2);color:var(--dim)}
-.atask b{display:block;font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.atask small{display:block;font-size:.72rem;color:var(--dim2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.atask > span:last-child{min-width:0}
-
 /* battle: keyboard hints, regenerate both, continue with winner, sync, swap */
 .cmp-vote kbd{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;margin-left:2px;border-radius:5px;border:1px solid var(--border);background:var(--panel2);font:600 .66rem/1 ui-monospace,Consolas,monospace;color:var(--dim2)}
 .cmp-vote .kh{color:var(--dim2);opacity:.8}
@@ -1011,10 +1001,6 @@ body.sbs-mode .cmpswap{display:inline-flex}
 
 /* phones */
 @media (max-width:600px){
-  #agentTasks{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
-  .atask{padding:8px 9px;gap:8px}
-  .atask .ai{width:26px;height:26px}
-  .atask small{display:none}
   body.agent-mode.agent-empty #composer{padding-bottom:6vh}
   .agx-src .srcrow{grid-template-columns:repeat(2,minmax(0,1fr))}
   .srccard{min-height:64px;padding:8px 9px}
@@ -1024,12 +1010,8 @@ body.sbs-mode .cmpswap{display:inline-flex}
 }
 @media (max-width:480px){
   body.sbs-mode .cmppick .cmpbtn > svg{display:none}
-  .atask b{white-space:normal;font-size:.78rem;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   body.sbs-mode .cmpswap{width:24px;height:28px}
   body.sbs-mode .cmpswap svg{width:13px;height:13px}
-}
-@media (max-height:500px) and (orientation:landscape){
-  body.agent-mode.agent-empty #agentTasks{display:none}
 }
 /* ═══════════ Agent sandbox: live steps, workspace Files / Preview ═══════════ */
 .agx-thought{margin:2px 0 4px;color:var(--text);font-size:.86rem;line-height:1.5;white-space:pre-wrap}
@@ -1224,7 +1206,9 @@ body.devil-ui{--agt-card:#2a2a28;--agt-pre:#20201e;--agt-ok:#5fd38d;--agt-bad:#f
 .agt-nnote{font-size:.72rem;color:var(--dim)}
 .agt-nsave{padding:7px 14px;border-radius:8px;background:var(--text);color:var(--bg);font-size:.8rem;font-weight:600}
 .agt-nsave:disabled{opacity:.6}
-.agt-nerr{font-size:.76rem;color:#ef4444}
+.agt-nerr{font-size:.76rem;color:#ff8585}
+[data-theme=light] .agt-nerr{color:#b42318}
+[data-theme=light] .agx-step.fail .agx-verb{color:#b42318}
 /* "Was this task successful?" (above the composer) */
 #agtTask{max-width:760px;margin:0 auto 8px;border:1px solid var(--ag-line,var(--border));border-radius:14px;background:var(--panel2);overflow:hidden;animation:rise .16s ease}
 #agtTask .h{display:flex;align-items:center;justify-content:space-between;padding:9px 10px 8px 14px;font-size:.84rem;color:var(--text)}
@@ -1277,13 +1261,6 @@ a.userbtn{text-decoration:none;color:inherit}
 .guestbox .gbtn{width:100%;justify-content:center;text-decoration:none;padding:12px 16px}
 .guestbox small{font-size:.72rem;color:var(--dim2);margin-top:6px;line-height:1.5}
 .guestbox small a{text-decoration:underline}
-/* "Get started" suggestions under the box on a fresh chat */
-.starters{display:none;flex-wrap:wrap;justify-content:center;gap:8px;max-width:940px;margin:14px auto 0;padding:0 12px}
-.starters button{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--dim);font-size:.82rem;transition:.15s}
-.starters button:hover{color:var(--text);border-color:var(--border-hi)}
-.starters button svg{flex-shrink:0}
-body.devil-ui.agent-empty .starters{display:flex}
-body.cmp-mode .starters{display:none!important}
 .guestrow{display:flex;align-items:center;gap:4px}
 .guestrow .userbtn{flex:1;min-width:0}
 
@@ -1327,8 +1304,11 @@ body.agent-mode #ghBtn{display:inline-flex}
 #ghBar .gh-prb.open{color:#1a7f37;border-color:rgba(26,127,55,.35)}
 #ghBar .gh-prb.merged{color:#8250df;border-color:rgba(130,80,223,.35)}
 #ghBar .gh-prb.closed{color:#cf222e;border-color:rgba(207,34,46,.35)}
-#ghBar .gh-merge{background:#1f883d;color:#fff;border-color:#1f883d}
-#ghBar .gh-merge:hover{background:#1a7f37}
+#ghBar .gh-merge{background:#1a7f37;color:#fff;border-color:#1a7f37}
+#ghBar .gh-merge:hover{background:#176f32}
+html[data-theme=dark] #ghBar .p,html[data-theme=dark] .gd-stat .p,html[data-theme=dark] .gd-s .p,html[data-theme=dark] .agt-pr,html[data-theme=dark] #ghBar .gh-prb.open{color:#3fb950}
+html[data-theme=dark] #ghBar .m,html[data-theme=dark] .gd-stat .m,html[data-theme=dark] .gd-s .m,html[data-theme=dark] #ghBar .gh-prb.closed{color:#ff7b72}
+html[data-theme=dark] #ghBar .gh-prb.merged{color:#d2a8ff}
 .gh-pop{position:absolute;z-index:70;width:320px;max-width:calc(100vw - 24px);max-height:min(440px,60vh);display:flex;flex-direction:column;background:var(--ag-bg,var(--panel,#fff));color:var(--text);border:1px solid var(--ag-line,var(--border));border-radius:10px;box-shadow:0 12px 36px rgba(0,0,0,.16);overflow:hidden;font-size:13.5px}
 .gh-pop.menu{padding:6px;overflow:auto}
 .gh-pop .gh-load{padding:10px 12px;color:var(--dim)}
