@@ -112,7 +112,7 @@ $JS_ICONS = [
     'pin' => icon('pin', 14), 'pinS' => icon('pin', 12), 'download' => icon('download', 16), 'keyboard' => icon('keyboard', 16), 'swap' => icon('swap', 15),
     'fork' => icon('fork', 14), 'external' => icon('external', 13), 'listS' => icon('list', 13), 'clockS' => icon('clock', 12), 'globeS' => icon('globe', 12),
     'terminal' => icon('terminal', 14), 'monitor' => icon('monitor', 14), 'upload' => icon('upload', 15), 'help' => icon('help-circle', 14), 'folderS' => icon('folder', 13), 'imageS' => icon('image', 13), 'codeS' => icon('code', 13),
-    'github' => icon('github', 16), 'githubS' => icon('github', 13), 'branchS' => icon('git-branch', 13), 'prS' => icon('git-pr', 13), 'xS' => icon('x', 12),
+    'github' => icon('github', 16), 'githubS' => icon('github', 13), 'bookS' => icon('book', 14), 'chevD' => icon('chevron-down', 13), 'gearS' => icon('settings', 15), 'searchS' => icon('search', 14), 'checkS' => icon('check', 14), 'foldS' => icon('fold', 15), 'branchS' => icon('git-branch', 13), 'prS' => icon('git-pr', 13), 'xS' => icon('x', 12),
     'fileS' => icon('file-text', 12), 'calcS' => icon('calculator', 12), 'linkS' => icon('link', 12), 'retryS' => icon('retry', 13), 'sparklesS' => icon('sparkles', 13),
 ];
 ?><!DOCTYPE html>
@@ -264,14 +264,13 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
     <div id="composer">
       <div class="compbox">
         <div id="imgChip"></div>
-        <div id="ghChip" hidden></div>
         <div id="voiceChip"><span><?= icon('mic', 14) ?><b id="voiceStatus">Voice mode ready</b></span><button id="voiceClose" type="button">Turn off</button></div>
         <div id="editChip"><span><?= icon('pencil', 14) ?> Editing message — original chat stays saved, a new branch will be created.</span><button id="editCancel" type="button">Cancel</button></div>
         <textarea id="inp" rows="1" maxlength="4000" placeholder="Message Devil AI…"></textarea>
         <div class="comprow">
           <div class="modelwrap">
             <button id="attachBtn" title="Attach files" type="button"><?= icon('paperclip', 16) ?><span class="atxt">Add files</span></button>
-            <button id="ghBtn" title="Connect a GitHub repository" type="button" aria-haspopup="dialog"><?= icon('github', 16) ?></button>
+            <button id="ghBtn" title="GitHub" type="button" aria-haspopup="menu"><?= icon('github', 16) ?><?= icon('chevron-down', 12) ?></button>
             <div class="modechipwrap" id="modeChipWrap">
               <button id="modeChip" type="button" title="Switch mode" aria-haspopup="menu" aria-expanded="false"><span class="mcc" id="modeChipIco"><?= icon($MODE_DEFS[$ROUTE_MODE]['icon'], 15) ?></span><span class="mcl" id="modeChipLbl"><?= htmlspecialchars($MODE_DEFS[$ROUTE_MODE]['chip']) ?></span><span class="mcc"><?= icon('chevron-down', 13) ?></span></button>
               <div class="modemenu2" role="menu" aria-label="Chat mode">

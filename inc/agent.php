@@ -930,7 +930,7 @@ function agent_compact_messages(array $job, bool $sandbox, array $env, int $cap)
 function agent_web_roots(array $trace): array {
     $roots = [];
     foreach ($trace as $st) {
-        if (!in_array((string)($st['tool'] ?? ''), ['write_file', 'append_file'], true)) { continue; }
+        if (!in_array((string)($st['tool'] ?? ''), ['write_file', 'append_file', 'edit_file'], true)) { continue; }
         $path = trim((string)strtok((string)($st['input'] ?? ''), "\n"));
         $path = (string)preg_replace('#^(?:/home/(?:user|sandbox|daytona|vercel-sandbox)/work/|\./)#', '', $path);
         if (!preg_match('/\.(html?|css|js)$/i', $path) || strpos($path, '..') !== false || $path[0] === '/') { continue; }
@@ -964,7 +964,7 @@ function agent_should_selfcheck(array $job, int $max): bool {
     if ((int)($job['selfchecks'] ?? 0) >= 2) { return false; }
     if (isset($job['selfcheck_at']) && $n - (int)$job['selfcheck_at'] < 2) { return false; }
     $built = 0;
-    foreach ($trace as $s) { if (in_array((string)($s['tool'] ?? ''), ['write_file', 'append_file', 'bash', 'start_server', 'generate_image'], true)) { $built++; } }
+    foreach ($trace as $s) { if (in_array((string)($s['tool'] ?? ''), ['write_file', 'append_file', 'edit_file', 'bash', 'start_server', 'generate_image'], true)) { $built++; } }
     return $built >= 2;
 }
 
@@ -1023,12 +1023,21 @@ function agent_job_advance(array &$job, array $deps): array {
                 $job['autocheck_sig'] = $sig;
                 $issues = sbx_site_doctor((array)($deps['sbx']['cfg'] ?? []), (string)($deps['sbx']['sid'] ?? ''), $roots);
                 /* never "done" without looking: the pages must have been opened in the browser after the last change */
-                $lastWrite = -1; $lastBrowse = -1;
+                $lastWrite = -1; $lastBrowse = -1; $lastJs = -1; $lastAct = -1;
                 foreach ((array)$job['trace'] as $ti => $st) {
                     $tn = (string)($st['tool'] ?? '');
-                    if (in_array($tn, ['write_file', 'append_file'], true) && preg_match('/\.(html?|css|js)\s*$/i', (string)strtok((string)($st['input'] ?? ''), "\n"))) { $lastWrite = $ti; }
+                    $p0 = (string)strtok((string)($st['input'] ?? ''), "\n");
+                    if (in_array($tn, ['write_file', 'append_file', 'edit_file'], true) && preg_match('/\.(html?|css|js)\s*$/i', $p0)) { $lastWrite = $ti; }
+                    if (in_array($tn, ['write_file', 'append_file', 'edit_file'], true) && preg_match('/\.(m?js|jsx|tsx?)\s*$/i', $p0)) { $lastJs = $ti; }
                     if ($tn === 'bash' && preg_match('/\b(sed|perl)\s+-[a-z]*i/', (string)($st['input'] ?? ''))) { $lastWrite = $ti; }
-                    if ($tn === 'browser') { $lastBrowse = $ti; }
+                    if ($tn === 'browser') {
+                        $lastBrowse = $ti;
+                        if (preg_match('/\n\s*(click|fill|press|select|check)\b/i', (string)($st['input'] ?? ''))) { $lastAct = $ti; }
+                    }
+                }
+                /* JavaScript changed → it must be used like a user (click / fill), not just opened */
+                if ($lastJs >= 0 && $lastAct < $lastJs && $lastBrowse >= $lastJs) {
+                    $issues[] = 'NOT TESTED LIKE A USER: you changed JavaScript but only opened the page. Run the browser tool again WITH action lines that use the new feature (e.g. "fill #input = Milk", "click #add", "click .delete-btn") and check in the result that the visible text changed as expected. Fix any console error it shows.';
                 }
                 if ($lastWrite >= 0 && $lastBrowse < $lastWrite) {
                     $issues[] = 'NOT TESTED: the pages were not opened with the browser tool after your last change. Start the server if needed, open EVERY page with browser (one call per page) and test the interactive parts with action lines (forms: fill + click submit; tabs/menus: click; also a "mobile" check). Fix whatever it reports.';

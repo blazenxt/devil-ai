@@ -54,7 +54,7 @@ function syncModeUI() {
   bc.toggle('battle-mode', chatMode === 'battle');
   bc.toggle('sbs-mode', chatMode === 'sbs');
   if (!agentMode) { setWorkspace(false); }
-  if (typeof GH !== 'undefined' && GH) { ghRenderChip(); }
+  if (typeof GH !== 'undefined' && GH) { ghRender(); }
   syncEmptyState();
   if (typeof renderWorkspace === 'function') { renderWorkspace(); }
 }
@@ -740,6 +740,10 @@ $('#chatList').addEventListener('click', function (e) {
 /* ── messages ── */
 var msgs = $('#msgs'), welcome = $('#welcome'), scroller = $('#scroller');
 function scrollDown() { scroller.scrollTop = scroller.scrollHeight; }
+/* keep the view pinned to the bottom while screenshots / images inside the chat finish loading */
+var scrollStick = true;
+scroller.addEventListener('scroll', function () { scrollStick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 140; }, { passive: true });
+scroller.addEventListener('load', function (e) { if (scrollStick && e.target && e.target.tagName === 'IMG') { scrollDown(); } }, true);
 function branchGroupFor(index) {
   if (index === undefined || index === null || !currentChat || !currentChat.branch_groups) { return null; }
   return currentChat.branch_groups[String(index)] || currentChat.branch_groups[index] || null;
@@ -1751,7 +1755,7 @@ function newChatView() {
   clearEdit();
   isTempChat = false;
   currentChat = null;
-  if (typeof GH !== 'undefined') { GH.link = null; GH.pending = null; ghRenderChip(); }
+  if (typeof GH !== 'undefined') { GH.link = null; GH.stat = null; GH.pr = null; ghRender(); }
   msgs.innerHTML = '';
   welcome.style.display = '';
   renderList($('#searchInp').value);
@@ -2188,7 +2192,7 @@ function openChat(id, variant) {
     updateChatActions();
     scrollDown();
     SBX.lastList = 0; SBX.view = null; SBX.files = [];
-    GH.link = j.github || null; GH.pending = null; ghRenderChip();
+    GH.link = j.github || null; GH.stat = null; GH.pr = null; ghRender(); ghRefresh();
     if (wsIsOpen()) { renderWorkspace(); }
     if (j.agent_job && chatMode === 'agent') { continueAgent(j.agent_job); }
   });
@@ -3113,7 +3117,12 @@ function agtRow(s, running) {
     case 'read_file': verb = running ? 'Reading' : 'Read'; openPath = running ? '' : first;
       if (out) { var rl = out.split('\n').length; info = rl + ' line' + (rl === 1 ? '' : 's'); body = agtCode(out); } break;
     case 'list_files': verb = running ? 'Exploring' : 'Explore'; arg = (first && first !== '.' && first !== './') ? first : 'files'; body = out ? agtPre(out) : ''; break;
-    case 'browser': verb = running ? 'Browsing' : 'Browse'; body = out ? agtPre(out) : '';
+    case 'browser': {
+      verb = running ? 'Browsing' : 'Browse';
+      var acts = inp.split('\n').slice(1).map(function (x) { return x.trim(); }).filter(Boolean);
+      if (acts.length) { info = acts.length + ' action' + (acts.length === 1 ? '' : 's'); }
+      body = (acts.length ? '<div class="agt-lb">Actions</div>' + agtPre(acts.join('\n')) : '') + (out ? '<div class="agt-lb">Result</div>' + agtPre(out) : '');
+    }
       if (m.screenshot && SBX.on) { extra = agtImg(m.screenshot); } break;
     case 'generate_image': verb = running ? 'Generating image' : 'Generate image'; arg = (m.image || first);
       body = inp.split('\n').slice(1).join('\n').trim() ? '<div class="agt-lb">Prompt</div>' + agtPre(inp.split('\n').slice(1).join('\n').trim()) : '';
@@ -3424,8 +3433,8 @@ function agtTaskCard(el, reply, idx) {
   if (!box) { return; }
   var c = document.createElement('div');
   c.id = 'agtTask';
-  c.innerHTML = '<div class="h"><span>Was this task successful?</span><span class="x"><kbd>Esc</kbd><button type="button" class="cl" aria-label="Dismiss">' + AGT.x + '</button></span></div>' +
-    '<div class="ol"><button type="button" data-a="yes">' + AGT.yes + ' Yes</button><button type="button" data-a="no">' + AGT.no + ' No</button><button type="button" data-a="more">' + AGT.pen + ' Keep working</button></div>';
+  c.innerHTML = '<div class="h"><span>Does this complete your task?</span><span class="x"><kbd>Esc</kbd><button type="button" class="cl" aria-label="Dismiss">' + AGT.x + '</button></span></div>' +
+    '<div class="ol seg3"><button type="button" data-a="no">No</button><button type="button" data-a="more">Making progress</button><button type="button" data-a="yes">Yes</button></div>';
   c.addEventListener('click', function (e) {
     if (e.target.closest('.cl')) { agtTaskCardClose(); return; }
     var b = e.target.closest('[data-a]'); if (!b) { return; }
@@ -3533,12 +3542,12 @@ function runAgent(payload) {
   resize();
   var el = agentLiveEl();
   agentRun = { job: null, el: el, seq: seq, steps: [], fails: 0 };
-  if (GH.pending) { payload.github = GH.pending; agentStatus(el, 'Cloning ' + GH.pending.repo + '…'); }
+  var ghp = ghPayload(); if (ghp) { payload.github = ghp; agentStatus(el, 'Cloning ' + ghp.repo + '…'); }
   api('agent_start', payload).then(function (j) {
     if (seq !== sendSeq) { return; }
     if (!j.ok) { el.remove(); addErr((j.error || 'Agent failed to start') + (j.hint ? '\nHint: ' + j.hint : '')); agentEnd(); return; }
     agentRun.job = j.job;
-    if (j.github) { GH.link = j.github; GH.pending = null; ghRenderChip(); if (wsIsOpen()) { renderWorkspace(); } }
+    if (j.github) { GH.link = j.github; GH.stat = null; GH.pr = null; ghRender(); if (wsIsOpen()) { renderWorkspace(); } }
     if (!currentChat) { currentChat = { id: j.id || null, title: j.title || 'New chat', temp: !!payload.temp, messages: [], branch_groups: {} }; }
     if (!currentChat.branch_groups) { currentChat.branch_groups = {}; }
     isTempChat = !!(payload.temp || j.temp || currentChat.temp);
@@ -3653,6 +3662,7 @@ function agentFinish(j) {
   agentEnd();
   if (!stopped && !j.ask && !j.error && steps.length && reply) { agtTaskCard(el, reply, idx); }
   if (!isTempChat) { loadChats(); }
+  if (GH.link) { ghRender(); ghRefresh(); }
 }
 function agentEnd() {
   agentRun = null;
@@ -3682,7 +3692,7 @@ function agentStop() {
 function sbxAfterStep(s) {
   if (!SBX.on) { return; }
   SBX.lastList = 0;
-  if (s.ok && s.meta && s.meta.pr && GH.link) { GH.link.pr = String(s.meta.pr); ghRenderChip(); }
+  if (s.ok && s.meta && s.meta.pr && GH.link) { GH.link.pr = String(s.meta.pr); GH.link.pr_state = 'open'; ghRender(); ghRefresh(); }
   if (s.ok && s.meta && s.meta.present) {
     SBX.view = { path: String(s.meta.present) };
     openWsTab('files');
@@ -3964,152 +3974,411 @@ function renderWsPreview(box) {
   t.addEventListener('click', function (e) { var b = e.target.closest('button[data-tab]'); if (!b) { return; } SBX.tab = b.dataset.tab; if (SBX.tab !== 'files') { SBX.view = null; } renderWorkspace(); });
 })();
 
-/* ── GitHub: connect a repo to an agent chat, Diff tab, pull requests ── */
-var GH = { acct: undefined, link: null, pending: null, diffMode: 'turn' };
-function ghCur() { return GH.pending || GH.link; }
-function ghRenderChip() {
-  var c = document.getElementById('ghChip'); var b = document.getElementById('ghBtn');
-  var l = ghCur();
-  if (b) { b.classList.toggle('on', !!l); }
-  if (!c) { return; }
-  if (!l || !agentMode) { c.hidden = true; c.innerHTML = ''; return; }
-  c.hidden = false;
-  c.innerHTML = '<span class="ghc-in">' + (I.githubS || '') + '<b>' + esc(l.repo) + '</b><span class="ghc-br">' + (I.branchS || '') + esc(l.branch) + '</span>' +
-    (GH.pending ? '<span class="ghc-note">clones on send</span>' : (l.work_branch ? '<span class="ghc-note">working on ' + esc(l.work_branch) + '</span>' : '')) +
-    (l.pr ? '<a class="ghc-pr" href="' + esc(l.pr) + '" target="_blank" rel="noopener noreferrer">' + (I.prS || '') + 'PR</a>' : '') +
-    '</span><button type="button" class="ghc-x" title="Disconnect this repository from the chat" aria-label="Disconnect repository">' + (I.xS || '×') + '</button>';
-  c.querySelector('.ghc-x').addEventListener('click', function () {
-    if (GH.pending) { GH.pending = null; ghRenderChip(); return; }
-    if (!GH.link || !currentChat || !currentChat.id) { GH.link = null; ghRenderChip(); return; }
-    if (!confirm('Disconnect ' + GH.link.repo + ' from this chat? (Branches and pull requests on GitHub stay.)')) { return; }
-    api('gh_unlink', { id: currentChat.id }).then(function (j) { if (j.ok) { GH.link = null; ghRenderChip(); if (SBX.tab === 'diff') { SBX.tab = 'files'; } if (wsIsOpen()) { renderWorkspace(); } } else { toast(j.error || 'Could not disconnect', 'warning'); } });
+/* ── GitHub connector: connect (one click), pick repo + branch, session bar (+/−, Create PR, Merge), Diff panel ── */
+var GH = {
+  acct: undefined, oauth: false, on: read('devil_gh_on') === '1', sel: null, link: null, stat: null, pr: null,
+  repos: null, branches: {}, mode: 'full', view: read('devil_gh_view') === 'split' ? 'split' : 'unified', closed: {}, prBusy: false
+};
+try { GH.sel = JSON.parse(read('devil_gh_sel') || 'null'); } catch (e) { GH.sel = null; }
+function ghIc(n) { return I[n] || ''; }
+function ghPayload() { return (agentMode && GH.on && GH.acct && !GH.link && GH.sel && GH.sel.repo) ? { repo: GH.sel.repo, branch: GH.sel.branch } : null; }
+function ghEls() {
+  var box = document.querySelector('#composer .compbox');
+  if (!box) { return {}; }
+  var row = document.getElementById('ghRow'), bar = document.getElementById('ghBar');
+  if (!row) { row = document.createElement('div'); row.id = 'ghRow'; row.hidden = true; box.appendChild(row); }
+  if (!bar) { bar = document.createElement('div'); bar.id = 'ghBar'; bar.hidden = true; box.appendChild(bar); }
+  return { row: row, bar: bar, btn: document.getElementById('ghBtn') };
+}
+function ghAcct() {
+  if (GH.acct !== undefined || window.__GUEST) { return Promise.resolve(GH.acct || null); }
+  if (GH._acctP) { return GH._acctP; }
+  GH._acctP = api('gh_get').then(function (j) { GH.acct = j.ok ? (j.github || null) : null; if (j.ok) { GH.oauth = !!j.oauth; } GH._acctP = null; ghRender(); return GH.acct; });
+  return GH._acctP;
+}
+function ghRender() {
+  var e = ghEls(); if (!e.row) { return; }
+  if (e.btn) { e.btn.classList.toggle('on', !!(GH.link || (GH.on && GH.acct))); }
+  var showBar = agentMode && !!GH.link;
+  var showRow = agentMode && !GH.link && GH.on && !!GH.acct;
+  e.bar.hidden = !showBar; e.row.hidden = !showRow;
+  document.body.classList.toggle('gh-active', showBar || showRow);
+  if (showRow) { ghRenderRow(e.row); } else { e.row.innerHTML = ''; }
+  if (showBar) { ghRenderBar(e.bar); } else { e.bar.innerHTML = ''; }
+}
+/* repo + branch pickers under the composer (before the session starts) */
+function ghRenderRow(row) {
+  var s = GH.sel || {};
+  row.innerHTML = '<button type="button" class="gh-dd gh-dd-repo" aria-haspopup="listbox">' + ghIc('bookS') + '<span class="t">' + (s.repo ? esc(s.repo) : 'Select a repository') + '</span>' + ghIc('chevD') + '</button>' +
+    '<button type="button" class="gh-dd gh-dd-br" aria-haspopup="listbox"' + (s.repo ? '' : ' disabled') + '>' + ghIc('branchS') + '<span class="t">' + esc(s.branch || 'branch') + '</span>' + ghIc('chevD') + '</button>' +
+    '<button type="button" class="gh-gear" title="GitHub settings" aria-label="GitHub settings">' + ghIc('gearS') + '</button>';
+  row.querySelector('.gh-dd-repo').addEventListener('click', function (ev) { ghRepoList(ev.currentTarget); });
+  row.querySelector('.gh-dd-br').addEventListener('click', function (ev) { ghBranchList(ev.currentTarget); });
+  row.querySelector('.gh-gear').addEventListener('click', function (ev) { ghMenu(ev.currentTarget, true); });
+}
+/* session bar: repo · working branch · +A −D › · Create PR / View PR + Merge */
+function ghRenderBar(bar) {
+  var l = GH.link, st = GH.stat, pr = GH.pr || (l.pr ? { url: l.pr, state: l.pr_state || 'open', number: (/\/pull\/(\d+)/.exec(l.pr) || [])[1] } : null);
+  var prHtml;
+  if (!pr) { prHtml = '<button type="button" class="gh-prb gh-create"' + (busy || GH.prBusy ? ' disabled' : '') + '>' + ghIc('prS') + (GH.prBusy ? 'Creating…' : 'Create PR') + '</button>'; }
+  else if (pr.state === 'merged') { prHtml = '<a class="gh-prb merged" href="' + esc(pr.url) + '" target="_blank" rel="noopener noreferrer">' + ghIc('prS') + 'Merged #' + esc(pr.number || '') + '</a>'; }
+  else if (pr.state === 'closed') { prHtml = '<a class="gh-prb closed" href="' + esc(pr.url) + '" target="_blank" rel="noopener noreferrer">' + ghIc('prS') + 'Closed #' + esc(pr.number || '') + '</a>'; }
+  else {
+    prHtml = '<a class="gh-prb open" href="' + esc(pr.url) + '" target="_blank" rel="noopener noreferrer">' + ghIc('prS') + 'PR #' + esc(pr.number || '') + '</a>' +
+      '<button type="button" class="gh-prb gh-push"' + (busy || GH.prBusy ? ' disabled' : '') + ' title="Commit and push the latest changes to this pull request">' + (GH.prBusy ? 'Pushing…' : 'Push') + '</button>' +
+      '<button type="button" class="gh-prb gh-merge"' + (busy || GH.prBusy || pr.mergeable === false ? ' disabled' : '') + ' title="' + (pr.mergeable === false ? 'GitHub reports conflicts — resolve them first' : 'Merge this pull request on GitHub') + '">Merge</button>';
+  }
+  bar.innerHTML = '<a class="gh-bi gh-repo" href="https://github.com/' + esc(l.repo) + '" target="_blank" rel="noopener noreferrer" title="' + esc(l.repo) + ' (base ' + esc(l.branch) + ')">' + ghIc('githubS') + '<span>' + esc(l.repo.split('/').pop()) + '</span></a>' +
+    '<span class="gh-bi gh-wb" title="Working branch">' + ghIc('branchS') + '<span>' + esc(l.work_branch || l.branch) + '</span></span>' +
+    '<button type="button" class="gh-bi gh-stat" title="Show the diff"><i class="p">+' + (st ? st.add : 0) + '</i><i class="m">−' + (st ? st.del : 0) + '</i>' + ghIc('chevR') + '</button>' +
+    '<span class="gh-sp"></span>' + prHtml;
+  bar.querySelector('.gh-stat').addEventListener('click', function () { openWsTab('diff'); });
+  var cr = bar.querySelector('.gh-create'), pu = bar.querySelector('.gh-push'), mg = bar.querySelector('.gh-merge');
+  if (cr) { cr.addEventListener('click', function () { ghCreatePr(false); }); }
+  if (pu) { pu.addEventListener('click', function () { ghCreatePr(true); }); }
+  if (mg) { mg.addEventListener('click', ghMerge); }
+}
+function ghRefresh() {
+  if (!GH.link || !GH.link.cloned || !currentChat || !currentChat.id || window.__GUEST) { return; }
+  var id = currentChat.id;
+  api('gh_status&id=' + encodeURIComponent(id)).then(function (j) {
+    if (!j.ok || !currentChat || currentChat.id !== id) { return; }
+    GH.stat = j.stat || null; GH.pr = j.pr || null;
+    if (j.github) { GH.link = j.github; }
+    ghRender();
   });
 }
-function ghClosePop() { var p = document.getElementById('ghPop'); if (p) { p.remove(); } document.removeEventListener('mousedown', ghOutside, true); }
-function ghOutside(e) { var p = document.getElementById('ghPop'); if (p && !p.contains(e.target) && !e.target.closest('#ghBtn')) { ghClosePop(); } }
-function ghOpenPop() {
-  if (document.getElementById('ghPop')) { ghClosePop(); return; }
+function ghCreatePr(push) {
+  if (!currentChat || !currentChat.id || GH.prBusy || busy) { return; }
+  GH.prBusy = true; ghRender();
+  api('gh_pr_create', { id: currentChat.id }).then(function (j) {
+    GH.prBusy = false;
+    if (j.github) { GH.link = j.github; }
+    if (j.ok) { toast(push ? 'Pushed to the pull request' : 'Pull request created', 'check'); } else { toast((j.error || 'Could not create the pull request').slice(0, 160), 'warning'); }
+    ghRender(); ghRefresh();
+  });
+}
+function ghMerge() {
+  if (!currentChat || !currentChat.id || GH.prBusy) { return; }
+  if (!confirm('Merge this pull request into ' + (GH.link && GH.link.branch) + ' on GitHub?\n\nAfter merging, this chat can no longer push — start a new chat for new work.')) { return; }
+  GH.prBusy = true; ghRender();
+  api('gh_pr_merge', { id: currentChat.id, method: 'squash' }).then(function (j) {
+    GH.prBusy = false;
+    if (j.github) { GH.link = j.github; }
+    if (j.ok) { toast('Pull request merged', 'check'); } else { toast((j.error || 'Could not merge').slice(0, 160), 'warning'); }
+    ghRender(); ghRefresh();
+  });
+}
+
+/* popovers */
+function ghPopClose() { var p = document.getElementById('ghPop'); if (p) { p.remove(); } document.removeEventListener('mousedown', ghPopOut, true); document.removeEventListener('keydown', ghPopEsc, true); }
+function ghPopOut(e) { var p = document.getElementById('ghPop'); if (p && !p.contains(e.target) && !(GH._anchor && GH._anchor.contains(e.target))) { ghPopClose(); } }
+function ghPopEsc(e) { if (e.key === 'Escape') { ghPopClose(); } }
+function ghPop(anchor, cls) {
+  var same = document.getElementById('ghPop') && GH._anchor === anchor;
+  ghPopClose();
+  if (same) { return null; }
+  GH._anchor = anchor;
+  var p = document.createElement('div'); p.id = 'ghPop'; p.className = 'gh-pop ' + (cls || '');
+  var comp = document.getElementById('composer'); comp.appendChild(p);
+  var cr = comp.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+  p.style.left = Math.max(8, Math.min(ar.left - cr.left, cr.width - 330)) + 'px';
+  if (ar.top - cr.top > cr.height / 2) { p.style.bottom = (cr.bottom - ar.top + 6) + 'px'; } else { p.style.top = (ar.bottom - cr.top + 6) + 'px'; }
+  setTimeout(function () { document.addEventListener('mousedown', ghPopOut, true); document.addEventListener('keydown', ghPopEsc, true); }, 0);
+  return p;
+}
+/* the GitHub button menu */
+function ghMenu(anchor, gear) {
   if (window.__GUEST) { guestGate(); return; }
-  var p = document.createElement('div');
-  p.id = 'ghPop'; p.className = 'gh-pop'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'GitHub repository');
-  p.innerHTML = '<div class="gh-h">' + (I.githubS || '') + '<b>GitHub</b><button type="button" class="gh-close" aria-label="Close">' + (I.xS || '×') + '</button></div><div class="gh-b"><div class="gh-load">Loading…</div></div>';
-  document.getElementById('composer').appendChild(p);
-  p.querySelector('.gh-close').addEventListener('click', ghClosePop);
-  setTimeout(function () { document.addEventListener('mousedown', ghOutside, true); }, 0);
-  var body = p.querySelector('.gh-b');
-  api('gh_get').then(function (j) {
-    GH.acct = j.ok ? j.github : null;
-    if (GH.acct) { ghPickRepo(body); } else { ghConnectForm(body); }
+  var p = ghPop(anchor, 'menu'); if (!p) { return; }
+  p.innerHTML = '<div class="gh-load">Loading…</div>';
+  ghAcct().then(function (a) {
+    if (!document.body.contains(p)) { return; }
+    if (!a) {
+      p.innerHTML = '<div class="gh-mh">' + ghIc('githubS') + '<b>GitHub</b></div><p class="gh-p">Connect a repository: the agent clones it, works on its own branch, shows the diff and opens a pull request.</p>' +
+        '<button type="button" class="gh-mi gh-connect">' + ghIc('githubS') + '<span>Connect GitHub</span></button>';
+      p.querySelector('.gh-connect').addEventListener('click', function () { ghConnect(p); });
+      return;
+    }
+    var h = '<div class="gh-mh">' + (a.avatar ? '<img src="' + esc(a.avatar) + '&s=40" alt="">' : ghIc('githubS')) + '<span><b>' + esc(a.name || a.login) + '</b><small>@' + esc(a.login) + '</small></span></div>';
+    if (GH.link) {
+      h += '<a class="gh-mi" href="https://github.com/' + esc(GH.link.repo) + '/tree/' + esc(GH.link.work_branch || GH.link.branch) + '" target="_blank" rel="noopener noreferrer">' + ghIc('external') + '<span>Open branch on GitHub</span></a>' +
+        '<button type="button" class="gh-mi gh-odiff">' + ghIc('branchS') + '<span>Show diff</span></button>';
+    } else {
+      h += '<label class="gh-mi gh-tg"><span>' + ghIc('bookS') + 'Work on a repository</span><input type="checkbox"' + (GH.on ? ' checked' : '') + '><i class="sw"></i></label>';
+    }
+    h += '<div class="gh-sep"></div><button type="button" class="gh-mi gh-recon">' + ghIc('retryS') + '<span>Reconnect / switch account</span></button>' +
+      '<button type="button" class="gh-mi gh-off danger">' + ghIc('xS') + '<span>Disconnect GitHub</span></button>';
+    p.innerHTML = h;
+    var tg = p.querySelector('.gh-tg input');
+    if (tg) { tg.addEventListener('change', function () { GH.on = tg.checked; store('devil_gh_on', GH.on ? '1' : '0'); ghRender(); if (GH.on && !(GH.sel && GH.sel.repo)) { ghPopClose(); setTimeout(function () { var b = document.querySelector('#ghRow .gh-dd-repo'); if (b) { ghRepoList(b); } }, 30); } }); }
+    var od = p.querySelector('.gh-odiff'); if (od) { od.addEventListener('click', function () { ghPopClose(); openWsTab('diff'); }); }
+    p.querySelector('.gh-recon').addEventListener('click', function () { ghConnect(p); });
+    p.querySelector('.gh-off').addEventListener('click', function () {
+      if (!confirm('Disconnect GitHub from Devil AI? Chats keep their branches and pull requests on GitHub.')) { return; }
+      api('gh_delete', {}).then(function () { GH.acct = null; GH.on = false; store('devil_gh_on', '0'); GH.repos = null; ghPopClose(); ghRender(); toast('GitHub disconnected'); });
+    });
   });
 }
-function ghConnectForm(body) {
-  body.innerHTML = '<p class="gh-p">Connect GitHub so Devil Agent can clone your repository, make the change on its own branch, show you the diff and open a pull request.</p>' +
-    '<ol class="gh-steps"><li><a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=Devil%20AI%20Agent" target="_blank" rel="noopener noreferrer">Create a token on GitHub</a> (scope <code>repo</code>), or a fine-grained token with <i>Contents</i> + <i>Pull requests</i> read &amp; write.</li><li>Paste it here.</li></ol>' +
+/* one-click OAuth popup (falls back to a token form when the server has no OAuth app) */
+function ghConnect(p) {
+  if (GH.oauth || (window.__BOOT && window.__BOOT.gh_oauth)) {
+    var w = window.open('about:blank', 'devil_gh', 'width=620,height=760');
+    api('gh_oauth_url').then(function (j) {
+      if (!j.ok) { if (w) { w.close(); } ghTokenForm(p); return; }
+      if (!w) { window.location.href = j.url; return; }
+      w.location.href = j.url;
+      ghPopClose();
+      var t0 = Date.now();
+      var done = function () { clearInterval(iv); window.removeEventListener('message', onMsg); GH.acct = undefined; GH.repos = null; ghAcct().then(function (a) { if (a) { GH.on = true; store('devil_gh_on', '1'); ghRender(); toast('GitHub connected as @' + a.login, 'check'); var b = document.querySelector('#ghRow .gh-dd-repo'); if (b && !(GH.sel && GH.sel.repo)) { ghRepoList(b); } } }); };
+      var onMsg = function (ev) { if (ev.data && ev.data.type === 'devil-github') { done(); } };
+      window.addEventListener('message', onMsg);
+      var iv = setInterval(function () { if (!w || w.closed || Date.now() - t0 > 300000) { done(); } }, 1000);
+    });
+    return;
+  }
+  ghTokenForm(p);
+}
+function ghTokenForm(p) {
+  if (!p || !document.body.contains(p)) { p = ghPop(document.getElementById('ghBtn'), 'menu'); if (!p) { return; } }
+  p.innerHTML = '<div class="gh-mh">' + ghIc('githubS') + '<b>Connect GitHub</b></div>' +
+    '<ol class="gh-steps"><li><a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=Devil%20AI%20Agent" target="_blank" rel="noopener noreferrer">Create a token on GitHub</a> with the <code>repo</code> scope.</li><li>Paste it here.</li></ol>' +
     '<input type="password" class="gh-in" placeholder="ghp_… or github_pat_…" autocomplete="off" spellcheck="false" maxlength="255">' +
-    '<div class="gh-row"><span class="gh-msg"></span><button type="button" class="gh-go">Connect</button></div>' +
-    '<p class="gh-fine">The token is stored encrypted, is never shown in chats, and you can remove it any time.</p>';
-  var inpT = body.querySelector('.gh-in'), go = body.querySelector('.gh-go'), msg = body.querySelector('.gh-msg');
-  inpT.focus();
-  function save() {
-    var t = inpT.value.trim(); if (!t) { inpT.focus(); return; }
+    '<div class="gh-row2"><span class="gh-msg"></span><button type="button" class="gh-go">Connect</button></div>' +
+    '<p class="gh-fine">Stored encrypted. Never shown in chats. Remove it any time.</p>';
+  var it = p.querySelector('.gh-in'), go = p.querySelector('.gh-go'), msg = p.querySelector('.gh-msg');
+  it.focus();
+  var save = function () {
+    var t = it.value.trim(); if (!t) { it.focus(); return; }
     go.disabled = true; msg.textContent = 'Checking…';
     api('gh_save', { token: t }).then(function (j) {
       go.disabled = false;
-      if (j.ok) { GH.acct = j.github; ghPickRepo(body); } else { msg.textContent = j.error || 'Could not connect.'; }
+      if (!j.ok) { msg.textContent = j.error || 'Could not connect.'; return; }
+      GH.acct = j.github; GH.on = true; store('devil_gh_on', '1'); GH.repos = null; ghPopClose(); ghRender();
+      toast('GitHub connected as @' + GH.acct.login, 'check');
+      var b = document.querySelector('#ghRow .gh-dd-repo'); if (b) { ghRepoList(b); }
     });
-  }
+  };
   go.addEventListener('click', save);
-  inpT.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+  it.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); save(); } });
 }
-function ghPickRepo(body) {
-  var a = GH.acct || {};
-  body.innerHTML = '<div class="gh-acct">Signed in as <b>@' + esc(a.login || '') + '</b><button type="button" class="gh-off">Disconnect GitHub</button></div>' +
-    '<input type="search" class="gh-in gh-q" placeholder="Search your repositories…" spellcheck="false">' +
-    '<div class="gh-list"><div class="gh-load">Loading repositories…</div></div>' +
-    '<div class="gh-sel" hidden><div class="gh-selr"></div><label>Branch <select class="gh-brs"></select></label><div class="gh-row"><span class="gh-msg"></span><button type="button" class="gh-go">Use this repository</button></div></div>';
-  var list = body.querySelector('.gh-list'), q = body.querySelector('.gh-q'), sel = body.querySelector('.gh-sel'), brs = body.querySelector('.gh-brs');
-  var repos = [], chosen = null;
-  body.querySelector('.gh-off').addEventListener('click', function () {
-    if (!confirm('Remove your GitHub token from Devil AI?')) { return; }
-    api('gh_delete', {}).then(function () { GH.acct = null; ghConnectForm(body); });
-  });
-  function draw() {
+/* searchable list popover (repos / branches) */
+function ghListPop(anchor, ph, load, cur, pick) {
+  var p = ghPop(anchor, 'list'); if (!p) { return; }
+  p.innerHTML = '<div class="gh-sr">' + ghIc('searchS') + '<input type="search" placeholder="' + esc(ph) + '" spellcheck="false"></div><div class="gh-ls"><div class="gh-load">Loading…</div></div>';
+  var q = p.querySelector('input'), ls = p.querySelector('.gh-ls'), items = [];
+  var draw = function () {
     var f = q.value.trim().toLowerCase();
-    var rs = repos.filter(function (r) { return !f || r.repo.toLowerCase().indexOf(f) !== -1; }).slice(0, 60);
-    list.innerHTML = rs.length ? rs.map(function (r, i) {
-      return '<button type="button" class="gh-repo' + (chosen && chosen.repo === r.repo ? ' on' : '') + '" data-r="' + esc(r.repo) + '">' + (I.githubS || '') + '<span class="gh-rn">' + esc(r.repo) + '</span>' + (r.private ? '<span class="gh-tag">private</span>' : '') + '</button>';
-    }).join('') : '<div class="gh-load">' + (repos.length ? 'No match.' : 'No repositories you can push to.') + '</div>';
-  }
+    var rs = items.filter(function (x) { return !f || x.label.toLowerCase().indexOf(f) !== -1; }).slice(0, 100);
+    ls.innerHTML = rs.length ? rs.map(function (x) { return '<button type="button" class="gh-li' + (x.value === cur ? ' on' : '') + '" data-v="' + esc(x.value) + '"><span class="t">' + esc(x.label) + '</span>' + (x.tag ? '<span class="gh-tag">' + esc(x.tag) + '</span>' : '') + (x.value === cur ? ghIc('checkS') : '') + '</button>'; }).join('')
+      : '<div class="gh-load">' + (items.length ? 'No match' : 'Nothing found') + '</div>';
+  };
   q.addEventListener('input', draw);
-  list.addEventListener('click', function (e) {
-    var b = e.target.closest('.gh-repo'); if (!b) { return; }
-    chosen = repos.filter(function (r) { return r.repo === b.dataset.r; })[0]; if (!chosen) { return; }
-    draw();
-    sel.hidden = false;
-    sel.querySelector('.gh-selr').innerHTML = (I.githubS || '') + '<b>' + esc(chosen.repo) + '</b>';
-    brs.innerHTML = '<option>' + esc(chosen.branch) + '</option>';
-    api('gh_branches&repo=' + encodeURIComponent(chosen.repo)).then(function (j) {
-      if (!j.ok || !chosen) { return; }
-      var bl = j.branches || []; if (bl.indexOf(chosen.branch) === -1) { bl.unshift(chosen.branch); }
-      brs.innerHTML = bl.map(function (n) { return '<option' + (n === chosen.branch ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+  q.addEventListener('keydown', function (e) { if (e.key === 'Enter') { var b = ls.querySelector('.gh-li'); if (b) { b.click(); } } });
+  ls.addEventListener('click', function (e) { var b = e.target.closest('.gh-li'); if (!b) { return; } ghPopClose(); pick(b.dataset.v); });
+  setTimeout(function () { q.focus(); }, 0);
+  load(function (list, err) { if (!document.body.contains(p)) { return; } if (err) { ls.innerHTML = '<div class="gh-load">' + esc(err) + '</div>'; return; } items = list; draw(); });
+}
+function ghRepoList(anchor) {
+  ghListPop(anchor, 'Search repositories…', function (cb) {
+    if (GH.repos) { cb(GH.repos); return; }
+    api('gh_repos').then(function (j) {
+      if (!j.ok) { if (j.connect) { GH.acct = null; ghRender(); } cb([], j.error || 'Could not load repositories'); return; }
+      GH.repos = (j.repos || []).map(function (r) { return { value: r.repo, label: r.repo, tag: r.private ? 'private' : '', branch: r.branch }; });
+      cb(GH.repos);
     });
-  });
-  body.querySelector('.gh-go').addEventListener('click', function () {
-    if (!chosen) { return; }
-    GH.pending = { repo: chosen.repo, branch: brs.value || chosen.branch };
-    if (GH.link && GH.link.repo === GH.pending.repo && GH.link.branch === GH.pending.branch) { GH.pending = null; }
-    ghRenderChip(); ghClosePop(); inp.focus();
-    toast('Repository selected — it is cloned when you send your request', 'check');
-  });
-  api('gh_repos').then(function (j) {
-    if (!j.ok) { list.innerHTML = '<div class="gh-load">' + esc(j.error || 'Could not load repositories.') + '</div>'; if (j.connect) { ghConnectForm(body); } return; }
-    repos = j.repos || []; draw(); q.focus();
+  }, GH.sel && GH.sel.repo, function (v) {
+    var r = (GH.repos || []).filter(function (x) { return x.value === v; })[0];
+    GH.sel = { repo: v, branch: (r && r.branch) || 'main' };
+    store('devil_gh_sel', JSON.stringify(GH.sel)); ghRender(); inp.focus();
   });
 }
-document.getElementById('ghBtn') && document.getElementById('ghBtn').addEventListener('click', function () { if (!busy) { ghOpenPop(); } });
-
-/* Diff tab: what the agent changed (last turn / whole branch) */
-function ghDiffHtml(diff) {
-  var files = String(diff || '').split(/^diff --git /m).filter(function (x) { return x.trim(); });
-  if (!files.length) { return '<div class="ws-empty"><div class="wi">' + (I.branchS || '') + '</div>No changes yet.</div>'; }
-  return files.map(function (f) {
-    var lines = f.split('\n');
-    var m = /^a\/(.+?) b\/(.+)$/.exec(lines[0]) || [];
-    var name = m[2] || lines[0];
-    var add = 0, del = 0, rows = [], started = false;
-    lines.slice(1).forEach(function (ln) {
-      if (/^@@/.test(ln)) { started = true; rows.push('<div class="gd-h">' + esc(ln) + '</div>'); return; }
-      if (!started) { if (/^(new|deleted) file|^rename|^Binary/.test(ln)) { rows.push('<div class="gd-meta">' + esc(ln) + '</div>'); } return; }
-      if (ln.charAt(0) === '+') { add++; rows.push('<div class="gd-a">' + esc(ln) + '</div>'); }
-      else if (ln.charAt(0) === '-') { del++; rows.push('<div class="gd-d">' + esc(ln) + '</div>'); }
-      else if (ln.charAt(0) !== '\\') { rows.push('<div class="gd-c">' + esc(ln) + '</div>'); }
+function ghBranchList(anchor) {
+  var repo = GH.sel && GH.sel.repo; if (!repo) { return; }
+  ghListPop(anchor, 'Search branches…', function (cb) {
+    if (GH.branches[repo]) { cb(GH.branches[repo]); return; }
+    api('gh_branches&repo=' + encodeURIComponent(repo)).then(function (j) {
+      if (!j.ok) { cb([], j.error || 'Could not load branches'); return; }
+      GH.branches[repo] = (j.branches || []).map(function (b) { return { value: b, label: b }; });
+      cb(GH.branches[repo]);
     });
-    return '<details class="gd-file" open><summary><span class="gd-n">' + esc(name) + '</span><span class="gd-s"><i class="p">+' + add + '</i> <i class="m">−' + del + '</i></span></summary><div class="gd-body">' + rows.join('') + '</div></details>';
-  }).join('');
+  }, GH.sel.branch, function (v) { GH.sel.branch = v; store('devil_gh_sel', JSON.stringify(GH.sel)); ghRender(); inp.focus(); });
+}
+(function () {
+  var b = document.getElementById('ghBtn');
+  if (b) { b.addEventListener('click', function () { if (!busy) { ghMenu(b, false); } }); }
+  if (!window.__GUEST) { setTimeout(function () { ghAcct(); }, 400); }
+})();
+
+/* ── Diff panel: unified / split, line numbers, syntax colours, word-level changes, collapsed unchanged lines ── */
+var GH_KW = {
+  js: 'break case catch class const continue debugger default delete do else export extends finally for from function if import in instanceof let new return super switch this throw try typeof var void while with yield async await of null true false undefined',
+  py: 'and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield None True False self',
+  php: 'abstract and array as break callable case catch class clone const continue declare default do echo else elseif empty endforeach endif endwhile extends final finally fn for foreach function global if implements include include_once instanceof interface isset list match namespace new or print private protected public readonly require require_once return static switch throw trait try unset use var while yield null true false self',
+  css: 'important media import from to keyframes supports',
+  sh: 'if then else elif fi for in do done while until case esac function return local export echo exit set unset source'
+};
+var GH_LANG = { js: 'js', jsx: 'js', ts: 'js', tsx: 'js', mjs: 'js', cjs: 'js', json: 'js', java: 'js', c: 'js', h: 'js', cpp: 'js', cs: 'js', go: 'js', rs: 'js', kt: 'js', swift: 'js', dart: 'js', py: 'py', rb: 'py', php: 'php', css: 'css', scss: 'css', less: 'css', sh: 'sh', bash: 'sh', yml: 'sh', yaml: 'sh', toml: 'sh', html: 'html', htm: 'html', xml: 'html', svg: 'html', vue: 'html', md: 'md', markdown: 'md' };
+var GH_KWSET = {};
+Object.keys(GH_KW).forEach(function (k) { GH_KWSET[k] = {}; GH_KW[k].split(' ').forEach(function (w) { GH_KWSET[k][w] = 1; }); });
+function ghLang(path) { var m = /\.([A-Za-z0-9]+)$/.exec(path || ''); return (m && GH_LANG[m[1].toLowerCase()]) || ''; }
+function ghHl(code, lang) {
+  if (!lang || code.length > 2000) { return esc(code); }
+  if (lang === 'md') {
+    if (/^\s{0,3}#{1,6}\s/.test(code)) { return '<span class="hk">' + esc(code) + '</span>'; }
+    return esc(code).replace(/`([^`]+)`/g, '<span class="hs">`$1`</span>').replace(/\*\*([^*]+)\*\*/g, '<b>**$1**</b>');
+  }
+  if (lang === 'html') {
+    return esc(code).replace(/(&lt;!--.*?--&gt;)|(&lt;\/?)([\w:-]+)|([\w:-]+)(=)(&quot;[^&]*?&quot;|'[^']*')/g, function (m0, cm, lt, tag, at, eq, val) {
+      if (cm) { return '<span class="hc">' + cm + '</span>'; }
+      if (tag) { return lt + '<span class="ht">' + tag + '</span>'; }
+      return '<span class="ha">' + at + '</span>' + eq + '<span class="hs">' + val + '</span>';
+    });
+  }
+  var hash = lang === 'py' || lang === 'sh' || lang === 'php';
+  var re = new RegExp('(' + (hash ? '#.*$|' : '') + '\\/\\/.*$|\\/\\*.*?(?:\\*\\/|$))|("(?:[^"\\\\]|\\\\.)*"?|\'(?:[^\'\\\\]|\\\\.)*\'?|`(?:[^`\\\\]|\\\\.)*`?)|(\\b\\d[\\d_]*(?:\\.\\d+)?\\b)|([A-Za-z_$][\\w$]*)', 'g');
+  var out = '', last = 0, m, kw = GH_KWSET[lang] || GH_KWSET.js;
+  if (lang === 'css') { re = /(\/\*.*?(?:\*\/|$))|("(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?)|(#[0-9a-fA-F]{3,8}\b|-?\b\d+(?:\.\d+)?(?:px|em|rem|%|vh|vw|s|ms|deg)?\b)|([A-Za-z-]+)(?=\s*:)/g; }
+  while ((m = re.exec(code))) {
+    out += esc(code.slice(last, m.index)); last = re.lastIndex;
+    if (m[1]) { out += '<span class="hc">' + esc(m[1]) + '</span>'; }
+    else if (m[2]) { out += '<span class="hs">' + esc(m[2]) + '</span>'; }
+    else if (m[3]) { out += '<span class="hn">' + esc(m[3]) + '</span>'; }
+    else if (m[4]) {
+      if (lang === 'css') { out += '<span class="ha">' + esc(m[4]) + '</span>'; }
+      else if (kw[m[4]]) { out += '<span class="hk">' + esc(m[4]) + '</span>'; }
+      else if (code.charAt(re.lastIndex) === '(') { out += '<span class="hf">' + esc(m[4]) + '</span>'; }
+      else { out += esc(m[4]); }
+    }
+    if (m[0] === '') { re.lastIndex++; }
+  }
+  return out + esc(code.slice(last));
+}
+/* highlight with the changed middle part marked */
+function ghHlMark(code, lang, a, b) {
+  if (a === undefined || (a === 0 && b === code.length) || a >= b) { return ghHl(code, lang); }
+  return ghHl(code.slice(0, a), lang) + '<mark>' + ghHl(code.slice(a, b), lang) + '</mark>' + ghHl(code.slice(b), lang);
+}
+function ghWordRange(x, y) {
+  var n = Math.min(x.length, y.length), p = 0, s = 0;
+  while (p < n && x.charAt(p) === y.charAt(p)) { p++; }
+  while (s < n - p && x.charAt(x.length - 1 - s) === y.charAt(y.length - 1 - s)) { s++; }
+  if (p + s < 3 && (x.length > 8 || y.length > 8)) { return null; }   /* nothing in common: no word marks */
+  return [[p, x.length - s], [p, y.length - s]];
+}
+function ghParseDiff(diff) {
+  var files = [];
+  String(diff || '').split(/^diff --git /m).forEach(function (chunk) {
+    if (!chunk.trim()) { return; }
+    var lines = chunk.split('\n'), mm = /^a\/(.+?) b\/(.+)$/.exec(lines[0]) || [];
+    var f = { name: mm[2] || lines[0], old: mm[1] || '', meta: [], hunks: [], add: 0, del: 0, binary: false };
+    var h = null;
+    for (var i = 1; i < lines.length; i++) {
+      var ln = lines[i], hm = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/.exec(ln);
+      if (hm) { h = { os: +hm[1], ol: hm[2] === undefined ? 1 : +hm[2], ns: +hm[3], nl: hm[4] === undefined ? 1 : +hm[4], rows: [] }; f.hunks.push(h); continue; }
+      if (!h) {
+        if (/^new file/.test(ln)) { f.meta.push('new'); } else if (/^deleted file/.test(ln)) { f.meta.push('deleted'); }
+        else if (/^rename from/.test(ln)) { f.meta.push('renamed'); } else if (/^Binary/.test(ln)) { f.binary = true; }
+        continue;
+      }
+      var c = ln.charAt(0);
+      if (c === '+') { h.rows.push({ t: 'a', s: ln.slice(1) }); f.add++; }
+      else if (c === '-') { h.rows.push({ t: 'd', s: ln.slice(1) }); f.del++; }
+      else if (c === ' ' || (ln === '' && i < lines.length - 1)) { h.rows.push({ t: 'c', s: ln.slice(1) }); }
+    }
+    /* line numbers + word-level pairs */
+    f.hunks.forEach(function (hk) {
+      var o = hk.os, n = hk.ns, k = 0, rows = hk.rows;
+      rows.forEach(function (r) { if (r.t === 'c') { r.o = o++; r.n = n++; } else if (r.t === 'd') { r.o = o++; } else { r.n = n++; } });
+      while (k < rows.length) {
+        if (rows[k].t !== 'd') { k++; continue; }
+        var ds = k; while (k < rows.length && rows[k].t === 'd') { k++; }
+        var as = k; while (k < rows.length && rows[k].t === 'a') { k++; }
+        for (var q = 0; q < Math.min(as - ds, k - as); q++) {
+          var wr = ghWordRange(rows[ds + q].s, rows[as + q].s);
+          if (wr) { rows[ds + q].w = wr[0]; rows[as + q].w = wr[1]; }
+          rows[ds + q].pair = rows[as + q]; rows[as + q].pair = rows[ds + q];
+        }
+      }
+    });
+    files.push(f);
+  });
+  return files;
+}
+function ghGap(n, split) { return n > 0 ? '<div class="gd-gap' + (split ? ' sp' : '') + '">' + n + ' unmodified line' + (n === 1 ? '' : 's') + '</div>' : ''; }
+function ghCodeRow(r, lang, side) {
+  var cls = r ? (r.t === 'a' ? 'gd-a' : (r.t === 'd' ? 'gd-d' : 'gd-c')) : 'gd-e';
+  if (!r) { return '<div class="gd-r gd-e"><span class="gd-ln"></span><span class="gd-code"></span></div>'; }
+  var num = side === 'o' ? r.o : (side === 'n' ? r.n : (r.t === 'd' ? r.o : r.n));
+  return '<div class="gd-r ' + cls + '"><span class="gd-ln">' + (num || '') + '</span><span class="gd-code">' + (r.w ? ghHlMark(r.s, lang, r.w[0], r.w[1]) : ghHl(r.s, lang)) + '</span></div>';
+}
+function ghFileHtml(f, split, budget) {
+  var lang = ghLang(f.name), body = '', prevEnd = 1;
+  if (f.binary) { body = '<div class="gd-gap">Binary file</div>'; }
+  f.hunks.forEach(function (hk, hi) {
+    body += ghGap(hk.os - prevEnd, split);
+    prevEnd = hk.os + hk.ol;
+    if (budget.n <= 0) { return; }
+    budget.n -= hk.rows.length;
+    if (!split) { body += hk.rows.map(function (r) { return ghCodeRow(r, lang); }).join(''); return; }
+    /* split: old on the left, new on the right */
+    var L = '', R = '', rows = hk.rows, k = 0;
+    while (k < rows.length) {
+      var r = rows[k];
+      if (r.t === 'c') { L += ghCodeRow(r, lang, 'o'); R += ghCodeRow(r, lang, 'n'); k++; continue; }
+      var ds = []; while (k < rows.length && rows[k].t === 'd') { ds.push(rows[k++]); }
+      var as = []; while (k < rows.length && rows[k].t === 'a') { as.push(rows[k++]); }
+      for (var q = 0; q < Math.max(ds.length, as.length); q++) { L += ghCodeRow(ds[q] || null, lang, 'o'); R += ghCodeRow(as[q] || null, lang, 'n'); }
+    }
+    body += '<div class="gd-split"><div class="gd-col">' + L + '</div><div class="gd-col">' + R + '</div></div>';
+  });
+  if (budget.n <= 0 && !f.binary) { body += '<div class="gd-gap">Diff too large to show here — open it on GitHub after pushing.</div>'; }
+  var tag = f.meta.length ? '<span class="gd-tag">' + esc(f.meta[0]) + '</span>' : '';
+  return '<details class="gd-file"' + (GH.closed[f.name] ? '' : ' open') + ' data-f="' + esc(f.name) + '"><summary>' + ghIc('chevD') + '<span class="gd-n">' + esc(f.name) + '</span>' + tag + '<span class="gd-s"><i class="p">+' + f.add + '</i> <i class="m">−' + f.del + '</i></span></summary><div class="gd-body' + (split ? ' split' : '') + '">' + body + '</div></details>';
 }
 function renderWsDiff(box) {
   var l = GH.link || {};
-  box.innerHTML = wsToolbar('<div class="gd-seg"><button type="button" data-m="turn"' + (GH.diffMode === 'turn' ? ' class="on"' : '') + '>Last turn</button><button type="button" data-m="full"' + (GH.diffMode === 'full' ? ' class="on"' : '') + '>Full branch</button></div>' +
-    '<span class="gd-br">' + (I.branchS || '') + esc(l.work_branch || '') + ' → ' + esc(l.branch || '') + '</span>' +
-    (l.pr ? '<a class="gd-pr" href="' + esc(l.pr) + '" target="_blank" rel="noopener noreferrer">' + (I.prS || '') + 'Open PR</a>' : '') +
-    '<button type="button" class="gd-rf" title="Refresh">' + (I.retryS || '↻') + '</button>') + '<div class="gd-wrap"><div class="ws-empty">Loading diff…</div></div>';
-  Array.prototype.forEach.call(box.querySelectorAll('.gd-seg button'), function (b) { b.addEventListener('click', function () { GH.diffMode = b.dataset.m; renderWsDiff(box); }); });
-  box.querySelector('.gd-rf').addEventListener('click', function () { renderWsDiff(box); });
+  var keep = box.querySelector('.gd-wrap'), st = keep ? keep.scrollTop : 0, again = box.querySelector('.gd-head') && box.dataset.gd === (currentChat && currentChat.id) + GH.mode + GH.view;
+  if (!again) {
+    box.dataset.gd = (currentChat && currentChat.id) + GH.mode + GH.view;
+    box.innerHTML = '<div class="gd-head"><span class="gd-title">Diff</span><span class="gd-sp"></span>' +
+      '<button type="button" class="gd-ib gd-fold" title="Collapse / expand all files">' + ghIc('foldS') + '</button>' +
+      '<label class="gd-sel"><select aria-label="Diff range"><option value="full"' + (GH.mode === 'full' ? ' selected' : '') + '>Branch</option><option value="turn"' + (GH.mode === 'turn' ? ' selected' : '') + '>Last turn</option></select></label>' +
+      '<span class="gd-seg"><button type="button" data-v="unified"' + (GH.view === 'unified' ? ' class="on"' : '') + '>Unified</button><button type="button" data-v="split"' + (GH.view === 'split' ? ' class="on"' : '') + '>Split</button></span>' +
+      '<button type="button" class="gd-ib gd-rf" title="Refresh">' + ghIc('retryS') + '</button></div><div class="gd-wrap"><div class="ws-empty">Loading diff…</div></div>';
+    box.querySelector('.gd-sel select').addEventListener('change', function (e) { GH.mode = e.target.value; renderWsDiff(box); });
+    Array.prototype.forEach.call(box.querySelectorAll('.gd-seg button'), function (b) { b.addEventListener('click', function () { GH.view = b.dataset.v; store('devil_gh_view', GH.view); renderWsDiff(box); }); });
+    box.querySelector('.gd-rf').addEventListener('click', function () { renderWsDiff(box); });
+    box.querySelector('.gd-fold').addEventListener('click', function () {
+      var ds = box.querySelectorAll('.gd-file'), anyOpen = Array.prototype.some.call(ds, function (d) { return d.open; });
+      Array.prototype.forEach.call(ds, function (d) { d.open = !anyOpen; GH.closed[d.dataset.f] = anyOpen; });
+    });
+  }
   var wrap = box.querySelector('.gd-wrap');
   var id = currentChat && currentChat.id;
   if (!id) { wrap.innerHTML = '<div class="ws-empty">Send a request first.</div>'; return; }
-  api('sbx_diff&id=' + encodeURIComponent(id) + '&mode=' + GH.diffMode).then(function (j) {
-    if (SBX.tab !== 'diff') { return; }
+  api('sbx_diff&id=' + encodeURIComponent(id) + '&mode=' + GH.mode).then(function (j) {
+    if (SBX.tab !== 'diff' || !document.body.contains(wrap)) { return; }
     if (!j.ok) { wrap.innerHTML = '<div class="ws-empty">' + esc(j.error || 'Could not load the diff.') + '</div>'; return; }
-    if (j.github) { GH.link = j.github; ghRenderChip(); }
-    wrap.innerHTML = (j.stat ? '<div class="gd-stat">' + esc(j.stat.split('\n').pop()) + '</div>' : '') + ghDiffHtml(j.diff) + (j.truncated ? '<div class="gd-meta">Diff is very large — showing the first part.</div>' : '');
+    if (j.github) { GH.link = j.github; }
+    var files = ghParseDiff(j.diff), budget = { n: 6000 };
+    if (!files.length) {
+      wrap.innerHTML = '<div class="ws-empty"><div class="wi">' + ghIc('branchS') + '</div>' + (GH.mode === 'turn' ? 'No changes in the last turn.' : 'No changes on ' + esc(l.work_branch || 'this branch') + ' yet.') + '</div>';
+      return;
+    }
+    var ta = 0, td = 0; files.forEach(function (f) { ta += f.add; td += f.del; });
+    wrap.innerHTML = '<div class="gd-stat">' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' changed <i class="p">+' + ta + '</i> <i class="m">−' + td + '</i>' + (GH.mode === 'turn' ? ' · last turn' : ' · ' + esc(l.work_branch || '') + ' → ' + esc(l.branch || '')) + '</div>' +
+      files.map(function (f) { return ghFileHtml(f, GH.view === 'split', budget); }).join('') + (j.truncated ? '<div class="gd-gap">Diff is very large — showing the first part.</div>' : '');
+    Array.prototype.forEach.call(wrap.querySelectorAll('.gd-file'), function (d) { d.addEventListener('toggle', function () { GH.closed[d.dataset.f] = !d.open; }); });
+    if (again) { wrap.scrollTop = st; }
+    if (GH.mode === 'full') { GH.stat = { add: ta, del: td, files: files.length }; ghRender(); }
   });
 }
 (function () {
   var t = document.getElementById('wsTabs');
   if (t && !t.querySelector('[data-tab="diff"]')) {
     var b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'diff'; b.hidden = true;
-    b.innerHTML = (I.branchS || '') + 'Diff';
+    b.innerHTML = ghIc('branchS') + 'Diff';
     t.insertBefore(b, t.querySelector('[data-tab="activity"]'));
   }
   var base = renderWorkspace;
@@ -4119,11 +4388,12 @@ function renderWsDiff(box) {
     var db = tabs && tabs.querySelector('[data-tab="diff"]');
     if (db) { db.hidden = !has; }
     if (SBX.tab === 'diff' && !has) { SBX.tab = 'files'; }
+    if (box && SBX.tab !== 'diff') { delete box.dataset.gd; }
     if (SBX.tab === 'diff' && SBX.on && agentMode && box && tabs && panel) {
       tabs.hidden = false;
       Array.prototype.forEach.call(tabs.querySelectorAll('button[data-tab]'), function (x) { x.classList.toggle('on', x.dataset.tab === 'diff'); });
       panel.classList.add('wide');
-      document.body.style.setProperty('--wsw', 'min(760px,52vw)');
+      document.body.style.setProperty('--wsw', 'min(860px,58vw)');
       renderWsDiff(box);
       return;
     }
@@ -4134,6 +4404,7 @@ function renderWsDiff(box) {
 api('bootstrap').then(function (j) {
   if (!j.ok) { return; }
   models = j.models || [];
+  GH.oauth = !!j.gh_oauth;
   customModels = j.custom_models || [];
   modelById = {}; customById = {};
   models.forEach(function (m) { modelById[m.id] = m; });

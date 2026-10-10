@@ -8,6 +8,11 @@
  */
 require_once __DIR__ . '/inc/session.php';
 devil_session_boot();
+/* GitHub repository connect (Agent Mode) shares this callback: its state starts with "repo." */
+if (isset($_GET['github_callback']) && strpos((string)($_GET['state'] ?? ''), 'repo.') === 0) {
+    require_once __DIR__ . '/inc/github.php';
+    gh_oauth_page(gh_oauth_finish((string)($_GET['code'] ?? ''), (string)$_GET['state']));
+}
 /* where to go after signing in (only same-site paths like /agent or /leaderboard) */
 $NEXT = 'chat';
 $nextIn = isset($_GET['next']) && is_string($_GET['next']) ? $_GET['next'] : (string)($_SESSION['devil_next'] ?? '');

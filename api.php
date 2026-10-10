@@ -2283,13 +2283,13 @@ function security_alert_email(array $user, ?array $loginRec): void {
 /* data the app needs on start (also embedded straight into the page by app.php) */
 function bootstrap_payload(): array {
     $cfg = load_config();
-    return ['ok' => true, 'models' => public_models(), 'custom_models' => public_custom_models(), 'default' => 'flash', 'version' => DEVIL_VERSION, 'agent_enabled' => !empty($cfg['agent_enabled']), 'sandbox_enabled' => sbx_enabled($cfg), 'battle_models' => battle_pool()];
+    return ['ok' => true, 'models' => public_models(), 'custom_models' => public_custom_models(), 'default' => 'flash', 'version' => DEVIL_VERSION, 'gh_oauth' => (bool)gh_oauth_cfg(), 'agent_enabled' => !empty($cfg['agent_enabled']), 'sandbox_enabled' => sbx_enabled($cfg), 'battle_models' => battle_pool()];
 }
 
 /* one chat, ready for the browser (null = not found) */
 /* what the browser may see of a chat's GitHub link */
 function gh_link_public(array $l): array {
-    return ['repo' => (string)($l['repo'] ?? ''), 'branch' => (string)($l['branch'] ?? ''), 'work_branch' => (string)($l['work_branch'] ?? ''), 'pr' => (string)($l['pr'] ?? ''), 'cloned' => !empty($l['cloned'])];
+    return ['repo' => (string)($l['repo'] ?? ''), 'branch' => (string)($l['branch'] ?? ''), 'work_branch' => (string)($l['work_branch'] ?? ''), 'pr' => (string)($l['pr'] ?? ''), 'pr_state' => (string)($l['pr_state'] ?? ''), 'cloned' => !empty($l['cloned'])];
 }
 function chat_load_payload(string $uid, string $id, string $variant): ?array {
     $chat = load_chat($uid, $id);
@@ -2669,7 +2669,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['gh_get', 'gh_save', 'gh_delete', 'gh_repos', 'gh_branches', 'gh_unlink', 'sbx_diff', 'host_get', 'host_save', 'host_test', 'host_delete', 'chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+    if (in_array($action, ['gh_get', 'gh_save', 'gh_delete', 'gh_repos', 'gh_branches', 'gh_unlink', 'sbx_diff', 'gh_oauth_url', 'gh_status', 'gh_pr_create', 'gh_pr_merge', 'host_get', 'host_save', 'host_test', 'host_delete', 'chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -2680,8 +2680,12 @@ try {
 
     /* ─── Hosting (FTP / SFTP): the user's own server for the agent's deploy_site tool ─── */
     /* ── GitHub account (Settings → GitHub) ── */
-    if (in_array($action, ['gh_get', 'gh_save', 'gh_delete', 'gh_repos', 'gh_branches'], true)) {
-        if ($action === 'gh_get') { json_out(['ok' => true, 'github' => gh_public(gh_load($uid))]); }
+    if (in_array($action, ['gh_get', 'gh_save', 'gh_delete', 'gh_repos', 'gh_branches', 'gh_oauth_url'], true)) {
+        if ($action === 'gh_get') { json_out(['ok' => true, 'github' => gh_public(gh_load($uid)), 'oauth' => (bool)gh_oauth_cfg()]); }
+        if ($action === 'gh_oauth_url') {
+            $u = gh_oauth_url($uid);
+            json_out($u !== '' ? ['ok' => true, 'url' => $u] : ['ok' => false, 'error' => 'One-click GitHub connect is not set up on this server — use a token instead.']);
+        }
         if ($action === 'gh_delete' && $method === 'POST') { gh_delete($uid); json_out(['ok' => true]); }
         if ($action === 'gh_save' && $method === 'POST') {
             $in = input_json();
@@ -3341,7 +3345,7 @@ try {
 
     /* ═════════ Agent Mode v2: step-driven jobs + per-chat sandbox ═════════ */
 
-    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports', 'sbx_diff', 'gh_unlink'], true)) {
+    if (in_array($action, ['agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports', 'sbx_diff', 'gh_unlink', 'gh_status', 'gh_pr_create', 'gh_pr_merge'], true)) {
         $cfgAll = load_config();
         $sbxOn = sbx_enabled($cfgAll);
         $GLOBALS['DEVIL_SCRUB_SBX'] = $cfgAll + ['_' => 1];
@@ -3546,13 +3550,14 @@ try {
                     $ghLink = ['repo' => (string)$want['repo'], 'branch' => (string)$want['branch']];
                 }
                 if ($ghLink) {
-                    $cl = gh_ensure_clone($cfgAll, $sid, $uid, $ghLink);
+                    $cl = gh_ensure_clone($cfgAll, $sid, $uid, $ghLink, $msg);
                     if (empty($cl['ok'])) { json_out(['ok' => false, 'error' => (string)$cl['error']], 400); }
                     $ghLink = $cl['link'];
                     $ghLink['turn_tree'] = gh_snapshot($cfgAll, $sid, (string)$ghLink['dir']);
                     if ($rootC) { $rc = load_chat($uid, $chatId) ?: $rootC; $rc['github'] = $ghLink; save_chat($uid, $rc); }
                     $ghNote = 'GITHUB REPOSITORY: the user connected ' . $ghLink['repo'] . ' (base branch ' . $ghLink['branch'] . '). It is cloned at /home/user/work/' . $ghLink['dir']
                         . ' and checked out on your working branch ' . $ghLink['work_branch'] . '. Work INSIDE that folder (cd ' . $ghLink['dir'] . ' && …): read the code first (README, structure, package files), follow its style, run its tests/build if it has them.'
+                        . (in_array((string)($ghLink['pr_state'] ?? ''), ['merged', 'closed'], true) ? ' NOTE: the pull request of this session was already ' . $ghLink['pr_state'] . ', so nothing more can be pushed from this chat — you may still read, run and explain the code, but tell the user to start a NEW chat for new changes to ship.' : '')
                         . ' The user watches your changes live in the Diff tab. When the requested change is done and checked, call github_pr (line 1 = PR title, then a short description of what changed and how it was tested) to commit, push and open the pull request — then give the user the PR link. Never push to ' . $ghLink['branch'] . ' directly and never print the token.';
                 }
             }
@@ -3677,7 +3682,7 @@ try {
             echo $r['data'];
             exit;
         }
-        if ($action === 'sbx_diff' || $action === 'gh_unlink') {
+        if (in_array($action, ['sbx_diff', 'gh_unlink', 'gh_status', 'gh_pr_create', 'gh_pr_merge'], true)) {
             $cid = (string)($q['id'] ?? '');
             $c0 = $cid !== '' ? load_chat($uid, $cid) : null;
             if (!$c0) { json_out(['ok' => false, 'error' => 'Chat not found.'], 404); }
@@ -3686,6 +3691,33 @@ try {
             $link = is_array($rc['github'] ?? null) ? $rc['github'] : null;
             if ($action === 'gh_unlink') { unset($rc['github']); save_chat($uid, $rc); json_out(['ok' => true]); }
             if (!$link || empty($link['dir'])) { json_out(['ok' => false, 'error' => 'No GitHub repository in this chat yet.'], 400); }
+            $link['chat_id'] = (string)$rc['id'];
+            if ($action !== 'sbx_diff') {
+                $g = gh_load($uid);
+                if (!$g) { json_out(['ok' => false, 'error' => 'GitHub is not connected any more — connect it again.', 'connect' => true], 400); }
+                $saveLink = static function (array $l) use ($uid, $rid) { $c = load_chat($uid, $rid); if ($c && is_array($c['github'] ?? null)) { unset($l['chat_id']); $c['github'] = $l; save_chat($uid, $c); } };
+                if ($action === 'gh_pr_create') {
+                    if ($method !== 'POST') { json_out(['ok' => false, 'error' => 'Bad request.'], 405); }
+                    $title = trim((string)($q['title'] ?? '')) ?: trim((string)($rc['title'] ?? '')) ?: 'Changes by Devil Agent';
+                    $body = '';
+                    foreach (array_reverse((array)($rc['messages'] ?? [])) as $m) { if (($m['role'] ?? '') === 'assistant' && trim((string)($m['content'] ?? '')) !== '') { $body = (string)$m['content']; break; } }
+                    $body = mb_substr(trim($body), 0, 3000) . "\n\n— Opened from Devil Agent";
+                    $r = gh_tool_pr($cfgAll, $sid, $uid, $link, mb_substr(preg_replace('/\s+/', ' ', $title), 0, 120) . "\n" . $body);
+                    if (!empty($r['meta']['pr'])) { $link['pr'] = (string)$r['meta']['pr']; $link['pr_state'] = 'open'; $saveLink($link); }
+                    json_out(['ok' => !empty($r['ok']), 'text' => sbx_secret_mask((string)$r['text'], sbx_secret_values($sid)), 'error' => empty($r['ok']) ? (string)$r['text'] : '', 'github' => gh_link_public($link)]);
+                }
+                if ($action === 'gh_pr_merge') {
+                    if ($method !== 'POST') { json_out(['ok' => false, 'error' => 'Bad request.'], 405); }
+                    $r = gh_pr_merge((string)$g['token'], $link, (string)($q['method'] ?? 'squash'));
+                    if (!empty($r['ok'])) { $link['pr_state'] = 'merged'; $saveLink($link); }
+                    json_out($r + ['github' => gh_link_public($link)]);
+                }
+                /* gh_status: +/- lines on the branch and the live PR state */
+                $ns = gh_numstat($cfgAll, $sid, $link);
+                $pi = !empty($link['pr']) ? gh_pr_info((string)$g['token'], $link) : null;
+                if ($pi && ($link['pr_state'] ?? '') !== $pi['state']) { $link['pr_state'] = $pi['state']; $saveLink($link); }
+                json_out(['ok' => true, 'stat' => $ns, 'pr' => $pi, 'github' => gh_link_public($link)]);
+            }
             $d = gh_diff($cfgAll, $sid, $link, ((string)($q['mode'] ?? 'full')) === 'turn' ? 'turn' : 'full', (string)($link['turn_tree'] ?? ''));
             $d = sbx_secret_mask(sbx_scrub_any($d, $cfgAll), sbx_secret_values($sid));
             json_out($d + ['github' => gh_link_public($link)]);
