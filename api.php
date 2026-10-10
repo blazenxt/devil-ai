@@ -182,7 +182,7 @@ function model_catalog(): array {
         [$id, $providerModel, $label, $company, $free, $vision, $icon] = $row;
         $models[] = [
             'id' => $id, 'label' => $label, 'company' => $company,
-            'scope' => $free ? 'OpenRouter · Free' : 'OpenRouter · Usage-based',
+            'scope' => $free ? 'OpenRouter · Free' : 'OpenRouter · Check pricing',
             'icon' => $icon, 'thinking' => false, 'vision' => $vision,
             'provider' => 'openrouter', 'provider_label' => 'OpenRouter',
             'provider_model' => $providerModel, 'free' => $free,

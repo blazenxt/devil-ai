@@ -89,7 +89,7 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <hr class="divider">
         <label>OpenRouter API key <span style="color:var(--dim2);font-weight:500">(leave empty to keep saved)</span></label>
         <input id="openrouterKey" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Not set">
-        <p class="hint">Saved only in this server's private settings. Agent Mode and the three quick picks continue using Gemini. Usage-based models are marked and are not selected randomly in Battle.</p>
+        <p class="hint">Saved only in this server's private settings. Agent Mode and the three quick picks continue using Gemini. Models without a :free tag are marked and are not selected randomly in Battle.</p>
         <div class="switchrow"><span><b>Remove saved OpenRouter key</b><small>Clear the key when you save settings.</small></span><button class="switch" id="clearOpenrouterKey" type="button" aria-pressed="false"></button></div>
         <div class="row"><div><label for="aRate">Messages per user per hour</label><input id="aRate" type="number" min="1" max="1000" inputmode="numeric"></div><div><label for="aChats">Max saved chats per user</label><input id="aChats" type="number" min="1" max="500" inputmode="numeric"></div></div>
         <div class="btnrow"><button class="btn primary saveBtn" type="button"><?= icon('check', 15) ?> Save settings</button></div>
