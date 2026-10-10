@@ -53,6 +53,10 @@ if ($IS_GUEST) {
 /* /agent and /agent/{slug} are rewritten to app.php?mode=agent */
 /* cache-busting version for the static app bundle (changes whenever a file is redeployed) */
 $ASSET_V = substr(md5(implode('|', array_map(static function ($f) { return @filemtime($f) . ':' . @filesize($f); }, [__DIR__ . '/assets/app.css', __DIR__ . '/assets/app.js']))), 0, 10);
+/* Same idea for the provider logos: they are loaded from assets/company-icons/ without a version, and the
+   service worker serves anything under /assets/ straight from Cache Storage, so swapping the files on disk
+   would keep showing the icons from an older deploy. Hashing the folder changes the URL on every icon swap. */
+$ICON_V = substr(md5(implode('|', array_map(static function ($f) { return @filemtime($f) . ':' . @filesize($f); }, (array)(glob(__DIR__ . '/assets/company-icons/*.svg') ?: [])))), 0, 10);
 /* First-screen data travels inside this page: the browser does not have to make a second trip to the
    server (bootstrap + chat list + the open chat) before it can show anything. Any problem → empty, and the
    app simply loads it the normal way. */
@@ -417,6 +421,7 @@ document.documentElement.setAttribute('data-theme',t);})();</script>
 const I = <?= json_encode($JS_ICONS, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const ME = <?= json_encode(['name' => $me['name'], 'email' => $me['email']], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const APP_BASE_PATH = <?= json_encode($APP_BASE_PATH, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+window.DEVIL_ICON_V = <?= json_encode($ICON_V, JSON_HEX_TAG) ?>;
 const ROUTE_MODE = <?= json_encode($ROUTE_MODE) ?>;
 window.__GUEST = <?= $IS_GUEST ? 'true' : 'false' ?>;
 window.__BOOT = <?= json_encode($BOOT ?: new stdClass(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?>;

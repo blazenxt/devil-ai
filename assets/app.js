@@ -243,7 +243,11 @@ function modelCompanyIcon(company, size) {
   };
   var px = Math.max(14, Math.min(22, Number(size) || 20));
   var file = files[key];
-  if (file) { return '<img class="company-svg" src="assets/company-icons/' + file + '" width="' + px + '" height="' + px + '" alt="" aria-hidden="true">'; }
+  if (file) {
+    /* ?v= keeps the service worker (and any CDN) from serving a logo cached before a logo swap */
+    var v = window.DEVIL_ICON_V ? '?v=' + encodeURIComponent(window.DEVIL_ICON_V) : '';
+    return '<img class="company-svg" src="assets/company-icons/' + file + v + '" width="' + px + '" height="' + px + '" alt="" aria-hidden="true">';
+  }
   var initial = key ? key.charAt(0).toUpperCase() : 'M';
   return '<svg class="company-svg" width="' + px + '" height="' + px + '" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="1" y="1" width="22" height="22" rx="7" fill="#7055d9"/><text x="12" y="16" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#fff">' + initial + '</text></svg>';
 }

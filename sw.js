@@ -5,7 +5,7 @@
  *   kept for offline use — chat pages are NOT stored (older versions cached every chat page).
  * - API calls: never touched.
  */
-const DEVIL_CACHE = 'devil-ai-v7';
+const DEVIL_CACHE = 'devil-ai-v8';
 const SHELL = ['./', './login.php', './assets/logo.svg', './manifest.webmanifest'];
 const MAX_STATIC = 40;
 
