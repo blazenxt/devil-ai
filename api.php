@@ -31,8 +31,8 @@
  *    POST ?action=test              {current_admin_password}    → {ok, reply}
  *
  *  Models (public names) → engines (server-side secret):
- *    Every chat model is a Google Gemini / Gemma model shown under its real name (key: gemini_api_key).
- *    Quick slots flash / pro / ultra map to catalogue models (admin can change them).
+ *    Gemini models use the server key; OpenRouter models use the server-side OpenRouter key.
+ *    Quick slots flash / pro / ultra map to the Gemini catalogue (admin can change them).
  *
  *  Storage (JSON files, no database):
  *    data/users.json  accounts (no passwords — email-code login only)
@@ -143,9 +143,9 @@ function load_config(): array {
 }
 
 /* ══════════════ MODEL CATALOGUE (real names) ══════════════
-   Models are shown under their real names. All run on the Gemini API free tier. */
+   Gemini and OpenRouter entries share one menu; provider keys remain server-side. */
 function model_catalog(): array {
-    return [
+    $models = [
         ['id' => 'gemini-3.8-flash',       'label' => 'Gemini 3.8 Flash',       'company' => 'Google', 'scope' => 'Newest Flash — smartest',      'icon' => 'crown',    'thinking' => true],
         ['id' => 'gemini-3.7-flash',       'label' => 'Gemini 3.7 Flash',       'company' => 'Google', 'scope' => 'Strong all-rounder',           'icon' => 'sparkles', 'thinking' => true],
         ['id' => 'gemini-3.6-flash',       'label' => 'Gemini 3.6 Flash',       'company' => 'Google', 'scope' => 'Balanced speed and quality',   'icon' => 'sparkles', 'thinking' => true],
@@ -156,6 +156,38 @@ function model_catalog(): array {
         ['id' => 'gemma-4-31b-it',         'label' => 'Gemma 4 31B',            'company' => 'Google', 'scope' => 'Open model — largest Gemma',   'icon' => 'layers',   'thinking' => false],
         ['id' => 'gemma-4-26b-a4b-it',     'label' => 'Gemma 4 26B A4B',        'company' => 'Google', 'scope' => 'Open model — mixture of experts', 'icon' => 'layers', 'thinking' => false],
     ];
+    $openrouter = [
+        ['or-apodex-1-1-mini-free', 'apodex/apodex-1.1-mini:free', 'Apodex 1.1 Mini', 'Apodex', true, false, 'layers'],
+        ['or-triton-2-mini-free', 'arcee-ai/triton-2-mini:free', 'Triton 2 Mini', 'Arcee AI', true, false, 'layers'],
+        ['or-triton-2-nano-free', 'arcee-ai/triton-2-nano:free', 'Triton 2 Nano', 'Arcee AI', true, false, 'zap'],
+        ['or-triton-2-small-free', 'arcee-ai/triton-2-small:free', 'Triton 2 Small', 'Arcee AI', true, false, 'layers'],
+        ['or-triton-2-free', 'arcee-ai/triton-2:free', 'Triton 2', 'Arcee AI', true, false, 'layers'],
+        ['or-dolphin-3-r1-mistral-24b-free', 'cognitivecomputations/dolphin-3.0-r1-mistral-24b:free', 'Dolphin 3.0 R1 Mistral 24B', 'Cognitive Computations', true, false, 'brain'],
+        ['or-dots-3-note-preview-free', 'dots-studio/dots-3-note-preview:free', 'Dots 3 Note Preview', 'Dots Studio', true, false, 'fileText'],
+        ['or-ling-3-1-flash', 'inclusionai/ling-3.1-flash', 'InclusionAI Ling 3.1 Flash', 'InclusionAI', false, false, 'sparkles'],
+        ['or-lfm-2-5-2-6b-free', 'liquid/lfm-2.5-2.6b:free', 'Liquid LFM 2.5 2.6B', 'Liquid AI', true, false, 'zap'],
+        ['or-llama-3-2-11b-vision-free', 'meta-llama/llama-3.2-11b-vision-instruct:free', 'Meta Llama 3.2 11B Vision Instruct', 'Meta', true, true, 'eye'],
+        ['or-llama-3-2-1b-free', 'meta-llama/llama-3.2-1b-instruct:free', 'Meta Llama 3.2 1B Instruct', 'Meta', true, false, 'layers'],
+        ['or-llama-3-2-3b-free', 'meta-llama/llama-3.2-3b-instruct:free', 'Meta Llama 3.2 3B Instruct', 'Meta', true, false, 'layers'],
+        ['or-llama-3-3-70b-free', 'meta-llama/llama-3.3-70b-instruct:free', 'Meta Llama 3.3 70B Instruct', 'Meta', true, false, 'layers'],
+        ['or-mistral-small-24b-2501-free', 'mistralai/mistral-small-24b-instruct-2501:free', 'Mistral Small 24B Instruct 2501', 'Mistral AI', true, false, 'layers'],
+        ['or-hermes-3-405b-free', 'nousresearch/hermes-3-llama-3.1-405b:free', 'Hermes 3 Llama 3.1 405B', 'NousResearch', true, false, 'sparkles'],
+        ['or-nemotron-70b-free', 'nvidia/llama-3.1-nemotron-70b-instruct:free', 'NVIDIA Llama 3.1 Nemotron 70B Instruct', 'NVIDIA', true, false, 'sparkles'],
+        ['or-qwen-2-5-coder-32b-free', 'qwen/qwen-2.5-coder-32b-instruct:free', 'Qwen 2.5 Coder 32B Instruct', 'Qwen', true, false, 'code'],
+        ['or-qwen-2-5-vl-72b-free', 'qwen/qwen-2.5-vl-72b-instruct:free', 'Qwen 2.5 VL 72B Instruct', 'Qwen', true, true, 'eye'],
+        ['or-glm-4-flash-free', 'zhipuai/glm-4-flash:free', 'GLM 4 Flash', 'Zhipu AI', true, false, 'brain'],
+    ];
+    foreach ($openrouter as $row) {
+        [$id, $providerModel, $label, $company, $free, $vision, $icon] = $row;
+        $models[] = [
+            'id' => $id, 'label' => $label, 'company' => $company,
+            'scope' => $free ? 'OpenRouter · Free' : 'OpenRouter · Usage-based',
+            'icon' => $icon, 'thinking' => false, 'vision' => $vision,
+            'provider' => 'openrouter', 'provider_label' => 'OpenRouter',
+            'provider_model' => $providerModel, 'free' => $free,
+        ];
+    }
+    return $models;
 }
 function catalog_model(string $id): ?array {
     $id = strtolower(trim($id));
@@ -178,7 +210,10 @@ function model_resting(string $id): bool {
     if ($cool === null) { $cool = function_exists('gemini_state') ? (array)(gemini_state()['cool'] ?? []) : []; }
     return (int)($cool[$id] ?? 0) > time() + 3600;
 }
-function model_scope(array $m): string { return model_resting($m['id']) ? 'Daily limit reached — back tomorrow' : $m['scope']; }
+function model_scope(array $m): string {
+    if (($m['provider'] ?? 'gemini') === 'openrouter') { return (string)$m['scope']; }
+    return model_resting($m['id']) ? 'Daily limit reached — back tomorrow' : (string)$m['scope'];
+}
 
 /* ── public model menu: three quick picks + "More models" (every catalogue model) ── */
 function public_models(): array {
@@ -196,7 +231,12 @@ function custom_model_by_id(string $id): ?array { return catalog_model($id); }
 function public_custom_models(): array {
     $out = [];
     foreach (model_catalog() as $m) {
-        $out[] = ['id' => $m['id'], 'label' => $m['label'], 'company' => $m['company'], 'scope' => model_scope($m), 'icon' => $m['icon'], 'vision' => true];
+        $out[] = [
+            'id' => $m['id'], 'label' => $m['label'], 'company' => $m['company'],
+            'provider' => (string)($m['provider_label'] ?? 'Google'),
+            'scope' => model_scope($m), 'icon' => $m['icon'],
+            'vision' => (bool)($m['vision'] ?? (($m['provider'] ?? 'gemini') === 'gemini')),
+        ];
     }
     return $out;
 }
@@ -210,16 +250,20 @@ function model_label(string $id): string {
 }
 /* label of the model that actually answered (a busy model may hand over to a sibling) */
 function used_model_label($used, string $fallback): string {
-    if (is_string($used) && strpos($used, 'gemini:') === 0) { $m = catalog_model(substr($used, 7)); if ($m) { return $m['label']; } }
+    if (is_string($used) && (strpos($used, 'gemini:') === 0 || strpos($used, 'openrouter:') === 0)) {
+        $m = catalog_model(substr($used, strpos($used, ':') + 1));
+        if ($m) { return $m['label']; }
+    }
     return $fallback;
 }
 /* system prompt for a named model: honest identity, like a model-comparison site */
 function model_persona(string $modelId, bool $blind = false): string {
     $m = catalog_model($modelId);
     $label = $m ? $m['label'] : 'an AI model';
+    $company = $m ? (string)($m['company'] ?? 'the model provider') : 'the model provider';
     $who = $blind
         ? 'You are an anonymous AI model in a blind Battle on Devil AI (a site by BlazeNXT where people compare AI models). The user votes before model names are shown, so never reveal your model name, version or maker — if asked, say your identity is revealed after they vote. '
-        : 'You are ' . $label . ', a model made by Google, answering a user on Devil AI (a site by BlazeNXT where people chat with and compare AI models). ';
+        : 'You are ' . $label . ', a model made by ' . $company . ', answering a user on Devil AI (a site by BlazeNXT where people chat with and compare AI models). ';
     return $who
         . 'Current date: ' . date('l, j F Y') . '. Trust fresh information over older built-in knowledge. '
         . 'Reply in the same language the user writes in. Format answers clearly with Markdown (short paragraphs, lists, code blocks) where it helps.';
@@ -228,7 +272,10 @@ function model_persona(string $modelId, bool $blind = false): string {
 /* engines visible to the ADMIN only (after password) */
 function admin_engine_list(): array {
     $out = [];
-    foreach (model_catalog() as $m) { $out[] = ['id' => 'gemini:' . $m['id'], 'label' => $m['label'] . ' (' . $m['scope'] . ')']; }
+    foreach (model_catalog() as $m) {
+        if (($m['provider'] ?? 'gemini') !== 'gemini') { continue; }
+        $out[] = ['id' => 'gemini:' . $m['id'], 'label' => $m['label'] . ' (' . $m['scope'] . ')'];
+    }
     return $out;
 }
 
@@ -246,16 +293,40 @@ function model_engine_defaults(): array {
 
 /* resolve a public model id to an engine */
 function engine_for(array $cfg, string $model_id): array {
-    if (gemini_api_key($cfg) === '') { return ['kind' => 'none', 'id' => 'none', 'endpoint' => 'none', 'max_prompt' => 0]; }
+    $none = ['kind' => 'none', 'id' => 'none', 'endpoint' => 'none', 'max_prompt' => 0];
     if ($model_id === 'agent') {
+        if (gemini_api_key($cfg) === '') { return $none; }
         $eng = (string)($cfg['agent_engine'] ?? '');
         $model = preg_match('/^gemini:([a-z0-9._-]{2,60})$/i', $eng, $m) ? strtolower($m[1]) : 'auto';
         return ['kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini', 'model' => $model, 'label' => 'Devil Agent', 'max_prompt' => 0, 'vision' => true, 'agent' => true];
     }
-    if (strpos($model_id, 'custom:') === 0) { $model = catalog_model(substr($model_id, 7)) ? strtolower(substr($model_id, 7)) : slot_model('custom'); }
-    elseif (catalog_model($model_id)) { $model = strtolower($model_id); }
-    else { $model = slot_model(in_array($model_id, ['flash', 'pro', 'ultra', 'custom'], true) ? $model_id : 'flash'); }
-    return ['kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini', 'model' => $model, 'label' => custom_public_label($model), 'max_prompt' => 0, 'vision' => true, 'agent' => false];
+    $catalogId = '';
+    if (strpos($model_id, 'custom:') === 0) {
+        $candidate = strtolower(substr($model_id, 7));
+        $catalogId = catalog_model($candidate) ? $candidate : slot_model('custom');
+    } elseif (catalog_model($model_id)) {
+        $catalogId = strtolower($model_id);
+    } else {
+        $catalogId = slot_model(in_array($model_id, ['flash', 'pro', 'ultra', 'custom'], true) ? $model_id : 'flash');
+    }
+    $meta = catalog_model($catalogId);
+    if (!$meta) { return $none; }
+    if (($meta['provider'] ?? 'gemini') === 'openrouter') {
+        if (openrouter_api_key($cfg) === '') { return array_merge($none, ['error' => 'The OpenRouter key is not configured. Add it in Admin settings.']); }
+        return [
+            'kind' => 'openrouter', 'id' => 'openrouter', 'endpoint' => 'openrouter',
+            'model' => (string)$meta['provider_model'], 'catalog_id' => (string)$meta['id'],
+            'label' => (string)$meta['label'], 'max_prompt' => 0,
+            'vision' => !empty($meta['vision']), 'agent' => false,
+        ];
+    }
+    if (gemini_api_key($cfg) === '') { return $none; }
+    return [
+        'kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini',
+        'model' => $catalogId, 'catalog_id' => $catalogId,
+        'label' => (string)$meta['label'], 'max_prompt' => 0,
+        'vision' => true, 'agent' => false,
+    ];
 }
 
 /* ── users (no passwords — email-code login) ── */
@@ -1412,8 +1483,13 @@ function ai_prompt_limits(array $cfg): array {
 }
 
 
-/* ══════════════ Gemini engine ══════════════ */
+/* ══════════════ model engines ══════════════ */
+const OPENROUTER_ROOT = 'https://openrouter.ai/api/v1';
 const GEMINI_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
+function openrouter_api_key(array $cfg): string {
+    $key = trim((string)($cfg['openrouter_api_key'] ?? ''));
+    return preg_match('/^[A-Za-z0-9._-]{20,500}$/', $key) ? $key : '';
+}
 function gemini_api_key(array $cfg): string {
     $k = trim((string)($cfg['gemini_api_key'] ?? ''));
     return preg_match('/^[A-Za-z0-9_.\-]{20,300}$/', $k) ? $k : '';   /* old AIza… keys and the newer auth-key format */
@@ -1546,10 +1622,85 @@ function gemini_call(array $cfg, array $models, array $messages, string $image =
     return [false, $last, 'Devil AI will retry automatically — try again in a moment.', null];
 }
 
+function openrouter_call(array $cfg, string $providerModel, string $catalogId, array $messages, string $image = '', string $system = '', bool $vision = false): array {
+    $key = openrouter_api_key($cfg);
+    if ($key === '') { return [false, 'The OpenRouter key is not configured. Add it in Admin settings.', null, null]; }
+    if (!function_exists('curl_init')) { return [false, 'The selected model is temporarily unavailable.', null, null]; }
+    if ($image !== '' && !$vision) { return [false, 'This model cannot read images. Choose a vision model or remove the image.', null, null]; }
+
+    $out = [];
+    if (trim($system) !== '') { $out[] = ['role' => 'system', 'content' => $system]; }
+    $lastUser = -1;
+    foreach ($messages as $message) {
+        if (!is_array($message)) { continue; }
+        $role = (string)($message['role'] ?? '');
+        if (!in_array($role, ['user', 'assistant'], true)) { continue; }
+        $text = (string)($message['content'] ?? '');
+        if (trim($text) === '') { continue; }
+        $out[] = ['role' => $role, 'content' => $text];
+        if ($role === 'user') { $lastUser = count($out) - 1; }
+    }
+    if ($lastUser < 0) { $out[] = ['role' => 'user', 'content' => 'Hello.']; $lastUser = count($out) - 1; }
+    if ($image !== '') {
+        if (!preg_match('~^data:(image/(?:png|jpe?g|webp|gif));base64,[A-Za-z0-9+/]+={0,2}$~i', $image)) {
+            return [false, 'The attached image could not be sent to this model.', null, null];
+        }
+        $text = (string)$out[$lastUser]['content'];
+        $out[$lastUser]['content'] = [
+            ['type' => 'text', 'text' => $text],
+            ['type' => 'image_url', 'image_url' => ['url' => $image]],
+        ];
+    }
+
+    $req = [
+        'model' => $providerModel,
+        'messages' => $out,
+        'temperature' => 0.5,
+        'max_tokens' => max(256, min(32768, (int)($cfg['openrouter_max_output'] ?? 8192))),
+    ];
+    $body = json_encode($req, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($body === false) { return [false, 'The selected model is temporarily unavailable.', null, null]; }
+    $ch = curl_init(OPENROUTER_ROOT . '/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json; charset=utf-8',
+            'Authorization: Bearer ' . $key,
+            'HTTP-Referer: ' . app_base_url(),
+            'X-Title: Devil AI',
+        ],
+        CURLOPT_TIMEOUT => 45, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_ENCODING => '',
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $json = is_string($raw) ? json_decode($raw, true) : null;
+    if ($raw === false || $status === 0 || !is_array($json)) {
+        return [false, 'The selected model is temporarily unavailable. Try again in a moment.', null, null];
+    }
+    if ($status === 401 || $status === 403) { return [false, 'The OpenRouter key is invalid or not allowed. Check Admin settings.', null, null]; }
+    if ($status === 402) { return [false, 'This model needs provider credits. Check the account before retrying.', null, null]; }
+    if ($status === 404) { return [false, 'This model is not available right now. Choose another model.', null, null]; }
+    if ($status === 429) { return [false, 'This model is busy or has reached its request limit. Try again later.', null, null]; }
+    if ($status >= 500) { return [false, 'The selected model is temporarily unavailable. Try again in a moment.', null, null]; }
+    if ($status >= 400) { return [false, 'The selected model could not answer this request. Try another model.', null, null]; }
+
+    $content = $json['choices'][0]['message']['content'] ?? '';
+    if (is_array($content)) {
+        $parts = [];
+        foreach ($content as $part) { if (is_array($part) && isset($part['text']) && is_string($part['text'])) { $parts[] = $part['text']; } }
+        $content = implode('', $parts);
+    }
+    $text = is_string($content) ? trim($content) : '';
+    if ($text === '') { return [false, 'The selected model returned an empty answer. Try again or choose another model.', null, null]; }
+    return [true, $text, null, 'openrouter:' . $catalogId];
+}
+
 /* full pipeline. $strict = compare modes (Battle / Side by Side): the named model only, no stand-in */
 function ai_respond(array $cfg, string $modelId, array $messages, string $image = '', bool $strict = false, bool $blind = false): array {
     $engine = engine_for($cfg, $modelId);
-    if (($engine['kind'] ?? '') !== 'gemini') { return [false, 'The AI engine is not configured yet.', null]; }
+    $kind = (string)($engine['kind'] ?? 'none');
+    if (!in_array($kind, ['gemini', 'openrouter'], true)) { return [false, (string)($engine['error'] ?? 'The AI engine is not configured yet.'), null]; }
     $isAgent = !empty($engine['agent']);
     $model = (string)$engine['model'];
 
@@ -1569,6 +1720,11 @@ function ai_respond(array $cfg, string $modelId, array $messages, string $image 
         } else { $rest[] = $m; }
     }
     $system = static function (string $mdl) use ($sys, $blind): string { return implode("\n\n", array_merge([model_persona($mdl, $blind)], $sys)); };
+    if ($kind === 'openrouter') {
+        $catalogId = (string)($engine['catalog_id'] ?? '');
+        list($ok, $txt, $hint, $used) = openrouter_call($cfg, $model, $catalogId, $rest, $image, $system($catalogId), !empty($engine['vision']));
+        return $ok ? [true, $txt, $used] : [false, (string)$txt, null];
+    }
 
     if ($isAgent || $model === 'auto') {
         $models = $model === 'auto' ? gemini_order(gemini_models($cfg)) : [$model];
@@ -1740,7 +1896,10 @@ function battle_pool(): array {
     static $pool = null;
     if ($pool !== null) { return $pool; }
     $pool = [];
-    foreach (model_catalog() as $m) { $pool[] = ['id' => 'custom:' . $m['id'], 'label' => $m['label'], 'icon' => $m['icon']]; }
+    foreach (model_catalog() as $m) {
+        if (($m['provider'] ?? 'gemini') === 'openrouter' && empty($m['free'])) { continue; }
+        $pool[] = ['id' => 'custom:' . $m['id'], 'label' => $m['label'], 'icon' => $m['icon']];
+    }
     return $pool;
 }
 function battle_model_ok(string $id): bool {
@@ -2152,11 +2311,13 @@ function public_chat_payload(array $chat, array $user): array {
         if (!is_array($m)) { continue; }
         $role = (string)($m['role'] ?? '');
         if ($role !== 'user' && $role !== 'assistant') { continue; }
+        $m = devil_share_public_message($m);
         $one = [
             'role' => $role,
             'content' => (string)($m['content'] ?? ''),
             'ts' => (int)($m['ts'] ?? 0),
         ];
+        if (!empty($m['share_redacted'])) { $one['redacted'] = true; }
         if (!empty($m['img']) && is_string($m['img'])) { $one['img'] = (string)$m['img']; }
         if (!empty($m['attachments']) && is_array($m['attachments'])) {
             $atts = [];
@@ -2176,6 +2337,8 @@ function public_chat_payload(array $chat, array $user): array {
         if ($role === 'assistant' && !empty($m['model_label'])) { $one['model_label'] = (string)$m['model_label']; }
         $messages[] = $one;
     }
+    $title = (string)($chat['title'] ?? 'Shared chat');
+    if (devil_share_contains_secret($title)) { $title = 'Shared chat'; }
     return [
         'title' => (string)($chat['title'] ?? 'Shared chat'),
         'created' => time(),
@@ -2502,6 +2665,7 @@ try {
                 'smtp_username' => (string)($cfg['smtp_username'] ?? ''),
                 'smtp_password_set' => (string)($cfg['smtp_password'] ?? '') !== '',
                 'resend_api_key_set' => (string)($cfg['resend_api_key'] ?? '') !== '',
+                'openrouter_api_key_set' => openrouter_api_key($cfg) !== '',
             ],
         ]);
     }
@@ -2581,6 +2745,17 @@ try {
             if ($rk !== '') { $new['resend_api_key'] = mb_substr($rk, 0, 500); }
         }
         if (!empty($in['resend_api_key_clear'])) { $new['resend_api_key'] = ''; }
+        if (isset($in['openrouter_api_key']) && is_string($in['openrouter_api_key'])) {
+            $orKey = trim($in['openrouter_api_key']);
+            if ($orKey !== '') {
+                if (!preg_match('/^[A-Za-z0-9._-]{20,500}$/', $orKey)) { json_out(['ok' => false, 'error' => 'OpenRouter key format is invalid.'], 400); }
+                $new['openrouter_api_key'] = $orKey;
+            } elseif (!empty($in['openrouter_api_key_clear'])) {
+                $new['openrouter_api_key'] = '';
+            }
+        } elseif (!empty($in['openrouter_api_key_clear'])) {
+            $new['openrouter_api_key'] = '';
+        }
         if (isset($in['new_admin_password']) && is_string($in['new_admin_password'])) {
             $np = trim($in['new_admin_password']);
             if ($np !== '') {

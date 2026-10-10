@@ -25,10 +25,13 @@ return [
         'ultra' => 'gemini:gemini-3.8-flash',
     ],
 
-    /* Gemini settings (only used by the 'gemini:key' engine).
+    /* Gemini settings (also used by Agent Mode and the quick picks).
        Free key: https://aistudio.google.com/apikey */
     'gemini_api_key' => '',
     'gemini_model'   => 'gemini-2.5-flash',
+
+    /* OpenRouter models use this key. Set it in Admin settings; never commit a real key here. */
+    'openrouter_api_key' => '',
 
     /* ═══════ PUBLIC DEPLOYMENT ═══════ */
 

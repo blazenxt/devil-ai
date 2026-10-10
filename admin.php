@@ -86,6 +86,11 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
       <div class="section" id="tab-models">
         <div class="row"><div><label>Quick pick 1 (fast)</label><select id="aFlash"></select></div><div><label>Quick pick 2 (balanced)</label><select id="aPro"></select></div></div>
         <label>Quick pick 3 (best)</label><select id="aUltra"></select>
+        <hr class="divider">
+        <label>OpenRouter API key <span style="color:var(--dim2);font-weight:500">(leave empty to keep saved)</span></label>
+        <input id="openrouterKey" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Not set">
+        <p class="hint">Saved only in this server's private settings. Agent Mode and the three quick picks continue using Gemini. Usage-based models are marked and are not selected randomly in Battle.</p>
+        <div class="switchrow"><span><b>Remove saved OpenRouter key</b><small>Clear the key when you save settings.</small></span><button class="switch" id="clearOpenrouterKey" type="button" aria-pressed="false"></button></div>
         <div class="row"><div><label for="aRate">Messages per user per hour</label><input id="aRate" type="number" min="1" max="1000" inputmode="numeric"></div><div><label for="aChats">Max saved chats per user</label><input id="aChats" type="number" min="1" max="500" inputmode="numeric"></div></div>
         <div class="btnrow"><button class="btn primary saveBtn" type="button"><?= icon('check', 15) ?> Save settings</button></div>
         <div class="status" id="modelStatus"></div>
@@ -180,6 +185,9 @@ function fill(cfg, sec, adminUser) {
   fillSelect($('#aUltra'), (CFG.engines || {}).ultra);
   $('#aRate').value = CFG.rate_per_hour || 40;
   $('#aChats').value = CFG.max_chats || 100;
+  $('#openrouterKey').value = '';
+  $('#openrouterKey').placeholder = CFG.openrouter_api_key_set ? 'Key saved — leave blank to keep' : 'Paste the API key here';
+  setSwitch($('#clearOpenrouterKey'), false);
   $('#adminEmails').value = joinLines(CFG.admin_emails || []);
   $('#aPw').value = '';
   setSwitch($('#recaptchaToggle'), !!CFG.security_require_recaptcha);
@@ -241,7 +249,9 @@ function payload() {
     smtp_secure: $('#smtpSecure').value,
     smtp_username: $('#smtpUser').value.trim(),
     smtp_password: $('#smtpPass').value,
-    resend_api_key: $('#resendKey').value.trim()
+    resend_api_key: $('#resendKey').value.trim(),
+    openrouter_api_key: $('#openrouterKey').value.trim(),
+    openrouter_api_key_clear: getSwitch($('#clearOpenrouterKey'))
   };
 }
 function unlock() {
