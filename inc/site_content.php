@@ -123,7 +123,7 @@ function site_page_content(string $p): ?array {
 <h2>What we build</h2>
 </div>
 <div class="feat">
-  <div><span class="sic">' . icon('message', 18) . '</span><b>Chat</b><p>Nine Google models (Gemini Flash, Flash Lite and Gemma) by their real names — with files, images, voice, sharing and export.</p></div>
+  <div><span class="sic">' . icon('message', 18) . '</span><b>Chat</b><p>Gemini and OpenRouter models by their real names — with files, images, voice, sharing and export.</p></div>
   <div><span class="sic">' . icon('swords', 18) . '</span><b>Battles</b><p>Anonymous head-to-head comparisons that power the public leaderboard.</p></div>
   <div><span class="sic">' . icon('spark', 18) . '</span><b>Agent</b><p>An agent with its own workspace that builds, runs and tests real software.</p></div>
   <div><span class="sic">' . icon('shield', 18) . '</span><b>Privacy</b><p>No passwords, no ad trackers, and chats that you can delete at any time.</p></div>
