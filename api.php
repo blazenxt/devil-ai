@@ -3558,7 +3558,9 @@ try {
                     $ghNote = 'GITHUB REPOSITORY: the user connected ' . $ghLink['repo'] . ' (base branch ' . $ghLink['branch'] . '). It is cloned at /home/user/work/' . $ghLink['dir']
                         . ' and checked out on your working branch ' . $ghLink['work_branch'] . '. Work INSIDE that folder (cd ' . $ghLink['dir'] . ' && …): read the code first (README, structure, package files), follow its style, run its tests/build if it has them.'
                         . (in_array((string)($ghLink['pr_state'] ?? ''), ['merged', 'closed'], true) ? ' NOTE: the pull request of this session was already ' . $ghLink['pr_state'] . ', so nothing more can be pushed from this chat — you may still read, run and explain the code, but tell the user to start a NEW chat for new changes to ship.' : '')
-                        . ' The user watches your changes live in the Diff tab. When the requested change is done and checked, call github_pr (line 1 = PR title, then a short description of what changed and how it was tested) to commit, push and open the pull request — then give the user the PR link. Never push to ' . $ghLink['branch'] . ' directly and never print the token.';
+                        . ' The user watches your changes live in the Diff tab. When the requested change is done and checked, call github_pr (line 1 = PR title, then a short description of what changed and how it was tested) to commit, push and open the pull request — then give the user the PR link.'
+                        . (!empty($ghLink['pr']) && ($ghLink['pr_state'] ?? 'open') === 'open' ? ' The open pull request of this chat is ' . $ghLink['pr'] . '.' : '')
+                        . ' If the user explicitly asks to merge / accept / approve the pull request, call github_pr with the single word "merge" as input (you DO have this ability — never say you lack access); the user can also press Merge in the bar under the message box. Never merge on your own initiative, never push to ' . $ghLink['branch'] . ' directly and never print the token.';
                 }
             }
 

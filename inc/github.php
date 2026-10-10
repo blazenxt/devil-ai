@@ -147,6 +147,18 @@ function gh_tool_pr(array $cfg, string $sid, string $uid, array $link, string $i
     if (!$g) { return ['ok' => false, 'text' => 'GitHub is not connected. Ask the user to connect it in Settings → GitHub.']; }
     $dir = (string)($link['dir'] ?? ''); $repo = (string)($link['repo'] ?? ''); $base = (string)($link['branch'] ?? ''); $work = (string)($link['work_branch'] ?? '');
     if ($dir === '' || !gh_valid_repo($repo) || !gh_valid_branch($work)) { return ['ok' => false, 'text' => 'No GitHub repository is connected to this chat.']; }
+    /* "merge" (optionally "merge squash|merge|rebase") on line 1 = merge the open pull request — only on the user's explicit request */
+    if (preg_match('/^\s*merge(?:\s+(squash|merge|rebase))?\s*$/i', (string)strtok(trim($input) . "\n", "\n"), $mm)) {
+        if (empty($link['pr'])) { return ['ok' => false, 'text' => 'There is no pull request yet. Open one first (github_pr with a title), then merge it.']; }
+        $pi = gh_pr_info((string)$g['token'], $link);
+        if ($pi && $pi['state'] === 'merged') { return ['ok' => true, 'text' => 'The pull request ' . $link['pr'] . ' is already merged.', 'meta' => ['pr' => (string)$link['pr'], 'pr_state' => 'merged']]; }
+        if ($pi && $pi['state'] === 'closed') { return ['ok' => false, 'text' => 'The pull request ' . $link['pr'] . ' was closed without merging, so it cannot be merged.']; }
+        if ($pi && $pi['mergeable'] === false) { return ['ok' => false, 'text' => 'GitHub reports merge conflicts on ' . $link['pr'] . '. Tell the user to resolve them on GitHub (or ask you to fix the branch) before merging.']; }
+        $r = gh_pr_merge((string)$g['token'], $link, strtolower((string)($mm[1] ?? 'squash')));
+        if (empty($r['ok'])) { return ['ok' => false, 'text' => (string)$r['error']]; }
+        return ['ok' => true, 'text' => 'Merged ' . $link['pr'] . ' into ' . $base . ' (commit ' . substr((string)$r['sha'], 0, 7) . '). This chat can no longer push to that pull request; new work needs a new chat.',
+            'meta' => ['pr' => (string)$link['pr'], 'pr_state' => 'merged']];
+    }
     if (!empty($link['pr'])) {
         $pi = gh_pr_info((string)$g['token'], $link);
         if ($pi && $pi['state'] !== 'open') {
@@ -180,12 +192,13 @@ function gh_tool_pr(array $cfg, string $sid, string $uid, array $link, string $i
 }
 
 /** remember the PR link on the chat so the Diff tab can show it */
-function gh_remember_pr(string $uid, array $link, string $url): void {
+function gh_remember_pr(string $uid, array $link, string $url, string $state = 'open'): void {
     $cid = (string)($link['chat_id'] ?? '');
     if ($cid === '' || !function_exists('load_chat')) { return; }
     $c = load_chat($uid, $cid);
     if (!$c || !is_array($c['github'] ?? null)) { return; }
     $c['github']['pr'] = $url;
+    $c['github']['pr_state'] = in_array($state, ['open', 'merged', 'closed'], true) ? $state : 'open';
     save_chat($uid, $c);
 }
 
@@ -234,7 +247,7 @@ function gh_oauth_check(string $state): string {
 function gh_oauth_url(string $uid): string {
     $o = gh_oauth_cfg();
     if (!$o) { return ''; }
-    return 'https://github.com/login/oauth/authorize?' . http_build_query(['client_id' => $o['id'], 'redirect_uri' => gh_oauth_callback_url(), 'scope' => 'repo read:user', 'state' => gh_oauth_state($uid), 'allow_signup' => 'true']);
+    return 'https://github.com/login/oauth/authorize?' . http_build_query(['client_id' => $o['id'], 'redirect_uri' => gh_oauth_callback_url(), 'scope' => 'repo', 'state' => gh_oauth_state($uid), 'allow_signup' => 'true']);
 }
 /** finish the OAuth dance → ['ok'=>bool,'error'=>..,'login'=>..] */
 function gh_oauth_finish(string $code, string $state): array {

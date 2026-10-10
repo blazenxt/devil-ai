@@ -3106,7 +3106,7 @@ function agtRow(s, running) {
       if (m.audio && SBX.on) { extra = agtAudio(m.audio); }
       break;
     case 'present_file': verb = running ? 'Opening' : 'Present'; openPath = running ? '' : first; break;
-    case 'github_pr': verb = running ? 'Opening pull request' : 'Pull request'; arg = first;
+    case 'github_pr': verb = /^\s*merge\b/i.test(first) && !inp.split('\n')[1] ? (running ? 'Merging pull request' : 'Merge pull request') : (running ? 'Opening pull request' : 'Pull request'); arg = /^\s*merge\b/i.test(first) && m.pr ? String(m.pr).replace(/^https:\/\/github\.com\//, '') : first;
       body = (inp.split('\n').slice(1).join('\n').trim() ? '<div class="agt-lb">Description</div>' + agtPre(inp.split('\n').slice(1).join('\n').trim()) : '') + (out ? '<div class="agt-lb">Result</div>' + agtPre(out) : '');
       if (m.pr && /^https:\/\/github\.com\//.test(String(m.pr))) {
         extra = document.createElement('div'); extra.className = 'agt-media';
@@ -3692,7 +3692,7 @@ function agentStop() {
 function sbxAfterStep(s) {
   if (!SBX.on) { return; }
   SBX.lastList = 0;
-  if (s.ok && s.meta && s.meta.pr && GH.link) { GH.link.pr = String(s.meta.pr); GH.link.pr_state = 'open'; ghRender(); ghRefresh(); }
+  if (s.ok && s.meta && s.meta.pr && GH.link) { GH.link.pr = String(s.meta.pr); GH.link.pr_state = s.meta.pr_state || 'open'; if (GH.pr) { GH.pr.state = GH.link.pr_state; } ghRender(); ghRefresh(); }
   if (s.ok && s.meta && s.meta.present) {
     SBX.view = { path: String(s.meta.present) };
     openWsTab('files');

@@ -805,7 +805,7 @@ function agent_tool_short(string $name, string $desc): string {
         'image_search' => 'Find real openly licensed photos and save them. INPUT: line 1 = what to find (simple English); optional "count: 3", "folder: images".',
         'generate_speech' => 'Text → spoken audio. INPUT: line 1 = output .mp3/.wav; optional "voice: Kore" or "voices: Host=Kore, Guest=Puck" (dialogue lines start with "Host:"/"Guest:"); optional "style: …"; then the text (≤4,000 chars).',
         'present_file' => 'Open a finished file in the user\'s viewer. INPUT: path.',
-        'github_pr' => 'Commit + push your branch of the connected repo and open/update the pull request. INPUT: line 1 PR title, then description.',
+        'github_pr' => 'Commit + push your branch of the connected repo and open/update the pull request. INPUT: line 1 PR title, then description. Input "merge" merges the open PR — only when the user explicitly asks to merge/accept it.',
         'stop_server' => 'Stop the server on a port. INPUT: port.',
         'list_files' => 'List files. INPUT: folder or ".".',
         'start_server' => 'Start a dev server in the background and get its preview URL. INPUT: line 1 = port, line 2 = command (bind 0.0.0.0).',

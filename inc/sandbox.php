@@ -475,7 +475,7 @@ function sbx_agent_tools_all(): array {
         'generate_speech'=> 'Turn text into natural spoken audio (voiceovers, narration, podcasts, pronunciation). INPUT: line 1 = output file (.mp3 or .wav, e.g. audio/intro.mp3); optional "voice: Kore" (voices: Kore firm, Puck upbeat, Charon informative, Zephyr bright, Aoede breezy, Leda youthful, Fenrir excitable, Sulafat warm, Achird friendly, Gacrux mature …); optional "voices: Host=Kore, Guest=Puck" for a two-person dialogue whose lines start with "Host:" / "Guest:"; optional "style: warm and slow"; then the text (up to ~4,000 characters, any language).',
         'present_file'   => 'Open a finished file (report, document, slides, sheet, image, audio, video, PDF, page) in the user\'s viewer so they see the result right away. INPUT: path. Use it once for the main deliverable at the end.',
         'stop_server'    => 'Stop the app/server listening on a port. INPUT: port.',
-        'github_pr'      => 'Commit all changes in the connected GitHub repository on your working branch, push it and open (or update) the pull request. INPUT: line 1 = PR title, then a short description (what changed, how it was tested). Returns the PR link.',
+        'github_pr'      => 'Commit all changes in the connected GitHub repository on your working branch, push it and open (or update) the pull request. INPUT: line 1 = PR title, then a short description (what changed, how it was tested). Returns the PR link. To MERGE the open pull request write only "merge" as the input — do this ONLY when the latest user message explicitly asks to merge / accept the PR (never on your own).',
         'full_internet'  => 'Move this chat to a sandbox with FULL internet (2 CPU, 4 GB RAM). Use it only when the task needs websites/APIs that the current sandbox cannot reach. Your /home/user/work files are copied (node_modules / venvs are not); running servers must be restarted. INPUT: one short reason.',
         'ask_user'       => 'Ask the user a clarifying question (or for something you need) and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- " (optional " — explanation"). For secrets add lines "need: ENV_NAME | label" instead of options. Several questions at once (max 4): start each with "Q: " and put its "- " options under it.',
     ];
@@ -974,7 +974,7 @@ function sbx_run_tool_raw(array $ctx, string $name, string $input): array {
         case 'github_pr': {
             if (empty($cfg['_gh']) || empty($ctx['uid'])) { return ['ok' => false, 'text' => 'No GitHub repository is connected to this chat. The user can connect one with the GitHub button next to the message box.']; }
             $r = gh_tool_pr($cfg, $sid, (string)$ctx['uid'], (array)$cfg['_gh'], $input);
-            if (!empty($r['meta']['pr']) && function_exists('gh_remember_pr')) { gh_remember_pr((string)$ctx['uid'], (array)$cfg['_gh'], (string)$r['meta']['pr']); }
+            if (!empty($r['meta']['pr']) && function_exists('gh_remember_pr')) { gh_remember_pr((string)$ctx['uid'], (array)$cfg['_gh'], (string)$r['meta']['pr'], (string)($r['meta']['pr_state'] ?? 'open')); }
             return $r;
         }
         case 'read_file': {
