@@ -97,3 +97,4 @@ All responses are JSON. All error messages are in English.
 ---
 
 Devil AI v1.0.0.0 • Developed by [BlazeNXT](https://www.blazenxt.in) • Sinfully smart, surprisingly helpful.
+- 
