@@ -203,7 +203,9 @@ function drive_tool_list(array $cfg, string $input): array {
         if (preg_match('/^folder\s*:\s*(.+)$/i', $l, $m)) { $folder = trim($m[1]); continue; }
         if ($l !== '') { $folder = $l; }
     }
-    if ($folder === '') { $folder = drive_creds($cfg)['root'] ?: 'root'; }
+    $c = drive_creds($cfg);
+    $ownRoot = ($folder === '' && $c['root'] === '');
+    if ($folder === '') { $folder = $c['root'] ?: 'root'; }
     $fid = drive_folder_id($cfg, $folder);
     if (empty($fid['ok'])) { return ['ok' => false, 'text' => $fid['error']]; }
     $q = "'" . drive_escape((string)$fid['id']) . "' in parents and trashed = false";
@@ -212,8 +214,27 @@ function drive_tool_list(array $cfg, string $input): array {
     ]));
     if (empty($r['ok'])) { return ['ok' => false, 'text' => $r['error']]; }
     $files = (array)($r['json']['files'] ?? []);
-    if (!$files) { return ['ok' => true, 'text' => 'No files in that Drive folder.']; }
-    $out = 'Drive folder "' . ($fid['name'] ?? $fid['id']) . '" — ' . count($files) . " item(s):\n";
+    $label = $fid['name'] ?? $fid['id'];
+    /* A service account owns its own Drive, which is empty until something is uploaded to it.
+       Folders the owner shared with it are NOT under its root — they come back under
+       sharedWithMe, so fall back to that instead of reporting "no files". */
+    if (!$files && $ownRoot && is_array($c['sa'])) {
+        $r2 = drive_api($cfg, 'GET', 'https://www.googleapis.com/drive/v3/files?' . http_build_query([
+            'q' => 'sharedWithMe = true and trashed = false',
+            'pageSize' => $limit, 'fields' => drive_fields(), 'orderBy' => 'folder,name',
+        ]));
+        if (!empty($r2['ok'])) {
+            $shared = (array)($r2['json']['files'] ?? []);
+            if ($shared) { $files = $shared; $label = 'Shared with me'; }
+        }
+    }
+    if (!$files) {
+        $why = (is_array($c['sa']) && $ownRoot)
+            ? 'Nothing here yet. A service account has its own empty Drive — open Google Drive, share a folder with ' . $c['sa']['client_email'] . ' (Editor), then run this again.'
+            : 'No files in that Drive folder.';
+        return ['ok' => true, 'text' => $why];
+    }
+    $out = 'Drive folder "' . $label . '" — ' . count($files) . " item(s):\n";
     foreach ($files as $f) { $out .= drive_line($f) . "\n"; }
     $out .= "\nUse drive_read with an id to open one.";
     return ['ok' => true, 'text' => $out];

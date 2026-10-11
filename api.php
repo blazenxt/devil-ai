@@ -2992,20 +2992,36 @@ try {
         }
         $tok = drive_access_token($cfg);
         if (empty($tok['ok'])) { json_out(['ok' => false, 'error' => (string)$tok['error']]); }
+        $sa = drive_creds($cfg)['sa'];
+        $root = (string)($cfg['drive_root_folder'] ?? '') ?: 'root';
         $r = drive_api($cfg, 'GET', 'https://www.googleapis.com/drive/v3/files?' . http_build_query([
-            'q' => "'root' in parents and trashed = false", 'pageSize' => 5, 'fields' => 'files(id,name,mimeType)',
+            'q' => "'" . $root . "' in parents and trashed = false", 'pageSize' => 5, 'fields' => 'files(id,name,mimeType)',
         ]), null, [], 15);
         if (empty($r['ok'])) { json_out(['ok' => false, 'error' => (string)$r['error']]); }
         $files = (array)($r['json']['files'] ?? []);
+        $source = 'My Drive';
+        /* service accounts own an empty Drive of their own; shared folders only show under sharedWithMe */
+        if (!$files && is_array($sa)) {
+            $r2 = drive_api($cfg, 'GET', 'https://www.googleapis.com/drive/v3/files?' . http_build_query([
+                'q' => 'sharedWithMe = true and trashed = false', 'pageSize' => 5, 'fields' => 'files(id,name,mimeType)',
+            ]), null, [], 15);
+            if (!empty($r2['ok'])) {
+                $shared = (array)($r2['json']['files'] ?? []);
+                if ($shared) { $files = $shared; $source = 'Shared with me'; }
+            }
+        }
         $names = [];
         foreach (array_slice($files, 0, 5) as $f) { $names[] = (string)($f['name'] ?? '?'); }
-        $sa = drive_creds($cfg)['sa'];
         json_out([
             'ok' => true,
             'mode' => is_array($sa) ? 'Service account' : 'OAuth refresh token',
             'account' => is_array($sa) ? (string)$sa['client_email'] : (string)($cfg['drive_client_id'] ?? ''),
+            'source' => $source,
             'files' => count($files),
             'sample' => $names,
+            'note' => (!$files && is_array($sa))
+                ? 'Connected, but this service account cannot see anything yet. Open Google Drive, share a folder with ' . $sa['client_email'] . ' as Editor, then test again.'
+                : '',
         ]);
     }
 

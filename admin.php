@@ -159,7 +159,7 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <div class="row"><div><label for="driveCid">Client id</label><input id="driveCid" placeholder="Saved — leave blank to keep" autocomplete="off"></div><div><label for="driveSec">Client secret</label><input id="driveSec" type="password" placeholder="Saved — leave blank to keep" autocomplete="new-password"></div></div>
         <label for="driveRef">Refresh token</label>
         <input id="driveRef" type="password" placeholder="Saved — leave blank to keep" autocomplete="new-password">
-        <p class="hint">Sees the whole Drive of the account that authorised it. Create credentials in Google Cloud Console → APIs &amp; Services → Credentials (type: Web application, redirect <code>https://ai.devil.blazenxt.com/admin.php</code>).</p>
+        <p class="hint">Sees the whole Drive of the account that authorised it. Easiest way to get the three values: Google Cloud Console → APIs &amp; Services → Credentials → create an <b>OAuth client ID</b> (type: <b>Web application</b>, add the redirect URI <code>https://developers.google.com/oauthplayground</code>), then use the <b>OAuth 2.0 Playground</b> (gear icon → "Use your own OAuth credentials") to pick the Drive scope and swap the code for a refresh token. Scope used: <code>https://www.googleapis.com/auth/drive</code></p>
 
         <hr class="divider">
         <label for="driveRoot">Limit to one folder <span style="color:var(--dim2);font-weight:500">(optional folder id)</span></label>
@@ -377,8 +377,9 @@ $('#driveTestBtn').addEventListener('click', function () {
     if (j.ok) {
       var s = j.sample || [];
       status('#integrationsStatus',
-        'Connected (' + j.mode + '). Root listing returned ' + j.files + ' item(s)'
-        + (s.length ? ': ' + s.join(', ') : '') + '.',
+        'Connected — ' + j.mode + ' (' + (j.account || '') + '). ' + (j.source || 'My Drive')
+        + ' returned ' + j.files + ' item(s)' + (s.length ? ': ' + s.join(', ') : '.')
+        + (j.note ? '\n' + j.note : ''),
         'ok');
     } else { status('#integrationsStatus', j.error || 'Drive test failed.', 'bad'); }
   });
