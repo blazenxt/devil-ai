@@ -36,6 +36,17 @@ return [
     /* OpenRouter models use this key. Set it in Admin settings; never commit a real key here. */
     'openrouter_api_key' => '',
 
+    /* ═══════ GOOGLE DRIVE CONNECTOR (Devil Agent) ═══════
+       Either paste a service-account JSON key, or use an OAuth client id +
+       secret + refresh token. Leave everything empty and the Drive tools
+       simply report that Drive is not connected. Stored in data/config.json,
+       never sent to the browser. */
+    'drive_service_account' => '',   /* whole contents of the service-account .json key file */
+    'drive_client_id'       => '',
+    'drive_client_secret'   => '',
+    'drive_refresh_token'   => '',
+    'drive_root_folder'     => '',   /* optional: limit the agent to this folder id */
+
     /* ═══════ PUBLIC DEPLOYMENT ═══════ */
 
     /* Password for the Admin settings panel (empty = password login disabled;

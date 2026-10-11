@@ -13,15 +13,43 @@ declare(strict_types=1);
 /* mbstring fallbacks (some shared hosts don't have the extension) */
 if (!function_exists('mb_substr')) { function mb_substr($s, $a, $b = null) { return $b === null ? substr((string)$s, $a) : substr((string)$s, $a, $b); } }
 if (!function_exists('mb_strlen')) { function mb_strlen($s) { return strlen((string)$s); } }
+/* extra agent tools: keyless public APIs, and the Google Drive connector (both work with or without a sandbox) */
+require_once __DIR__ . '/agent_tools_plus.php';
+require_once __DIR__ . '/agent_tools_drive.php';
+
+/** the site config, loaded once per request (used to decide which tools to advertise) */
+function agent_cfg_lazy(): array {
+    static $c = null;
+    if ($c === null) { $c = function_exists('load_config') ? (array)load_config() : []; }
+    return $c;
+}
 
 /* ── tool catalogue ── */
 function agent_tools(): array {
-    return [
+    $t = [
         'web_search' => 'Search the web for current information. INPUT: one search query (plain text, one line).',
         'fetch_url'  => 'Read the text of a public web page or PDF. INPUT: one full http(s) URL; long pages come in parts — add a second line "part: 2" for the next part. PDFs are also saved in the workspace (downloads/). Internal/private addresses are blocked.',
         'calculator' => 'Evaluate a math expression safely (no code execution). INPUT: one arithmetic expression, e.g. 12 * (3 + 4) ^ 2.',
         'datetime'   => 'Get the current server date and time. INPUT: ignored, or a timezone name like Asia/Kolkata.',
+        'weather'    => 'Current weather and a 3-day forecast for a place. INPUT: a city or place name, e.g. "Asansol".',
+        'crypto_price' => 'Live crypto price with 24h change. INPUT: CoinGecko ids (bitcoin, ethereum, solana), comma separated; optional line "vs: usd,inr".',
+        'currency'   => 'Convert money between currencies (ECB rates). INPUT: "100 USD to INR".',
+        'wikipedia'  => 'Read the intro of a Wikipedia article. INPUT: the article title.',
+        'json_query' => 'Pull one value out of a JSON document. INPUT: line "path: data.items[0].name" (or the path on line 1), then the JSON.',
+        'hash_text'  => 'Hash or encode text. INPUT: line 1 = md5 | sha1 | sha256 | sha512 | crc32 | base64 | unbase64 | urlencode, then the text.',
+        'uuid'       => 'Generate random UUID v4 identifiers. INPUT: how many (1-50), default 1.',
+        'qr_code'    => 'Make a QR code image for text or a URL and save it. INPUT: the text or URL.',
+        'url_shorten' => 'Shorten one long URL. INPUT: the full http(s) URL.',
     ];
+    /* the Drive tools are only advertised once the site owner has saved credentials */
+    if (drive_configured(agent_cfg_lazy())) {
+        $t['drive_list']   = 'List files in a Google Drive folder. INPUT: optional folder id/name (blank = the configured root), optional line "limit: 30".';
+        $t['drive_search'] = 'Search Google Drive by name or contents. INPUT: the search terms.';
+        $t['drive_read']   = 'Read a Google Drive file (Docs/Sheets/Slides are exported as text). INPUT: a file id, or a file name.';
+        $t['drive_upload'] = 'Create a text file in Google Drive. INPUT: line 1 = file name, optional "folder: X", then the contents.';
+        $t['drive_folder'] = 'Create a folder in Google Drive. INPUT: line 1 = folder name, optional line "in: parent folder".';
+    }
+    return $t;
 }
 
 function agent_system_prompt(): string {
@@ -534,6 +562,24 @@ function agent_run_tool(array $cfg, string $name, string $input, ?array $sbx = n
             return !empty($r['ok']) ? ['ok' => true, 'text' => 'Result: ' . $r['result']] : ['ok' => false, 'text' => 'Calculator error: ' . $r['error']];
         case 'datetime':
             return agent_tool_datetime($cfg, $input);
+
+        /* ── keyless utility tools ── */
+        case 'weather':      return plus_weather($input);
+        case 'crypto_price': return plus_crypto($input);
+        case 'currency':     return plus_currency($input);
+        case 'wikipedia':    return plus_wikipedia($input);
+        case 'json_query':   return plus_json_query($input);
+        case 'hash_text':    return plus_hash($input);
+        case 'uuid':         return plus_uuid($input);
+        case 'qr_code':      return plus_qr($input);
+        case 'url_shorten':  return plus_shorten($input);
+
+        /* ── Google Drive connector (needs credentials in Admin → Integrations) ── */
+        case 'drive_list':   return drive_tool_list($cfg, $input);
+        case 'drive_search': return drive_tool_search($cfg, $input);
+        case 'drive_read':   return drive_tool_read($cfg, $input);
+        case 'drive_upload': return drive_tool_upload($cfg, $input);
+        case 'drive_folder': return drive_tool_create_folder($cfg, $input);
     }
     return ['ok' => false, 'text' => "Unknown tool '{$name}'. Available: " . implode(', ', array_keys(agent_tools()))];
 }

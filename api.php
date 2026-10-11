@@ -2779,6 +2779,14 @@ try {
                 'openrouter_api_key_set' => openrouter_api_key($cfg) !== '',
                 'gemini_api_key_count' => count(gemini_api_keys($cfg)),
                 'gemini_api_key_tails' => array_map(static function (string $k): string { return '••••' . substr($k, -4); }, gemini_api_keys($cfg)),
+                'drive_connected' => drive_configured($cfg),
+                'drive_mode' => is_array(drive_creds($cfg)['sa']) ? 'service_account'
+                    : ((string)($cfg['drive_client_id'] ?? '') !== '' ? 'oauth' : 'none'),
+                'drive_client_id_set'  => trim((string)($cfg['drive_client_id'] ?? '')) !== '',
+                'drive_secret_set'     => trim((string)($cfg['drive_client_secret'] ?? '')) !== '',
+                'drive_refresh_set'    => trim((string)($cfg['drive_refresh_token'] ?? '')) !== '',
+                'drive_root_folder'    => (string)($cfg['drive_root_folder'] ?? ''),
+                'drive_sa_email'       => is_array(drive_creds($cfg)['sa']) ? (string)drive_creds($cfg)['sa']['client_email'] : '',
             ],
         ]);
     }
@@ -2896,6 +2904,41 @@ try {
             $new['gemini_api_keys'] = [];
             @unlink(gemini_key_state_path());
         }
+        /* ── Google Drive connector credentials ── */
+        if (isset($in['drive_service_account']) && is_string($in['drive_service_account'])) {
+            $sa = trim($in['drive_service_account']);
+            if ($sa !== '') {
+                $j = json_decode($sa, true);
+                if (!is_array($j) || empty($j['client_email']) || empty($j['private_key'])) {
+                    json_out(['ok' => false, 'error' => 'That service-account key is not valid JSON, or it is missing client_email / private_key.'], 400);
+                }
+                $new['drive_service_account'] = $sa;
+            }
+        }
+        foreach (['drive_client_id' => 300, 'drive_client_secret' => 300, 'drive_refresh_token' => 500] as $dk => $maxlen) {
+            if (!isset($in[$dk]) || !is_string($in[$dk])) { continue; }
+            $v = trim($in[$dk]);
+            if ($v === '') { continue; }
+            if (!preg_match('/^[A-Za-z0-9._\-\/]{6,' . $maxlen . '}$/', $v)) {
+                json_out(['ok' => false, 'error' => 'The Google Drive ' . str_replace('drive_', '', str_replace('_', ' ', $dk)) . ' contains characters it should not have.'], 400);
+            }
+            $new[$dk] = $v;
+        }
+        if (isset($in['drive_root_folder']) && is_string($in['drive_root_folder'])) {
+            $v = trim($in['drive_root_folder']);
+            if ($v !== '' && !preg_match('/^[A-Za-z0-9_-]{5,200}$/', $v)) {
+                json_out(['ok' => false, 'error' => 'The Drive root folder must be a folder id (letters, digits, dash, underscore).'], 400);
+            }
+            $new['drive_root_folder'] = $v;
+        }
+        if (!empty($in['drive_clear'])) {
+            $new['drive_service_account'] = '';
+            $new['drive_client_id'] = '';
+            $new['drive_client_secret'] = '';
+            $new['drive_refresh_token'] = '';
+            $new['drive_root_folder'] = '';
+            @unlink(drive_state_path());
+        }
         if (isset($in['new_admin_password']) && is_string($in['new_admin_password'])) {
             $np = trim($in['new_admin_password']);
             if ($np !== '') {
@@ -2935,6 +2978,35 @@ try {
         $text = "Devil AI mail test\nIf this reached Gmail, SMTP/mail delivery is working.\nTime: " . date('c');
         $ok = devil_mail($to, 'Devil AI mail test', $html, $text);
         json_out(['ok' => $ok, 'to' => $to, 'error' => $ok ? '' : 'Mail send failed. Check SMTP settings or data/mail.log.']);
+    }
+
+    if ($action === 'admin_drive_test' && $method === 'POST') {
+        $in = input_json();
+        if (!admin_ok((string)($in['current_admin_password'] ?? ''))) {
+            json_out(['ok' => false, 'error' => 'Admin password is incorrect.'], 403);
+        }
+        @unlink(drive_state_path());   /* force a fresh token exchange so the test is honest */
+        $cfg = load_config();
+        if (!drive_configured($cfg)) {
+            json_out(['ok' => false, 'error' => 'Google Drive is not configured yet. Paste a service-account key (or client id, secret and refresh token) and save first.']);
+        }
+        $tok = drive_access_token($cfg);
+        if (empty($tok['ok'])) { json_out(['ok' => false, 'error' => (string)$tok['error']]); }
+        $r = drive_api($cfg, 'GET', 'https://www.googleapis.com/drive/v3/files?' . http_build_query([
+            'q' => "'root' in parents and trashed = false", 'pageSize' => 5, 'fields' => 'files(id,name,mimeType)',
+        ]), null, [], 15);
+        if (empty($r['ok'])) { json_out(['ok' => false, 'error' => (string)$r['error']]); }
+        $files = (array)($r['json']['files'] ?? []);
+        $names = [];
+        foreach (array_slice($files, 0, 5) as $f) { $names[] = (string)($f['name'] ?? '?'); }
+        $sa = drive_creds($cfg)['sa'];
+        json_out([
+            'ok' => true,
+            'mode' => is_array($sa) ? 'Service account' : 'OAuth refresh token',
+            'account' => is_array($sa) ? (string)$sa['client_email'] : (string)($cfg['drive_client_id'] ?? ''),
+            'files' => count($files),
+            'sample' => $names,
+        ]);
     }
 
     if ($action === 'admin_feedback' && $method === 'POST') {

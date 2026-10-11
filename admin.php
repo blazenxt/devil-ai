@@ -63,6 +63,7 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <button class="tab" data-tab="security" type="button"><?= icon('shield', 16) ?> Security</button>
         <button class="tab" data-tab="mail" type="button"><?= icon('mail', 16) ?> Mail</button>
         <button class="tab" data-tab="admins" type="button"><?= icon('users', 16) ?> Admins</button>
+        <button class="tab" data-tab="integrations" type="button"><?= icon('layers', 16) ?> Integrations</button>
       </div>
     </aside>
 
@@ -139,6 +140,35 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <div class="btnrow"><button class="btn primary saveBtn" type="button"><?= icon('check', 15) ?> Save admins</button></div>
         <div class="status" id="adminStatus"></div>
       </div>
+
+      <div class="section" id="tab-integrations">
+        <h2 style="font-size:1.05rem;margin:0 0 4px"><?= icon('layers', 16) ?> Google Drive</h2>
+        <p class="hint">Lets Devil Agent list, search, read and upload files in your Google Drive. Credentials stay in this server's private settings and are never shown back in the browser.</p>
+
+        <div class="grid" style="margin:12px 0 4px">
+          <div class="mini"><b><?= icon('layers', 14) ?> Status</b><strong id="driveStateTxt">Not connected</strong><p class="hint" id="driveModeTxt">Add credentials to switch the Drive tools on.</p></div>
+        </div>
+
+        <hr class="divider">
+        <label>Option A — service account key (recommended) <span style="color:var(--dim2);font-weight:500">(paste the whole .json file)</span></label>
+        <textarea id="driveSa" rows="5" spellcheck="false" placeholder='{"type":"service_account","client_email":"…@….iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----…"}'></textarea>
+        <p class="hint">No browser sign-in needed. Share the Drive folder you want the agent to see with the service-account e-mail shown below after saving. <span id="driveSaEmail"></span></p>
+
+        <hr class="divider">
+        <label>Option B — OAuth client id + secret + refresh token</label>
+        <div class="row"><div><label for="driveCid">Client id</label><input id="driveCid" placeholder="Saved — leave blank to keep" autocomplete="off"></div><div><label for="driveSec">Client secret</label><input id="driveSec" type="password" placeholder="Saved — leave blank to keep" autocomplete="new-password"></div></div>
+        <label for="driveRef">Refresh token</label>
+        <input id="driveRef" type="password" placeholder="Saved — leave blank to keep" autocomplete="new-password">
+        <p class="hint">Sees the whole Drive of the account that authorised it. Create credentials in Google Cloud Console → APIs &amp; Services → Credentials (type: Web application, redirect <code>https://ai.devil.blazenxt.com/admin.php</code>).</p>
+
+        <hr class="divider">
+        <label for="driveRoot">Limit to one folder <span style="color:var(--dim2);font-weight:500">(optional folder id)</span></label>
+        <input id="driveRoot" placeholder="Leave blank for the whole Drive" autocomplete="off">
+        <div class="switchrow"><span><b>Disconnect Google Drive</b><small>Clear every saved Drive credential.</small></span><button class="switch" id="driveClear" type="button" aria-pressed="false"></button></div>
+
+        <div class="btnrow"><button class="btn primary saveBtn" type="button"><?= icon('check', 15) ?> Save integrations</button><button class="btn ghost" id="driveTestBtn" type="button"><?= icon('zap', 15) ?> Test connection</button></div>
+        <div class="status" id="integrationsStatus"></div>
+      </div>
     </section>
   </div>
 </main>
@@ -201,6 +231,19 @@ function fill(cfg, sec, adminUser) {
   $('#geminiKeyInfo').textContent = gkTails.length ? ('Saved: ' + gkTails.join(', ')) : '';
   setSwitch($('#replaceGeminiKeys'), false);
   setSwitch($('#clearGeminiKeys'), false);
+  var dconn = !!CFG.drive_connected;
+  $('#driveStateTxt').textContent = dconn ? 'Connected' : 'Not connected';
+  $('#driveModeTxt').textContent = dconn
+    ? ('Mode: ' + (CFG.drive_mode === 'service_account' ? 'service account' : 'OAuth refresh token') + (CFG.drive_sa_email ? ' • ' + CFG.drive_sa_email : ''))
+    : 'Add credentials to switch the Drive tools on.';
+  $('#driveSa').value = '';
+  $('#driveSa').placeholder = CFG.drive_mode === 'service_account' ? 'Service-account key saved — leave blank to keep' : 'Paste the service-account .json here';
+  $('#driveSaEmail').textContent = CFG.drive_sa_email ? ('Share folders with: ' + CFG.drive_sa_email) : '';
+  $('#driveCid').value = ''; $('#driveCid').placeholder = CFG.drive_client_id_set ? 'Saved — leave blank to keep' : 'Client id';
+  $('#driveSec').value = ''; $('#driveSec').placeholder = CFG.drive_secret_set ? 'Secret saved — leave blank to keep' : 'Client secret';
+  $('#driveRef').value = ''; $('#driveRef').placeholder = CFG.drive_refresh_set ? 'Refresh token saved — leave blank to keep' : 'Refresh token';
+  $('#driveRoot').value = CFG.drive_root_folder || '';
+  setSwitch($('#driveClear'), false);
   $('#adminEmails').value = joinLines(CFG.admin_emails || []);
   $('#aPw').value = '';
   setSwitch($('#recaptchaToggle'), !!CFG.security_require_recaptcha);
@@ -267,7 +310,13 @@ function payload() {
     openrouter_api_key_clear: getSwitch($('#clearOpenrouterKey')),
     gemini_api_keys: $('#geminiKeys').value.trim(),
     gemini_api_keys_replace: getSwitch($('#replaceGeminiKeys')),
-    gemini_api_keys_clear: getSwitch($('#clearGeminiKeys'))
+    gemini_api_keys_clear: getSwitch($('#clearGeminiKeys')),
+    drive_service_account: $('#driveSa').value.trim(),
+    drive_client_id: $('#driveCid').value.trim(),
+    drive_client_secret: $('#driveSec').value.trim(),
+    drive_refresh_token: $('#driveRef').value.trim(),
+    drive_root_folder: $('#driveRoot').value.trim(),
+    drive_clear: getSwitch($('#driveClear'))
   };
 }
 function unlock() {
@@ -322,6 +371,18 @@ function loadFeedback() {
   });
 }
 $('#feedbackRefreshBtn').addEventListener('click', loadFeedback);
+$('#driveTestBtn').addEventListener('click', function () {
+  status('#integrationsStatus', 'Testing Google Drive…');
+  post('admin_drive_test', { current_admin_password: PW }).then(function (j) {
+    if (j.ok) {
+      var s = j.sample || [];
+      status('#integrationsStatus',
+        'Connected (' + j.mode + '). Root listing returned ' + j.files + ' item(s)'
+        + (s.length ? ': ' + s.join(', ') : '') + '.',
+        'ok');
+    } else { status('#integrationsStatus', j.error || 'Drive test failed.', 'bad'); }
+  });
+});
 $('#mailTestBtn').addEventListener('click', function () {
   status('#mailStatus', 'Sending test mail…');
   post('admin_mail_test', { current_admin_password: PW, to: $('#mailTestTo').value.trim() }).then(function (j) {
