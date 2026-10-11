@@ -3072,7 +3072,7 @@ try {
     /* ─────────── USER (login required) ─────────── */
 
     $user = current_user();
-    if (in_array($action, ['gh_get', 'gh_save', 'gh_delete', 'gh_repos', 'gh_branches', 'gh_unlink', 'sbx_diff', 'gh_oauth_url', 'gh_status', 'gh_pr_create', 'gh_pr_merge', 'host_get', 'host_save', 'host_test', 'host_delete', 'chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
+    if (in_array($action, ['gh_get', 'gh_save', 'gh_delete', 'gh_repos', 'gh_branches', 'gh_unlink', 'sbx_diff', 'gh_oauth_url', 'gh_status', 'gh_pr_create', 'gh_pr_merge', 'host_get', 'host_save', 'host_test', 'host_delete', 'chats', 'chat_load', 'chat_send', 'chat_edit', 'chat_share', 'feedback', 'chat_delete', 'chat_rename', 'account_delete', 'dev_keys', 'dev_key_create', 'dev_key_revoke', 'dev_usage', 'dev_playground', 'security_sessions', 'security_session_revoke', 'security_logout_all', 'security_login_history', 'security_alerts', 'security_alert_dismiss', 'security_export', 'agent_toolbox', 'agent_chat', 'agent_start', 'agent_step', 'agent_cancel', 'agent_secret', 'sbx_view_token', 'sbx_info', 'sbx_files', 'sbx_file', 'sbx_zip', 'sbx_upload', 'sbx_delete', 'sbx_ports'], true)) {
         if (!$user) { json_out(['ok' => false, 'error' => 'Please sign in again.'], 401); }
     }
     $uid = $user ? (string)$user['id'] : '';
@@ -3080,6 +3080,33 @@ try {
     /* Release the PHP session lock before chat/file/AI work so parallel requests
        (chat_load + sidebar list, or page refresh + API calls) do not block each other. */
     if ($action !== 'account_delete' && session_status() === PHP_SESSION_ACTIVE) { @session_write_close(); }
+
+    /* ─── Agent toolbox: what this install's agent can do right now (composer → Tools button) ─── */
+    if ($action === 'agent_toolbox') {
+        $cfgT = load_config();
+        $sbxOn = function_exists('sbx_enabled') && sbx_enabled($cfgT);
+        $tools = [];
+        if (function_exists('agent_tools_for')) {
+            foreach (agent_tools_for($sbxOn, $cfgT, '') as $name => $desc) {
+                $tools[] = ['name' => (string)$name, 'desc' => (string)$desc];
+            }
+            usort($tools, static function (array $a, array $b): int { return strcmp($a['name'], $b['name']); });
+        }
+        $driveOn = function_exists('drive_configured') && drive_configured($cfgT);
+        $sa = function_exists('drive_creds') ? drive_creds($cfgT)['sa'] : null;
+        json_out([
+            'ok' => true,
+            'tools' => $tools,
+            'sandbox' => $sbxOn,
+            'connections' => [
+                'github' => ['available' => true, 'oauth' => (bool)(function_exists('gh_oauth_cfg') ? gh_oauth_cfg() : false)],
+                'drive'  => ['available' => true, 'connected' => $driveOn,
+                             'mode' => $driveOn ? (is_array($sa) ? 'Service account' : 'OAuth') : ''],
+                'docs'   => ['available' => false],
+                'notion' => ['available' => false],
+            ],
+        ]);
+    }
 
     /* ─── Hosting (FTP / SFTP): the user's own server for the agent's deploy_site tool ─── */
     /* ── GitHub account (Settings → GitHub) ── */

@@ -13,6 +13,9 @@ data/shares/
 data/api_keys.json
 data/devrl.json
 data/security_rl.json
+data/security_rl/
+data/security_rl.json.*
+data/drive/
 data/security_bans.json
 data/security_datacenter_cidrs.json
 data/mail.log

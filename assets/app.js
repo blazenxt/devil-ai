@@ -4211,6 +4211,93 @@ function ghBranchList(anchor) {
   if (!window.__GUEST) { setTimeout(function () { ghAcct(); }, 400); }
 })();
 
+/* ═══════════════ TOOLS & CONNECTIONS ═══════════════
+   Shows what this install's agent can actually do right now: which services are
+   connected, and the live tool list from the server (never a hardcoded guess). */
+var TB = { tools: [], conns: {}, sbx: false, all: false };
+
+function toolsMenu(anchor) {
+  if (window.__GUEST) { guestGate(); return; }
+  var p = ghPop(anchor, 'menu'); if (!p) { return; }
+  p.style.width = '340px';
+  if (anchor) { anchor.setAttribute('aria-expanded', 'true'); }
+  p.innerHTML = '<div class="gh-load">Loading…</div>';
+  /* ghAcct() is awaited too: the click can beat the 400ms startup fetch, which
+     would otherwise paint GitHub as disconnected when it is not. */
+  Promise.all([api('agent_toolbox', {}), ghAcct()]).then(function (r) {
+    if (!document.body.contains(p)) { return; }
+    var j = r[0] || {};
+    if (!j.ok) { p.innerHTML = '<p class="tb-note">' + esc(j.error || 'Could not load the toolbox.') + '</p>'; return; }
+    TB.tools = j.tools || []; TB.conns = j.connections || {}; TB.sbx = !!j.sandbox; TB.all = false;
+    tbRender(p);
+  }).catch(function () {
+    if (document.body.contains(p)) { p.innerHTML = '<p class="tb-note">Could not load the toolbox.</p>'; }
+  });
+}
+
+function tbRow(ic, name, sub, st, cls, key) {
+  return (key ? '<button type="button" data-tb="' + key + '"' : '<div')
+    + ' class="tb-conn ' + cls + '">'
+    + '<span class="tb-ic">' + (I[ic] || '') + '</span>'
+    + '<span class="tb-tx"><b>' + esc(name) + '</b><small>' + esc(sub) + '</small></span>'
+    + '<span class="tb-st">' + esc(st) + '</span>'
+    + (key ? '</button>' : '</div>');
+}
+
+function tbRender(p) {
+  var c = TB.conns || {}, tools = TB.tools || [];
+  var ghOn = !!(GH.acct && GH.acct.login);
+  var d = c.drive || {};
+  var h = '<div class="tb-sec">Connections</div>';
+  h += tbRow('githubS', 'GitHub',
+    ghOn ? 'Connected as @' + GH.acct.login : 'Agent works on your repositories',
+    ghOn ? 'ON' : 'CONNECT', ghOn ? 'on' : 'off', 'github');
+  h += tbRow('driveB', 'Google Drive',
+    d.connected ? (d.mode || 'Connected') + ' — shared' : 'List, read, search and upload files',
+    d.connected ? 'ON' : 'OFF', d.connected ? 'on' : 'off', 'drive');
+  h += tbRow('docsB', 'Google Docs', 'Planned', 'SOON', 'soon', '');
+  h += tbRow('notionB', 'Notion', 'Planned', 'SOON', 'soon', '');
+
+  h += '<div class="tb-sec"><span>Available tools</span><span class="n">' + tools.length + '</span></div>';
+  var lim = TB.all ? tools.length : 12;
+  h += '<div class="tb-tools">';
+  for (var i = 0; i < tools.length && i < lim; i++) {
+    h += '<span class="tb-chip" title="' + esc(tools[i].desc || tools[i].name) + '">' + esc(tools[i].name) + '</span>';
+  }
+  h += '</div>';
+  if (tools.length > 12) {
+    h += '<button type="button" class="tb-more">' + (TB.all ? 'Show fewer' : 'View all ' + tools.length + ' tools') + '</button>';
+  }
+  if (!TB.sbx) {
+    h += '<p class="tb-note">The sandbox is off, so only the built-in tools are listed. Turn it on in Admin → Agent to add bash, the browser and file tools.</p>';
+  }
+  p.innerHTML = h;
+
+  var more = p.querySelector('.tb-more');
+  if (more) { more.addEventListener('click', function () { TB.all = !TB.all; tbRender(p); }); }
+  var gh = p.querySelector('[data-tb=github]');
+  if (gh) {
+    gh.addEventListener('click', function () {
+      ghPopClose();
+      var b = document.getElementById('ghBtn');
+      if (b) { ghMenu(b, false); }
+    });
+  }
+  var dv = p.querySelector('[data-tb=drive]');
+  if (dv) {
+    dv.addEventListener('click', function () {
+      ghPopClose();
+      toast(d.connected
+        ? 'Google Drive is connected — ask the agent to list or search your files.'
+        : 'Google Drive is not configured yet. An admin can set it up in Admin → Integrations.', 'help');
+    });
+  }
+}
+(function () {
+  var t = document.getElementById('toolsBtn');
+  if (t) { t.addEventListener('click', function () { if (!busy) { toolsMenu(t); } }); }
+})();
+
 /* ── Diff panel: unified / split, line numbers, syntax colours, word-level changes, collapsed unchanged lines ── */
 var GH_KW = {
   js: 'break case catch class const continue debugger default delete do else export extends finally for from function if import in instanceof let new return super switch this throw try typeof var void while with yield async await of null true false undefined',
