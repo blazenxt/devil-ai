@@ -157,50 +157,40 @@ function model_catalog(): array {
         ['id' => 'gemma-4-31b-it',         'label' => 'Gemma 4 31B',            'company' => 'Google', 'scope' => 'Open model — largest Gemma',   'icon' => 'layers',   'thinking' => false],
         ['id' => 'gemma-4-26b-a4b-it',     'label' => 'Gemma 4 26B A4B',        'company' => 'Google', 'scope' => 'Open model — mixture of experts', 'icon' => 'layers', 'thinking' => false],
     ];
+    /* OpenRouter rows are price-checked against https://openrouter.ai/api/v1/models (public, no key needed).
+       A row stays only while BOTH prompt and completion pricing are 0 — anything paid or delisted is removed.
+       Row format: [devil id, openrouter model id, label, company, free, vision, icon] */
     $openrouter = [
-        ['or-apodex-1-1-mini-free', 'apodex/apodex-1.1-mini:free', 'Apodex 1.1 Mini', 'Apodex', true, false, 'layers'],
-        ['or-triton-2-mini-free', 'arcee-ai/triton-2-mini:free', 'Triton 2 Mini', 'Arcee AI', true, false, 'layers'],
-        ['or-triton-2-nano-free', 'arcee-ai/triton-2-nano:free', 'Triton 2 Nano', 'Arcee AI', true, false, 'zap'],
-        ['or-triton-2-small-free', 'arcee-ai/triton-2-small:free', 'Triton 2 Small', 'Arcee AI', true, false, 'layers'],
-        ['or-triton-2-free', 'arcee-ai/triton-2:free', 'Triton 2', 'Arcee AI', true, false, 'layers'],
-        ['or-dolphin-3-r1-mistral-24b-free', 'cognitivecomputations/dolphin-3.0-r1-mistral-24b:free', 'Dolphin 3.0 R1 Mistral 24B', 'Cognitive Computations', true, false, 'brain'],
-        ['or-dots-3-note-preview-free', 'dots-studio/dots-3-note-preview:free', 'Dots 3 Note Preview', 'Dots Studio', true, false, 'fileText'],
-        ['or-ling-3-1-flash', 'inclusionai/ling-3.1-flash', 'InclusionAI Ling 3.1 Flash', 'InclusionAI', false, false, 'sparkles'],
-        ['or-lfm-2-5-2-6b-free', 'liquid/lfm-2.5-2.6b:free', 'Liquid LFM 2.5 2.6B', 'Liquid AI', true, false, 'zap'],
-        ['or-llama-3-2-11b-vision-free', 'meta-llama/llama-3.2-11b-vision-instruct:free', 'Meta Llama 3.2 11B Vision Instruct', 'Meta', true, true, 'eye'],
-        ['or-llama-3-2-1b-free', 'meta-llama/llama-3.2-1b-instruct:free', 'Meta Llama 3.2 1B Instruct', 'Meta', true, false, 'layers'],
-        ['or-llama-3-2-3b-free', 'meta-llama/llama-3.2-3b-instruct:free', 'Meta Llama 3.2 3B Instruct', 'Meta', true, false, 'layers'],
-        ['or-llama-3-3-70b-free', 'meta-llama/llama-3.3-70b-instruct:free', 'Meta Llama 3.3 70B Instruct', 'Meta', true, false, 'layers'],
-        ['or-mistral-small-24b-2501-free', 'mistralai/mistral-small-24b-instruct-2501:free', 'Mistral Small 24B Instruct 2501', 'Mistral AI', true, false, 'layers'],
-        ['or-hermes-3-405b-free', 'nousresearch/hermes-3-llama-3.1-405b:free', 'Hermes 3 Llama 3.1 405B', 'NousResearch', true, false, 'sparkles'],
-        ['or-nemotron-70b-free', 'nvidia/llama-3.1-nemotron-70b-instruct:free', 'NVIDIA Llama 3.1 Nemotron 70B Instruct', 'NVIDIA', true, false, 'sparkles'],
-        ['or-qwen-2-5-coder-32b-free', 'qwen/qwen-2.5-coder-32b-instruct:free', 'Qwen 2.5 Coder 32B Instruct', 'Qwen', true, false, 'code'],
-        ['or-qwen-2-5-vl-72b-free', 'qwen/qwen-2.5-vl-72b-instruct:free', 'Qwen 2.5 VL 72B Instruct', 'Qwen', true, true, 'eye'],
-        ['or-glm-4-flash-free', 'zhipuai/glm-4-flash:free', 'GLM 4 Flash', 'Zhipu AI', true, false, 'brain'],
-        ['or-cohere-north-mini-code-free', 'cohere/north-mini-code:free', 'North Mini Code', 'Cohere', true, false, 'code'],
-        ['or-nemotron-3-nano-omni-free', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 'Nemotron 3 Nano Omni 30B A3B', 'NVIDIA', true, true, 'brain'],
-        ['or-nemotron-3-super-free', 'nvidia/nemotron-3-super-120b-a12b:free', 'Nemotron 3 Super 120B A12B', 'NVIDIA', true, false, 'brain'],
         ['or-nemotron-3-ultra-free', 'nvidia/nemotron-3-ultra-550b-a55b:free', 'Nemotron 3 Ultra 550B A55B', 'NVIDIA', true, false, 'brain'],
+        ['or-nemotron-3-super-free', 'nvidia/nemotron-3-super-120b-a12b:free', 'Nemotron 3 Super 120B A12B', 'NVIDIA', true, false, 'brain'],
         ['or-nemotron-3-5-lightning-free', 'nvidia/nemotron-3.5-lightning:free', 'Nemotron 3.5 Lightning', 'NVIDIA', true, false, 'zap'],
-        ['or-laguna-s-2-1-free', 'poolside/laguna-s-2.1:free', 'Laguna S 2.1', 'Poolside', true, false, 'code'],
-        ['or-laguna-xs-2-1-free', 'poolside/laguna-xs-2.1:free', 'Laguna XS 2.1', 'Poolside', true, false, 'code'],
+        ['or-nemotron-3-nano-omni-free', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 'Nemotron 3 Nano Omni 30B A3B', 'NVIDIA', true, true, 'brain'],
         ['or-inkling-free', 'thinkingmachines/inkling:free', 'Inkling', 'Thinking Machines Lab', true, true, 'sparkles'],
         ['or-inkling-small-free', 'thinkingmachines/inkling-small:free', 'Inkling Small', 'Thinking Machines Lab', true, true, 'sparkles'],
+        ['or-dots-3-note-preview-free', 'dots-studio/dots-3-note-preview:free', 'Dots 3 Note Preview', 'Dots Studio', true, true, 'fileText'],
+        ['or-ling-3-1-flash', 'inclusionai/ling-3.1-flash', 'InclusionAI Ling 3.1 Flash', 'InclusionAI', true, false, 'sparkles'],
+        ['or-laguna-s-2-1-free', 'poolside/laguna-s-2.1:free', 'Laguna S 2.1', 'Poolside', true, false, 'code'],
+        ['or-laguna-xs-2-1-free', 'poolside/laguna-xs-2.1:free', 'Laguna XS 2.1', 'Poolside', true, false, 'code'],
+        ['or-cohere-north-mini-code-free', 'cohere/north-mini-code:free', 'North Mini Code', 'Cohere', true, false, 'code'],
+        ['or-apodex-1-1-mini-free', 'apodex/apodex-1.1-mini:free', 'Apodex 1.1 Mini', 'Apodex', true, false, 'layers'],
+        ['or-lfm-2-5-2-6b-free', 'liquid/lfm-2.5-2.6b:free', 'Liquid LFM 2.5 2.6B', 'Liquid AI', true, false, 'zap'],
+        ['or-auto-free', 'openrouter/free', 'OpenRouter Auto', 'OpenRouter', true, true, 'sparkles'],
     ];
     $listedOpenRouter = [
-        'apodex/apodex-1.1-mini:free' => true,
-        'dots-studio/dots-3-note-preview:free' => true,
-        'inclusionai/ling-3.1-flash' => true,
-        'liquid/lfm-2.5-2.6b:free' => true,
-        'cohere/north-mini-code:free' => true,
-        'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' => true,
-        'nvidia/nemotron-3-super-120b-a12b:free' => true,
         'nvidia/nemotron-3-ultra-550b-a55b:free' => true,
+        'nvidia/nemotron-3-super-120b-a12b:free' => true,
         'nvidia/nemotron-3.5-lightning:free' => true,
-        'poolside/laguna-s-2.1:free' => true,
-        'poolside/laguna-xs-2.1:free' => true,
+        'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' => true,
         'thinkingmachines/inkling:free' => true,
         'thinkingmachines/inkling-small:free' => true,
+        'dots-studio/dots-3-note-preview:free' => true,
+        'inclusionai/ling-3.1-flash' => true,
+        'poolside/laguna-s-2.1:free' => true,
+        'poolside/laguna-xs-2.1:free' => true,
+        'cohere/north-mini-code:free' => true,
+        'apodex/apodex-1.1-mini:free' => true,
+        'liquid/lfm-2.5-2.6b:free' => true,
+        'openrouter/free' => true,
     ];
     foreach ($openrouter as $row) {
         [$id, $providerModel, $label, $company, $free, $vision, $icon] = $row;
@@ -260,6 +250,9 @@ function custom_model_by_id(string $id): ?array { return catalog_model($id); }
 function public_custom_models(): array {
     $out = [];
     foreach (model_catalog() as $m) {
+        /* Same rule as battle_pool(): an OpenRouter model is offered only while it is
+           free AND still live on OpenRouter, so no paid or delisted model ever shows. */
+        if (($m['provider'] ?? 'gemini') === 'openrouter' && (empty($m['free']) || empty($m['listed']))) { continue; }
         $out[] = [
             'id' => $m['id'], 'label' => $m['label'], 'company' => $m['company'],
             'provider' => (string)($m['provider_label'] ?? 'Google'),
