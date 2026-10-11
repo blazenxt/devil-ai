@@ -3547,6 +3547,8 @@ function runAgent(payload) {
   var el = agentLiveEl();
   agentRun = { job: null, el: el, seq: seq, steps: [], fails: 0 };
   var ghp = ghPayload(); if (ghp) { payload.github = ghp; agentStatus(el, 'Cloning ' + ghp.repo + '…'); }
+  /* connector switches: the server hides a switched-off connector's tools entirely */
+  if (typeof tbPayload === 'function') { payload.connectors = tbPayload(); }
   api('agent_start', payload).then(function (j) {
     if (seq !== sendSeq) { return; }
     if (!j.ok) { el.remove(); addErr((j.error || 'Agent failed to start') + (j.hint ? '\nHint: ' + j.hint : '')); agentEnd(); return; }
@@ -4214,10 +4216,16 @@ function ghBranchList(anchor) {
   if (!window.__GUEST) { setTimeout(function () { ghAcct(); }, 400); }
 })();
 
-/* ═══════════════ TOOLS & CONNECTIONS ═══════════════
-   Shows what this install's agent can actually do right now: which services are
-   connected, and the live tool list from the server (never a hardcoded guess). */
-var TB = { conns: {} };
+/* ═══════════════ CONNECTIONS ═══════════════
+   Agent Mode keeps the composer row clean: attaching files, connecting GitHub and
+   the per-connector switches all live in here instead of sitting on the row.
+   A switch that is off must hide that connector's tools from the model too —
+   tbPayload() is sent with the run so the server never advertises them. */
+var TB = { conns: {}, driveOn: true };
+try { if (localStorage.getItem('devil_conn_drive') === '0') { TB.driveOn = false; } } catch (e) {}
+function tbSaveDrive() { try { localStorage.setItem('devil_conn_drive', TB.driveOn ? '1' : '0'); } catch (e) {} }
+/* GitHub's state is GH.on (devil_gh_on) — one source of truth, shared with ghMenu. */
+function tbPayload() { return { github: !!(window.GH && GH.acct && GH.on), drive: !!TB.driveOn }; }
 
 function toolsMenu(anchor) {
   if (window.__GUEST) { guestGate(); return; }
@@ -4238,45 +4246,88 @@ function toolsMenu(anchor) {
   });
 }
 
-function tbRow(ic, name, sub, st, cls, key) {
-  return (key ? '<button type="button" data-tb="' + key + '"' : '<div')
-    + ' class="tb-conn ' + cls + '">'
-    + '<span class="tb-ic">' + (I[ic] || '') + '</span>'
-    + '<span class="tb-tx"><b>' + esc(name) + '</b><small>' + esc(sub) + '</small></span>'
-    + '<span class="tb-st">' + esc(st) + '</span>'
-    + (key ? '</button>' : '</div>');
+/* A connector row: brand mark, name, state, then either a switch or a Connect button. */
+function tbRow(key, ic, name, sub, on, mode) {
+  var icn = '<span class="tb-ic">' + (I[ic] || '') + '</span>';
+  var tx = '<span class="tb-tx"><b>' + esc(name) + '</b><small>' + esc(sub) + '</small></span>';
+  if (mode === 'connect') {
+    return '<button type="button" class="tb-conn off" data-tb="' + key + '">' + icn + tx
+      + '<span class="tb-st">CONNECT</span></button>';
+  }
+  if (mode === 'unavailable') {
+    return '<div class="tb-conn off" data-tb="' + key + '">' + icn + tx
+      + '<span class="tb-st">OFF</span></div>';
+  }
+  return '<label class="tb-conn' + (on ? ' on' : '') + '">' + icn + tx
+    + '<input type="checkbox" data-tbt="' + key + '"' + (on ? ' checked' : '') + '><i class="sw"></i></label>';
 }
 
 function tbRender(p) {
-  var c = TB.conns || {};
-  var ghOn = !!(GH.acct && GH.acct.login);
-  var d = c.drive || {};
+  var d = TB.conns.drive || {};
+  var ghAcct_ = (window.GH && GH.acct && GH.acct.login) ? GH.acct : null;
   var h = '<div class="tb-sec">Connections</div>';
-  h += tbRow('githubS', 'GitHub',
-    ghOn ? 'Connected as @' + GH.acct.login : 'Agent works on your repositories',
-    ghOn ? 'ON' : 'CONNECT', ghOn ? 'on' : 'off', 'github');
-  h += tbRow('driveB', 'Google Drive',
-    d.connected ? (d.mode || 'Connected') + ' — shared' : 'List, read, search and upload files',
-    d.connected ? 'ON' : 'OFF', d.connected ? 'on' : 'off', 'drive');
+
+  if (!ghAcct_) {
+    h += tbRow('ghconnect', 'githubS', 'GitHub', 'Let the agent work on your repositories', false, 'connect');
+  } else {
+    h += tbRow('github', 'githubS', 'GitHub', 'Connected as @' + ghAcct_.login, !!(window.GH && GH.on), 'switch');
+  }
+  if (!d.connected) {
+    h += tbRow('driveinfo', 'driveB', 'Google Drive', 'Not set up on this server', false, 'unavailable');
+  } else {
+    h += tbRow('drive', 'driveB', 'Google Drive', (d.mode || 'Connected') + ' — shared', TB.driveOn, 'switch');
+  }
+
+  /* attachments moved in here so the composer row is just the menu + send */
+  var maxF = (agentMode && SBX.on) ? 20 * 1024 * 1024 : MAX_FILE;
+  h += '<div class="gh-sep"></div>'
+    + '<button type="button" class="tb-conn" data-tb="files">'
+    + '<span class="tb-ic">' + (I.upload || '') + '</span>'
+    + '<span class="tb-tx"><b>Add files</b><small>Up to ' + esc(fmtBytes(maxF)) + ' per file</small></span></button>';
+
   p.innerHTML = h;
 
-  var gh = p.querySelector('[data-tb=github]');
-  if (gh) {
-    gh.addEventListener('click', function () {
-      ghPopClose();
-      var b = document.getElementById('ghBtn');
-      if (b) { ghMenu(b, false); }
+  var gc = p.querySelector('[data-tb=ghconnect]');
+  if (gc) {
+    gc.addEventListener('click', function () {
+      /* hand the GitHub flow this same anchor; clear _anchor first or ghPop()
+         would treat it as a re-click and close instead of opening. */
+      GH._anchor = null;
+      var t = document.getElementById('toolsBtn');
+      if (t) { ghMenu(t, false); }
     });
   }
-  var dv = p.querySelector('[data-tb=drive]');
-  if (dv) {
-    dv.addEventListener('click', function () {
+  var di = p.querySelector('[data-tb=driveinfo]');
+  if (di) {
+    di.addEventListener('click', function () {
       ghPopClose();
-      toast(d.connected
-        ? 'Google Drive is connected — ask the agent to list or search your files.'
-        : 'Google Drive is not configured yet. An admin can set it up in Admin → Integrations.', 'help');
+      toast('Google Drive is not configured yet. An admin can set it up in Admin → Integrations.', 'help');
     });
   }
+  var fi = p.querySelector('[data-tb=files]');
+  if (fi) { fi.addEventListener('click', function () { ghPopClose(); if (!busy) { fileInput.click(); } }); }
+
+  Array.prototype.forEach.call(p.querySelectorAll('[data-tbt]'), function (box) {
+    box.addEventListener('change', function () {
+      if (box.dataset.tbt === 'github') {
+        GH.on = box.checked;
+        store('devil_gh_on', GH.on ? '1' : '0');
+        ghRender();
+        if (GH.on && !(GH.sel && GH.sel.repo)) {
+          ghPopClose();
+          setTimeout(function () {
+            var b = document.querySelector('#ghRow .gh-dd-repo');
+            if (b) { ghRepoList(b); }
+          }, 30);
+        }
+      } else if (box.dataset.tbt === 'drive') {
+        TB.driveOn = box.checked;
+        tbSaveDrive();
+        toast(TB.driveOn ? 'Google Drive tools on' : 'Google Drive tools off — the agent will not touch your Drive.', 'check');
+      }
+      tbRender(p);
+    });
+  });
 }
 (function () {
   var t = document.getElementById('toolsBtn');

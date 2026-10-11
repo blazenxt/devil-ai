@@ -1359,6 +1359,13 @@ body.agent-mode #toolsBtn{display:inline-flex}
 .gh-pop .tb-conn .tb-st{font-size:10.5px;font-weight:800;letter-spacing:.3px;padding:3px 7px;border-radius:99px;flex-shrink:0;background:var(--ag-hover,rgba(127,127,127,.14));color:var(--dim)}
 .gh-pop .tb-conn.on .tb-st{background:color-mix(in srgb,var(--agt-ok,#16a34a) 16%,transparent);color:var(--agt-ok,#16a34a)}
 .gh-pop .tb-conn.off .tb-st{background:var(--ag-hover,rgba(127,127,127,.14));color:var(--dim)}
+/* on/off switch used by the connector rows (kept in sync with .gh-tg .sw) */
+.gh-pop .tb-conn input{position:absolute;opacity:0;pointer-events:none}
+.gh-pop .tb-conn .sw{width:34px;height:20px;border-radius:99px;background:var(--ag-line,var(--border));position:relative;transition:.15s;flex-shrink:0}
+.gh-pop .tb-conn .sw:after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.gh-pop .tb-conn input:checked+.sw{background:var(--agt-ok,#16a34a)}
+.gh-pop .tb-conn input:checked+.sw:after{left:18px}
+.gh-pop .tb-conn input:focus-visible+.sw{outline:2px solid var(--ag-accent,#f43f5e);outline-offset:2px}
 .gh-pop .tb-note{margin:0 8px 8px;color:var(--dim);font-size:12px;line-height:1.45}
 
 /* Agent Mode composer — Arena-style: roomy rounded box, prompt at the top,
@@ -1369,6 +1376,9 @@ body.agent-mode #inp{padding:15px 18px 4px;font-size:1.02rem;line-height:1.5;min
 body.agent-mode.agent-empty #inp{min-height:76px}
 body.agent-mode #inp::placeholder{font-size:1.05rem;letter-spacing:-.01em}
 body.agent-mode .comprow{padding:6px 10px 10px;gap:8px}
+/* Agent Mode keeps the composer row to just the connections menu and send —
+   attaching files and connecting GitHub move into that menu. */
+body.agent-mode #attachBtn,body.agent-mode #ghBtn{display:none!important}
 @media (max-width:600px){
   body.agent-mode .compbox{border-radius:20px}
   body.agent-mode #inp{padding:13px 14px 4px;font-size:1rem}

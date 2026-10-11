@@ -3994,6 +3994,15 @@ try {
                 'max_steps' => max(3, min(100, (static function ($v) { return ($v === 30 || $v === 50 || $v <= 0) ? 80 : $v; })((int)($cfgAll['agent_sandbox_max_steps'] ?? 80)))), 't0' => microtime(true), 'created' => time(), 'updated' => time(),
             ];
             if (!$sbxOn) { $job['max_steps'] = max(1, (int)($cfgAll['agent_max_steps'] ?? 6)); }
+            /* Per-chat connector switches from the composer's Connections menu.
+               A missing key means "leave as-is" so older/other clients are unaffected;
+               an explicit false drops that connector's tools and, for GitHub, skips
+               cloning the repo at all. */
+            $connIn = is_array($in['connectors'] ?? null) ? $in['connectors'] : [];
+            $connOff = [];
+            if (array_key_exists('github', $connIn) && !$connIn['github']) { $ghLink = null; $connOff[] = 'github'; }
+            if (array_key_exists('drive', $connIn) && !$connIn['drive']) { $connOff[] = 'drive'; }
+            if ($connOff) { $job['conn_off'] = $connOff; }
             if ($ghLink) { $job['github'] = $ghLink; $job['note'] = trim((string)($job['note'] ?? '') . "\n" . $ghNote); $saved['github'] = gh_link_public($ghLink); }
             if (!save_json_atomic($jobPath($jid), $job)) { json_out(['ok' => false, 'error' => 'Could not create the agent job — check data/ permissions.'], 500); }
             /* tidy: drop finished jobs older than a day */

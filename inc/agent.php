@@ -632,10 +632,24 @@ function agent_respond(array $cfg, string $modelId, array $messages, callable $r
    keeps every request well under proxy time limits and lets the UI show each
    step live. Job state lives in data/agent_jobs/{uid}/{job}.json. */
 
-function agent_tools_for(bool $sandbox, array $sbxCfg = [], string $sid = ''): array {
+/**
+ * @param array $off  Connector keys the user switched off for this chat ('drive',
+ *                    'github', …). A switched-off connector must not be advertised
+ *                    at all: if we list the tool but then refuse the call, the model
+ *                    just retries it. Every tool whose name is the key or starts
+ *                    with "<key>_" belongs to that connector (drive_* , github_pr…).
+ */
+function agent_tools_for(bool $sandbox, array $sbxCfg = [], string $sid = '', array $off = []): array {
     $t = agent_tools();
     if ($sandbox && function_exists('sbx_agent_tools')) { $t = array_merge(sbx_agent_tools($sbxCfg, $sid), $t); }
     if (!isset($t['ask_user'])) { $t['ask_user'] = 'Ask the user a clarifying question and stop until they answer. INPUT: first line = the question, then up to 4 short options, one per line starting with "- ".'; }
+    foreach ($off as $k) {
+        $k = strtolower(trim((string)$k));
+        if ($k === '') { continue; }
+        foreach (array_keys($t) as $n) {
+            if ($n === $k || str_starts_with($n, $k . '_')) { unset($t[$n]); }
+        }
+    }
     return $t;
 }
 
@@ -746,7 +760,7 @@ function agent_system_prompt_v2(bool $sandbox, array $env = []): string {
     $L[] = '- datetime: use for the current date/time. calculator: for non-trivial arithmetic. fetch_url: read a specific page.';
     $L[] = '';
     $L[] = 'Available tools:';
-    foreach (agent_tools_for($sandbox, (array)($env['cfg'] ?? []), (string)($env['sid'] ?? '')) as $name => $desc) { $L[] = "- {$name}: {$desc}"; }
+    foreach (agent_tools_for($sandbox, (array)($env['cfg'] ?? []), (string)($env['sid'] ?? ''), (array)($env['off'] ?? [])) as $name => $desc) { $L[] = "- {$name}: {$desc}"; }
     $L[] = '';
     $L[] = 'HOW TO CALL A TOOL — end your reply with exactly this (the input may span several lines and runs to the end of your reply):';
     $L[] = 'TOOL: <tool name>';
@@ -892,7 +906,7 @@ function agent_system_prompt_compact(bool $sandbox, array $env = []): string {
     }
     $L[] = 'Date: ' . date('j F Y') . '. Use web_search for current facts.';
     $L[] = 'TOOLS:';
-    foreach (agent_tools_for($sandbox, (array)($env['cfg'] ?? []), (string)($env['sid'] ?? '')) as $name => $desc) { $L[] = '- ' . $name . ': ' . agent_tool_short($name, $desc); }
+    foreach (agent_tools_for($sandbox, (array)($env['cfg'] ?? []), (string)($env['sid'] ?? ''), (array)($env['off'] ?? [])) as $name => $desc) { $L[] = '- ' . $name . ': ' . agent_tool_short($name, $desc); }
     $L[] = 'FORMAT: 1-2 short sentences, then exactly ONE tool call at the very end:';
     $L[] = "TOOL: <name>\nINPUT: <input (may span lines)>";
     $L[] = 'When everything is done and verified: reply to the user with NO tool call — a short summary in the user\'s language AND script (Roman-letter Hinglish like "Aapka app ready hai" if they wrote Hinglish in English letters — never switch to Devanagari unless they wrote Devanagari). Mention files and the preview. If something still does not work, say it plainly.';
@@ -1077,14 +1091,14 @@ function agent_public_tool_message(string $name, string $text, string $input, ar
 function agent_job_advance(array &$job, array $deps): array {
     $cfg = $deps['cfg'];
     $sandbox = !empty($job['sandbox']) && !empty($deps['sbx']);
-    $tools = agent_tools_for($sandbox, (array)($deps['sbx']['cfg'] ?? []), (string)($deps['sbx']['sid'] ?? ''));
+    $tools = agent_tools_for($sandbox, (array)($deps['sbx']['cfg'] ?? []), (string)($deps['sbx']['sid'] ?? ''), (array)($job['conn_off'] ?? []));
     $job['updated'] = time();
 
     if (($job['state'] ?? '') === 'model') {
         $calls = (int)($job['model_calls'] ?? 0);
         $max = (int)($job['max_steps'] ?? 25);
         $cap = agent_engine_cap($cfg, (string)$job['ai_model']);
-        $envP = ['note' => (string)($job['note'] ?? ''), 'cfg' => (array)($deps['cfg'] ?? []), 'sid' => (string)($deps['sbx']['sid'] ?? '')];
+        $envP = ['note' => (string)($job['note'] ?? ''), 'cfg' => (array)($deps['cfg'] ?? []), 'sid' => (string)($deps['sbx']['sid'] ?? ''), 'off' => (array)($job['conn_off'] ?? [])];
         if ($cap > 0) {
             /* small-context engine: one packed prompt, newest result guaranteed to be inside the window */
             $prompt = agent_compact_messages($job, $sandbox, $envP, $cap);
