@@ -183,3 +183,12 @@ mark{background:rgba(250,204,21,.35);color:inherit;border-radius:3px;padding:0 1
 @media (max-width:1000px){.posts{grid-template-columns:repeat(2,1fr)}.steps,.feat{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}.grid2 .scard+.scard{margin-top:0}}
 @media (max-width:900px){body.devil-ui.site-page .site-top{display:flex}.site-wrap{padding:26px 18px 20px}.site-foot{padding:22px 18px 30px}}
 @media (max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}.posts,.steps,.feat,.modes{grid-template-columns:1fr}.brow{grid-template-columns:110px 1fr 42px;gap:8px}.hero h1{font-size:2rem}.spills{width:100%;overflow-x:auto;flex-wrap:nowrap}.lbtbl th:nth-child(5),.lbtbl td:nth-child(5){display:none}.cta-band{padding:18px}}
+
+/* keyboard focus — .searchbox input sets outline:none */
+.searchbox input:focus-visible{outline:2px solid var(--red2,#f43f5e);outline-offset:1px}
+:focus-visible{outline:2px solid var(--red2,#f43f5e);outline-offset:2px}
+
+/* respect the OS "reduce motion" setting (site.css was missing this; app.css has it) */
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
