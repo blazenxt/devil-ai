@@ -3081,29 +3081,20 @@ try {
        (chat_load + sidebar list, or page refresh + API calls) do not block each other. */
     if ($action !== 'account_delete' && session_status() === PHP_SESSION_ACTIVE) { @session_write_close(); }
 
-    /* ─── Agent toolbox: what this install's agent can do right now (composer → Tools button) ─── */
+    /* ─── Agent connections: which services are actually wired up (composer → Tools button).
+          Only real connectors are reported — the panel renders exactly what comes back here. ─── */
     if ($action === 'agent_toolbox') {
         $cfgT = load_config();
-        $sbxOn = function_exists('sbx_enabled') && sbx_enabled($cfgT);
-        $tools = [];
-        if (function_exists('agent_tools_for')) {
-            foreach (agent_tools_for($sbxOn, $cfgT, '') as $name => $desc) {
-                $tools[] = ['name' => (string)$name, 'desc' => (string)$desc];
-            }
-            usort($tools, static function (array $a, array $b): int { return strcmp($a['name'], $b['name']); });
-        }
         $driveOn = function_exists('drive_configured') && drive_configured($cfgT);
         $sa = function_exists('drive_creds') ? drive_creds($cfgT)['sa'] : null;
         json_out([
             'ok' => true,
-            'tools' => $tools,
-            'sandbox' => $sbxOn,
             'connections' => [
-                'github' => ['available' => true, 'oauth' => (bool)(function_exists('gh_oauth_cfg') ? gh_oauth_cfg() : false)],
-                'drive'  => ['available' => true, 'connected' => $driveOn,
+                /* GitHub's connected state comes from the client's ghAcct(), which
+                   validates the token against GitHub — no need to report it here. */
+                'github' => ['oauth' => (bool)(function_exists('gh_oauth_cfg') ? gh_oauth_cfg() : false)],
+                'drive'  => ['connected' => $driveOn,
                              'mode' => $driveOn ? (is_array($sa) ? 'Service account' : 'OAuth') : ''],
-                'docs'   => ['available' => false],
-                'notion' => ['available' => false],
             ],
         ]);
     }

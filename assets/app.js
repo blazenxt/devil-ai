@@ -43,6 +43,9 @@ function syncModeUI() {
     o.setAttribute('aria-checked', on ? 'true' : 'false');
     if (o.dataset.mode === 'agent') { o.disabled = !agentEnabled && !agentMode; }
   });
+  /* Agent Mode uses Arena's invitation-style prompt; other modes keep the plain one. */
+  var ip = document.getElementById('inp');
+  if (ip) { ip.placeholder = agentMode ? 'What would you like to do?' : 'Message Devil AI…'; }
   var h = $('#welcome h2'), p = $('#welcome .sub');
   var w = MODE_WELCOME[chatMode];
   if (h) { h.innerHTML = w.h; }
@@ -4214,12 +4217,12 @@ function ghBranchList(anchor) {
 /* ═══════════════ TOOLS & CONNECTIONS ═══════════════
    Shows what this install's agent can actually do right now: which services are
    connected, and the live tool list from the server (never a hardcoded guess). */
-var TB = { tools: [], conns: {}, sbx: false, all: false };
+var TB = { conns: {} };
 
 function toolsMenu(anchor) {
   if (window.__GUEST) { guestGate(); return; }
   var p = ghPop(anchor, 'menu'); if (!p) { return; }
-  p.style.width = '340px';
+  p.style.width = '300px';
   if (anchor) { anchor.setAttribute('aria-expanded', 'true'); }
   p.innerHTML = '<div class="gh-load">Loading…</div>';
   /* ghAcct() is awaited too: the click can beat the 400ms startup fetch, which
@@ -4227,11 +4230,11 @@ function toolsMenu(anchor) {
   Promise.all([api('agent_toolbox', {}), ghAcct()]).then(function (r) {
     if (!document.body.contains(p)) { return; }
     var j = r[0] || {};
-    if (!j.ok) { p.innerHTML = '<p class="tb-note">' + esc(j.error || 'Could not load the toolbox.') + '</p>'; return; }
-    TB.tools = j.tools || []; TB.conns = j.connections || {}; TB.sbx = !!j.sandbox; TB.all = false;
+    if (!j.ok) { p.innerHTML = '<p class="tb-note">' + esc(j.error || 'Could not load connections.') + '</p>'; return; }
+    TB.conns = j.connections || {};
     tbRender(p);
   }).catch(function () {
-    if (document.body.contains(p)) { p.innerHTML = '<p class="tb-note">Could not load the toolbox.</p>'; }
+    if (document.body.contains(p)) { p.innerHTML = '<p class="tb-note">Could not load connections.</p>'; }
   });
 }
 
@@ -4245,7 +4248,7 @@ function tbRow(ic, name, sub, st, cls, key) {
 }
 
 function tbRender(p) {
-  var c = TB.conns || {}, tools = TB.tools || [];
+  var c = TB.conns || {};
   var ghOn = !!(GH.acct && GH.acct.login);
   var d = c.drive || {};
   var h = '<div class="tb-sec">Connections</div>';
@@ -4255,26 +4258,8 @@ function tbRender(p) {
   h += tbRow('driveB', 'Google Drive',
     d.connected ? (d.mode || 'Connected') + ' — shared' : 'List, read, search and upload files',
     d.connected ? 'ON' : 'OFF', d.connected ? 'on' : 'off', 'drive');
-  h += tbRow('docsB', 'Google Docs', 'Planned', 'SOON', 'soon', '');
-  h += tbRow('notionB', 'Notion', 'Planned', 'SOON', 'soon', '');
-
-  h += '<div class="tb-sec"><span>Available tools</span><span class="n">' + tools.length + '</span></div>';
-  var lim = TB.all ? tools.length : 12;
-  h += '<div class="tb-tools">';
-  for (var i = 0; i < tools.length && i < lim; i++) {
-    h += '<span class="tb-chip" title="' + esc(tools[i].desc || tools[i].name) + '">' + esc(tools[i].name) + '</span>';
-  }
-  h += '</div>';
-  if (tools.length > 12) {
-    h += '<button type="button" class="tb-more">' + (TB.all ? 'Show fewer' : 'View all ' + tools.length + ' tools') + '</button>';
-  }
-  if (!TB.sbx) {
-    h += '<p class="tb-note">The sandbox is off, so only the built-in tools are listed. Turn it on in Admin → Agent to add bash, the browser and file tools.</p>';
-  }
   p.innerHTML = h;
 
-  var more = p.querySelector('.tb-more');
-  if (more) { more.addEventListener('click', function () { TB.all = !TB.all; tbRender(p); }); }
   var gh = p.querySelector('[data-tb=github]');
   if (gh) {
     gh.addEventListener('click', function () {
