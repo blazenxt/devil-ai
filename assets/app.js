@@ -43,9 +43,6 @@ function syncModeUI() {
     o.setAttribute('aria-checked', on ? 'true' : 'false');
     if (o.dataset.mode === 'agent') { o.disabled = !agentEnabled && !agentMode; }
   });
-  /* Agent Mode uses Arena's invitation-style prompt; other modes keep the plain one. */
-  var ip = document.getElementById('inp');
-  if (ip) { ip.placeholder = agentMode ? 'What would you like to do?' : 'Message Devil AI…'; }
   var h = $('#welcome h2'), p = $('#welcome .sub');
   var w = MODE_WELCOME[chatMode];
   if (h) { h.innerHTML = w.h; }
@@ -66,7 +63,12 @@ function syncEmptyState() {
   var empty = !!m && !m.children.length && !document.body.classList.contains('loading-chat');
   document.body.classList.toggle('agent-empty', empty);
   var ta = document.getElementById('inp');
-  if (ta) { ta.placeholder = empty ? 'Ask anything…' : 'Ask followup…'; }
+  if (ta) {
+    /* This runs on every mode change and after every send, so it is the only
+       place that owns the placeholder. Agent Mode uses Arena's invitation-style
+       prompt; the other modes keep the empty / follow-up pair. */
+    ta.placeholder = agentMode ? 'What would you like to do?' : (empty ? 'Ask anything…' : 'Ask followup…');
+  }
 }
 function setWorkspace(open) {
   var p = document.getElementById('wsPanel'), b = document.getElementById('wsBtn');

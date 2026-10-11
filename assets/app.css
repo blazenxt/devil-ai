@@ -377,13 +377,20 @@ body.voice-open{overflow:hidden}
 @media (hover:none){.acts{opacity:1}}
 /* ═══════════ KEYBOARD FOCUS ═══════════
    Nine inputs above set outline:none, which left keyboard users with no visible
-   focus at all. :focus-visible shows the ring for keyboard/AT and stays hidden on click. */
+   focus at all. :focus-visible shows the ring for keyboard/AT — but note it also
+   matches text inputs on click and tap (see the exclusion just below). */
 :focus-visible{outline:2px solid var(--red2,#f43f5e);outline-offset:2px}
-.sb-search input:focus-visible,.csearch:focus-visible,#inp:focus-visible,
-.inlineEditBox textarea:focus-visible,.sheet select:focus-visible,.sheet input:focus-visible,
+.sb-search input:focus-visible,.csearch:focus-visible,
+.sheet select:focus-visible,.sheet input:focus-visible,
 .agt-askc input:focus-visible,.agt-nf input:focus-visible,.gh-pop .gh-sr input:focus-visible{
   outline:2px solid var(--red2,#f43f5e);outline-offset:1px
 }
+/* :focus-visible matches text inputs on click and tap too, not just on keyboard
+   focus, so the composer lit up a bright red ring the moment anyone typed in it —
+   which reads as a validation error. The composer and the inline editor are large
+   and already show focus (caret, .compbox:focus-within border, and their own
+   border-colour/shadow change), so the ring is dropped rather than recoloured. */
+#inp:focus-visible,.inlineEditBox textarea:focus-visible{outline:none}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* ═══════════ LIGHT THEME (Claude-style warm) ═══════════ */
