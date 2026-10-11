@@ -39,6 +39,7 @@ function agent_tools(): array {
         'hash_text'  => 'Hash or encode text. INPUT: line 1 = md5 | sha1 | sha256 | sha512 | crc32 | base64 | unbase64 | urlencode, then the text.',
         'uuid'       => 'Generate random UUID v4 identifiers. INPUT: how many (1-50), default 1.',
         'qr_code'    => 'Make a QR code image for text or a URL and save it. INPUT: the text or URL.',
+        'image_gen'  => 'Generate an image from a text description (no API key needed). INPUT: first line = the description, optional second line = size like 1024x1024.',
         'url_shorten' => 'Shorten one long URL. INPUT: the full http(s) URL.',
     ];
     /* the Drive tools are only advertised once the site owner has saved credentials */
@@ -572,6 +573,7 @@ function agent_run_tool(array $cfg, string $name, string $input, ?array $sbx = n
         case 'hash_text':    return plus_hash($input);
         case 'uuid':         return plus_uuid($input);
         case 'qr_code':      return plus_qr($input);
+        case 'image_gen':    return plus_image_gen($input);
         case 'url_shorten':  return plus_shorten($input);
 
         /* ── Google Drive connector (needs credentials in Admin → Integrations) ── */

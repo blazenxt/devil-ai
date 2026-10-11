@@ -96,8 +96,12 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--soft);margin:15
         <hr class="divider">
         <label>OpenRouter API key <span style="color:var(--dim2);font-weight:500">(leave empty to keep saved)</span></label>
         <input id="openrouterKey" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Not set">
-        <p class="hint">Saved only in this server's private settings. Agent Mode and the three quick picks continue using Gemini. Models without a :free tag are marked and are not selected randomly in Battle.</p>
+        <p class="hint">Saved only in this server's private settings. Only models whose prompt and completion price are both $0 are offered, and they are re-checked against OpenRouter's public list whenever this catalogue is updated.</p>
         <div class="switchrow"><span><b>Remove saved OpenRouter key</b><small>Clear the key when you save settings.</small></span><button class="switch" id="clearOpenrouterKey" type="button" aria-pressed="false"></button></div>
+        <hr class="divider">
+        <label>Agent Mode model</label>
+        <select id="aAgentEngine"></select>
+        <p class="hint">Agent Mode is no longer locked to Gemini — it can run on any model listed here. The agent asks the model to emit <code>TOOL: name</code> / <code>INPUT: args</code> as plain text, so no native function calling is needed; only models strong enough to hold that format are offered. Leave it on <b>Auto</b> for the newest healthy Gemini Flash.</p>
         <div class="row"><div><label for="aRate">Messages per user per hour</label><input id="aRate" type="number" min="1" max="1000" inputmode="numeric"></div><div><label for="aChats">Max saved chats per user</label><input id="aChats" type="number" min="1" max="500" inputmode="numeric"></div></div>
         <div class="btnrow"><button class="btn primary saveBtn" type="button"><?= icon('check', 15) ?> Save settings</button></div>
         <div class="status" id="modelStatus"></div>
@@ -189,7 +193,7 @@ function joinLines(a) { return (a || []).join('\n'); }
 function setSwitch(el, on) { el.classList.toggle('on', !!on); el.setAttribute('aria-pressed', on ? 'true' : 'false'); }
 function getSwitch(el) { return el.classList.contains('on'); }
 function status(id, msg, kind) { var el = $(id); if (!el) { return; } el.className = 'status' + (kind ? ' ' + kind : ''); el.textContent = msg || ''; }
-var ENGINES = [], PW = '', CFG = {}, SEC = {};
+var ENGINES = [], AGENT_ENGINES = [], PW = '', CFG = {}, SEC = {};
 var PILL_ICONS = {
   mail: <?= json_encode(icon('mail', 13), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>,
   shield: <?= json_encode(icon('shield', 13), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>,
@@ -200,6 +204,13 @@ function fillSelect(el, val) {
   el.innerHTML = '';
   ENGINES.forEach(function (en) { var o = document.createElement('option'); o.value = en.id; o.textContent = en.label; el.appendChild(o); });
   el.value = val;
+}
+/* Agent Mode picker: raw catalogue ids, so an unknown/absent value falls back to Auto */
+function fillAgentSelect(el, val) {
+  el.innerHTML = '';
+  AGENT_ENGINES.forEach(function (en) { var o = document.createElement('option'); o.value = en.id; o.textContent = en.label; el.appendChild(o); });
+  el.value = val;
+  if (el.value !== String(val)) { el.value = ''; }
 }
 function renderSecurity() {
   $('#mBans').textContent = SEC.active_ban_count || 0;
@@ -219,6 +230,7 @@ function fill(cfg, sec, adminUser) {
   fillSelect($('#aFlash'), (CFG.engines || {}).flash);
   fillSelect($('#aPro'), (CFG.engines || {}).pro);
   fillSelect($('#aUltra'), (CFG.engines || {}).ultra);
+  fillAgentSelect($('#aAgentEngine'), CFG.agent_engine || '');
   $('#aRate').value = CFG.rate_per_hour || 40;
   $('#aChats').value = CFG.max_chats || 100;
   $('#openrouterKey').value = '';
@@ -308,6 +320,7 @@ function payload() {
     resend_api_key: $('#resendKey').value.trim(),
     openrouter_api_key: $('#openrouterKey').value.trim(),
     openrouter_api_key_clear: getSwitch($('#clearOpenrouterKey')),
+    agent_engine: $('#aAgentEngine').value,
     gemini_api_keys: $('#geminiKeys').value.trim(),
     gemini_api_keys_replace: getSwitch($('#replaceGeminiKeys')),
     gemini_api_keys_clear: getSwitch($('#clearGeminiKeys')),
@@ -325,6 +338,7 @@ function unlock() {
   post('auth', { admin_password: PW }).then(function (j) {
     if (j.ok && j.config) {
       ENGINES = j.engines || [];
+      AGENT_ENGINES = j.agent_engines || [];
       fill(j.config, j.security || {}, !!j.admin_user);
       $('#lockView').classList.add('hidden');
       $('#mainView').classList.remove('hidden');

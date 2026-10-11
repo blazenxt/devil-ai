@@ -203,6 +203,35 @@ function model_catalog(): array {
             'listed' => isset($listedOpenRouter[$providerModel]),
         ];
     }
+    /* Pollinations: the genuinely keyless provider — no signup, no API key.
+       Row format: [devil id, provider model, label, company, free, vision, icon, may drive Agent Mode] */
+    $pollinations = [
+        ['pl-openai-fast', 'openai-fast', 'GPT-OSS 20B', 'Pollinations', true, false, 'sparkles', false],
+    ];
+    foreach ($pollinations as $row) {
+        [$id, $providerModel, $label, $company, $free, $vision, $icon, $mayAgent] = $row;
+        $models[] = [
+            'id' => $id, 'label' => $label, 'company' => $company,
+            'scope' => 'No key needed · Free', 'icon' => $icon, 'thinking' => true,
+            'vision' => $vision,
+            'provider' => 'pollinations', 'provider_label' => 'Pollinations',
+            'provider_model' => $providerModel, 'free' => $free,
+            'listed' => true, 'agent_ok' => $mayAgent,
+        ];
+    }
+    /* Agent Mode asks the model to emit "TOOL: name\nINPUT: args" as plain text,
+       so only models with enough instruction following may drive it. Small ones
+       (LFM 2.6B, Ling, Apodex, GPT-OSS 20B…) drift off the format and stall. */
+    $agentOk = [
+        'gemini-3.8-flash' => true, 'gemini-3.7-flash' => true, 'gemini-3.6-flash' => true,
+        'gemini-3.5-flash' => true, 'gemini-3-flash-preview' => true,
+        'gemini-3.5-flash-lite' => true, 'gemini-3.1-flash-lite' => true,
+        'or-nemotron-3-ultra-free' => true, 'or-nemotron-3-super-free' => true,
+        'or-inkling-free' => true, 'or-inkling-small-free' => true, 'or-auto-free' => true,
+    ];
+    foreach ($models as $i => $m) {
+        $models[$i]['agent_ok'] = !empty($m['agent_ok']) || isset($agentOk[$m['id']]);
+    }
     return $models;
 }
 function catalog_model(string $id): ?array {
@@ -301,6 +330,21 @@ function admin_engine_list(): array {
     return $out;
 }
 
+/* Agent Mode picker: every catalogue model allowed to drive the agent.
+   Ids are raw catalogue ids (not "gemini:…" like the three slot pickers) because
+   engine_for() looks the choice up directly in the catalogue. */
+function admin_agent_engine_list(): array {
+    $out = [['id' => '', 'label' => 'Auto — newest healthy Gemini Flash (default)']];
+    foreach (model_catalog() as $m) {
+        if (empty($m['agent_ok'])) { continue; }
+        $prov  = (string)($m['provider'] ?? 'gemini');
+        $label = $m['label'] . ' · ' . ($prov === 'gemini' ? 'Gemini' : (string)($m['provider_label'] ?? $prov));
+        if ($prov === 'openrouter') { $label .= ' (needs OpenRouter key)'; }
+        $out[] = ['id' => (string)$m['id'], 'label' => $label];
+    }
+    return $out;
+}
+
 /* default slot → engine mapping */
 function model_engine_defaults(): array {
     return [
@@ -317,8 +361,22 @@ function model_engine_defaults(): array {
 function engine_for(array $cfg, string $model_id): array {
     $none = ['kind' => 'none', 'id' => 'none', 'endpoint' => 'none', 'max_prompt' => 0];
     if ($model_id === 'agent') {
-        if (gemini_api_key($cfg) === '') { return $none; }
+        /* Agent Mode is no longer locked to Gemini. The agent drives its tools
+           through plain "TOOL: name\nINPUT: args" text rather than native
+           function calling, so any model with enough instruction following can
+           run it — the gate is agent_ok in the catalogue, not the provider.
+           Falls back to Gemini when the pick is unset, unknown or unusable. */
         $eng = (string)($cfg['agent_engine'] ?? '');
+        $chosen = catalog_model(strtolower(trim($eng)));
+        if ($chosen && !empty($chosen['agent_ok']) && (string)($chosen['provider'] ?? 'gemini') !== 'gemini') {
+            $e = engine_for_model($cfg, $chosen);
+            if (($e['kind'] ?? 'none') !== 'none') {
+                $e['agent'] = true;
+                $e['label'] = 'Devil Agent';
+                return $e;
+            }
+        }
+        if (gemini_api_key($cfg) === '') { return $none; }
         $model = preg_match('/^gemini:([a-z0-9._-]{2,60})$/i', $eng, $m) ? strtolower($m[1]) : 'auto';
         return ['kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini', 'model' => $model, 'label' => 'Devil Agent', 'max_prompt' => 0, 'vision' => true, 'agent' => true];
     }
@@ -333,7 +391,17 @@ function engine_for(array $cfg, string $model_id): array {
     }
     $meta = catalog_model($catalogId);
     if (!$meta) { return $none; }
-    if (($meta['provider'] ?? 'gemini') === 'openrouter') {
+    return engine_for_model($cfg, $meta);
+}
+
+/* Build an engine descriptor for one catalogue row. Shared by the normal chat
+   path and by Agent Mode so both accept the same providers under the same rules:
+   OpenRouter and Gemini need a key, Pollinations needs none and therefore never
+   falls back to Gemini. */
+function engine_for_model(array $cfg, array $meta): array {
+    $none = ['kind' => 'none', 'id' => 'none', 'endpoint' => 'none', 'max_prompt' => 0];
+    $prov = (string)($meta['provider'] ?? 'gemini');
+    if ($prov === 'openrouter') {
         if (openrouter_api_key($cfg) === '') { return array_merge($none, ['error' => 'The OpenRouter key is not configured. Add it in Admin settings.']); }
         return [
             'kind' => 'openrouter', 'id' => 'openrouter', 'endpoint' => 'openrouter',
@@ -342,10 +410,19 @@ function engine_for(array $cfg, string $model_id): array {
             'vision' => !empty($meta['vision']), 'agent' => false,
         ];
     }
+    if ($prov === 'pollinations') {
+        return [
+            'kind' => 'pollinations', 'id' => 'pollinations', 'endpoint' => 'pollinations',
+            'model' => (string)$meta['provider_model'], 'catalog_id' => (string)$meta['id'],
+            'label' => (string)$meta['label'], 'max_prompt' => 0,
+            'vision' => !empty($meta['vision']), 'agent' => false,
+        ];
+    }
     if (gemini_api_key($cfg) === '') { return $none; }
+    $id = (string)$meta['id'];
     return [
         'kind' => 'gemini', 'id' => 'gemini', 'endpoint' => 'gemini',
-        'model' => $catalogId, 'catalog_id' => $catalogId,
+        'model' => $id, 'catalog_id' => $id,
         'label' => (string)$meta['label'], 'max_prompt' => 0,
         'vision' => true, 'agent' => false,
     ];
@@ -1508,6 +1585,9 @@ function ai_prompt_limits(array $cfg): array {
 /* ══════════════ model engines ══════════════ */
 const OPENROUTER_ROOT = 'https://openrouter.ai/api/v1';
 const GEMINI_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
+/* Pollinations is the one genuinely keyless provider: no signup, no API key,
+   so it works for guests and when no provider key is configured at all. */
+const POLLINATIONS_ROOT = 'https://text.pollinations.ai/openai';
 function openrouter_api_key(array $cfg): string {
     $key = trim((string)($cfg['openrouter_api_key'] ?? ''));
     return preg_match('/^[A-Za-z0-9._-]{20,500}$/', $key) ? $key : '';
@@ -1800,16 +1880,110 @@ function openrouter_call(array $cfg, string $providerModel, string $catalogId, a
     return [true, $text, null, 'openrouter:' . $catalogId];
 }
 
+/* ── Pollinations: the keyless provider ─────────────────────────────────────
+   No account, no API key, no signup — so it answers even for guests and on a
+   fresh install before any key is saved. Returns [ok, text, reasoning, used];
+   `reasoning` carries the model's own thinking (GPT-OSS emits one) so the UI
+   can show it. Format mirrors openrouter_call() so the call sites match. */
+function pollinations_call(array $cfg, string $providerModel, string $catalogId, array $messages, string $image = '', string $system = '', bool $vision = false): array {
+    if (!function_exists('curl_init')) { return [false, 'This model is temporarily unavailable.', null, null]; }
+    if ($image !== '' && !$vision) { return [false, 'This model cannot read images. Choose a vision model or remove the image.', null, null]; }
+
+    $out = [];
+    if (trim($system) !== '') { $out[] = ['role' => 'system', 'content' => $system]; }
+    $lastUser = -1;
+    foreach ($messages as $message) {
+        if (!is_array($message)) { continue; }
+        $role = (string)($message['role'] ?? '');
+        if (!in_array($role, ['user', 'assistant'], true)) { continue; }
+        $text = (string)($message['content'] ?? '');
+        if (trim($text) === '') { continue; }
+        $out[] = ['role' => $role, 'content' => $text];
+        if ($role === 'user') { $lastUser = count($out) - 1; }
+    }
+    if ($lastUser < 0) { $out[] = ['role' => 'user', 'content' => 'Hello.']; $lastUser = count($out) - 1; }
+    if ($image !== '') {
+        if (!preg_match('~^data:(image/(?:png|jpe?g|webp|gif));base64,[A-Za-z0-9+/]+={0,2}$~i', $image)) {
+            return [false, 'The attached image could not be sent to this model.', null, null];
+        }
+        $text = (string)$out[$lastUser]['content'];
+        $out[$lastUser]['content'] = [
+            ['type' => 'text', 'text' => $text],
+            ['type' => 'image_url', 'image_url' => ['url' => $image]],
+        ];
+    }
+
+    $req = [
+        'model' => $providerModel,
+        'messages' => $out,
+        'temperature' => 0.5,
+        'max_tokens' => max(256, min(32768, (int)($cfg['pollinations_max_output'] ?? 4096))),
+        'stream' => false,
+    ];
+    $body = json_encode($req, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($body === false) { return [false, 'The selected model is temporarily unavailable.', null, null]; }
+
+    $ch = curl_init(POLLINATIONS_ROOT);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json; charset=utf-8',
+            'HTTP-Referer: ' . app_base_url(),
+            'X-Title: Devil AI',
+        ],
+        CURLOPT_TIMEOUT => 60, CURLOPT_CONNECTTIMEOUT => 12, CURLOPT_ENCODING => '',
+        CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $json = is_string($raw) ? json_decode($raw, true) : null;
+    if ($raw === false || $status === 0 || !is_array($json)) {
+        return [false, 'The keyless model is temporarily unavailable. Try again in a moment.', null, null];
+    }
+    /* 402 is Pollinations' anonymous quota: it clears on its own after a short
+       cooldown, so say so instead of blaming the model. */
+    if ($status === 402) { return [false, 'The keyless model has used its free quota for now — it frees up again in a few minutes. Pick another model in the meantime.', null, null]; }
+    if ($status === 429) { return [false, 'The keyless model is busy right now (rate limited). Try again in a moment or pick another model.', null, null]; }
+    if ($status >= 500) { return [false, 'The keyless model is temporarily unavailable. Try again in a moment.', null, null]; }
+    if ($status >= 400) { return [false, 'The keyless model could not answer this request. Try another model.', null, null]; }
+
+    $msg = $json['choices'][0]['message'] ?? [];
+    $content = $msg['content'] ?? '';
+    if (is_array($content)) {
+        $parts = [];
+        foreach ($content as $part) { if (is_array($part) && isset($part['text']) && is_string($part['text'])) { $parts[] = $part['text']; } }
+        $content = implode('', $parts);
+    }
+    $text = is_string($content) ? trim($content) : '';
+    if ($text === '') { return [false, 'The keyless model returned an empty answer. Try again or choose another model.', null, null]; }
+    $reasoning = isset($msg['reasoning']) && is_string($msg['reasoning']) ? trim($msg['reasoning']) : '';
+    return [true, $text, $reasoning !== '' ? $reasoning : null, 'pollinations:' . $catalogId];
+}
+
 /* full pipeline. $strict = compare modes (Battle / Side by Side): the named model only, no stand-in */
 function ai_respond(array $cfg, string $modelId, array $messages, string $image = '', bool $strict = false, bool $blind = false): array {
     $engine = engine_for($cfg, $modelId);
     $kind = (string)($engine['kind'] ?? 'none');
-    if (!in_array($kind, ['gemini', 'openrouter'], true)) { return [false, (string)($engine['error'] ?? 'The AI engine is not configured yet.'), null]; }
+    if (!in_array($kind, ['gemini', 'openrouter', 'pollinations'], true)) { return [false, (string)($engine['error'] ?? 'The AI engine is not configured yet.'), null]; }
     $isAgent = !empty($engine['agent']);
     $model = (string)$engine['model'];
 
-    /* Agent Mode: unchanged — Devil persona as system instruction, the agent's own prompts stay in the chat */
+    /* Agent Mode: Devil persona as system instruction, the agent's own prompts stay in the chat.
+       Gemini keeps its multi-model fallback loop; the other providers run the
+       agent on the single chosen model. Tool calls are plain "TOOL:/INPUT:" text,
+       so every provider drives the agent identically. */
     if ($isAgent) {
+        if ($kind === 'openrouter') {
+            $cid = (string)($engine['catalog_id'] ?? '');
+            list($ok, $txt, $hint, $used) = openrouter_call($cfg, $model, $cid, $messages, $image, devil_persona(), !empty($engine['vision']));
+            return $ok ? [true, $txt, $used] : [false, (string)$txt, null];
+        }
+        if ($kind === 'pollinations') {
+            $cid = (string)($engine['catalog_id'] ?? '');
+            list($ok, $txt, $hint, $used) = pollinations_call($cfg, $model, $cid, $messages, $image, devil_persona(), !empty($engine['vision']));
+            return $ok ? [true, $txt, $used] : [false, (string)$txt, null];
+        }
         $models = $model === 'auto' ? gemini_order(gemini_models($cfg)) : [$model];
         list($ok, $txt, $hint, $used) = gemini_call($cfg, $models, $messages, $image, devil_persona());
         return $ok ? [true, $txt, $used] : [false, (string)$txt, null];
@@ -1827,6 +2001,11 @@ function ai_respond(array $cfg, string $modelId, array $messages, string $image 
     if ($kind === 'openrouter') {
         $catalogId = (string)($engine['catalog_id'] ?? '');
         list($ok, $txt, $hint, $used) = openrouter_call($cfg, $model, $catalogId, $rest, $image, $system($catalogId), !empty($engine['vision']));
+        return $ok ? [true, $txt, $used] : [false, (string)$txt, null];
+    }
+    if ($kind === 'pollinations') {
+        $catalogId = (string)($engine['catalog_id'] ?? '');
+        list($ok, $txt, $hint, $used) = pollinations_call($cfg, $model, $catalogId, $rest, $image, $system($catalogId), !empty($engine['vision']));
         return $ok ? [true, $txt, $used] : [false, (string)$txt, null];
     }
 
@@ -2741,10 +2920,12 @@ try {
         json_out([
             'ok'      => true,
             'engines' => admin_engine_list(),
+            'agent_engines' => admin_agent_engine_list(),
             'admin_user' => current_user_is_admin(),
             'security' => $snapshot,
             'config'  => [
                 'engines'        => $cfg['engines'],
+                'agent_engine'   => (string)($cfg['agent_engine'] ?? ''),
                 'rate_per_hour'  => (int)$cfg['rate_per_hour'],
                 'max_chats'      => (int)$cfg['max_chats'],
                 'admin_emails'    => admin_emails(),
@@ -2869,6 +3050,21 @@ try {
             }
         } elseif (!empty($in['openrouter_api_key_clear'])) {
             $new['openrouter_api_key'] = '';
+        }
+        /* Agent Mode model: any catalogue model flagged agent_ok, or "" for the
+           automatic newest-healthy-Gemini-Flash default. Anything else is refused
+           so the agent is never handed a model too small to hold the tool format. */
+        if (isset($in['agent_engine']) && is_string($in['agent_engine'])) {
+            $pick = strtolower(trim($in['agent_engine']));
+            if ($pick === '') {
+                $new['agent_engine'] = '';
+            } else {
+                $pickMeta = catalog_model($pick);
+                if (!$pickMeta || empty($pickMeta['agent_ok'])) {
+                    json_out(['ok' => false, 'error' => 'That model cannot drive Agent Mode — it is too small to hold the tool format. Pick one marked as Agent-capable.'], 400);
+                }
+                $new['agent_engine'] = $pick;
+            }
         }
         /* Gemini keys: pasted keys are added to the saved list (deduped) unless "replace" is ticked.
            Stored back as the legacy single key + the extras, so older code paths keep working. */

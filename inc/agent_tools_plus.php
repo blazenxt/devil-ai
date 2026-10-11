@@ -278,6 +278,53 @@ function plus_qr(string $input): array {
     return ['ok' => true, 'text' => 'QR code image: ' . $url];
 }
 
+/* ── image_gen: Pollinations — no key, no signup ───────────────────────────
+   Pollinations is the only image API we found that answers with no auth at all,
+   so this tool works on a fresh install and for guests. INPUT: a description;
+   an optional second line "1024x1024" sets the size (64-2048, default 1024²). */
+function plus_image_gen(string $input): array {
+    $lines  = preg_split('/\r?\n/', trim($input));
+    $prompt = trim((string)array_shift($lines));
+    if ($prompt === '') { return ['ok' => false, 'text' => 'Describe the image you want me to generate.']; }
+    if (mb_strlen($prompt) > 1000) { $prompt = mb_substr($prompt, 0, 1000); }
+
+    $w = 1024; $h = 1024;
+    foreach ($lines as $ln) {
+        if (preg_match('/^(\d{2,4})\s*[x×]\s*(\d{2,4})$/i', trim((string)$ln), $m)) {
+            $w = max(64, min(2048, (int)$m[1]));
+            $h = max(64, min(2048, (int)$m[2]));
+            break;
+        }
+    }
+    /* Only width/height/nologo stay free: adding "safe" or "seed" makes
+       Pollinations answer 402 (paid tier). Verified against the live API. */
+    $url = 'https://image.pollinations.ai/prompt/' . rawurlencode($prompt) . '?' . http_build_query([
+        'width' => $w, 'height' => $h, 'nologo' => 'true',
+    ]);
+    if (!function_exists('curl_init')) { return ['ok' => true, 'text' => 'Image (open this URL): ' . $url]; }
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 90,
+        CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_ENCODING => '', CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS]);
+    $bin  = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $type = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    curl_close($ch);
+
+    $isImg = is_string($bin) && strlen($bin) > 500
+        && (substr($bin, 0, 8) === "\x89PNG\r\n\x1a\n" || substr($bin, 0, 3) === "\xFF\xD8\xFF");
+    if ($code === 200 && $isImg) {
+        $ext = (stripos($type, 'png') !== false) ? 'png' : 'jpg';
+        $dir = data_dir() . '/gen';
+        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+        $name = 'img-' . gmdate('Ymd-His') . '-' . substr(hash('sha256', $prompt . microtime(true)), 0, 8) . '.' . $ext;
+        if (@file_put_contents($dir . '/' . $name, $bin) !== false) {
+            return ['ok' => true, 'text' => "Image generated and saved: data/gen/{$name} ({$w}x{$h}) — prompt: {$prompt}"];
+        }
+    }
+    return ['ok' => true, 'text' => 'Image (open this URL): ' . $url];
+}
+
 /* ── url_shorten: is.gd (no key) ───────────────────────────────────────── */
 function plus_shorten(string $input): array {
     $url = trim($input);
