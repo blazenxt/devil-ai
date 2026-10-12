@@ -79,8 +79,12 @@ function agent_system_prompt(): string {
 
 /* ── tool-call parsing ── */
 function agent_parse_tool_call(string $txt): ?array {
-    if (!preg_match('/TOOL:\s*([a-z_]+)\s*\r?\n\s*INPUT:\s*(.+)/i', $txt, $m)) { return null; }
-    return ['name' => strtolower(trim($m[1])), 'input' => trim($m[2])];
+    if (!preg_match('/TOOL:\s*([a-z_]+)\s*\r?\n\s*INPUT:\s*(.+)/i', $txt, $m, PREG_OFFSET_CAPTURE)) { return null; }
+    /* Whatever the model wrote before the TOOL line is its reasoning for this
+       step — the UI shows it as the "thinking" block above the tool card. This
+       mirrors agent_parse_tool_call_ml(), which the step engine already uses. */
+    $thought = trim(substr($txt, 0, (int)$m[0][1]));
+    return ['name' => strtolower(trim($m[1][0])), 'input' => trim($m[2][0]), 'thought' => $thought];
 }
 function agent_strip_tool_lines(string $txt): string {
     $txt = preg_replace('/TOOL:\s*[a-z_]+\s*\r?\n\s*INPUT:\s*.+(\r?\n|$)/i', '', $txt);
@@ -619,6 +623,7 @@ function agent_respond(array $cfg, string $modelId, array $messages, callable $r
             'step' => $step + 1,
             'tool' => $call['name'],
             'input' => mb_substr($call['input'], 0, 300),
+            'thought' => mb_substr((string)($call['thought'] ?? ''), 0, 600),
             'ok' => !empty($result['ok']),
             'output' => mb_substr((string)($result['text'] ?? ''), 0, 1000),
         ];
