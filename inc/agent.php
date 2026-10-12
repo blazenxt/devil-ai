@@ -556,7 +556,71 @@ function agent_tool_datetime(array $cfg, string $input): array {
     return ['ok' => true, 'text' => 'Current server time: ' . date('Y-m-d H:i:s T') . ' (' . date('l, F j, Y') . ')'];
 }
 
+/* ── tool result cache ─────────────────────────────────────────────────────
+   The agent repeats the same lookup constantly while working one problem, and
+   every repeat costs a full network round trip (a search is ~1s, a page ~0.5s).
+   Successful results are reused for a short window. Failures are never cached,
+   so a tool that is temporarily down recovers as soon as it comes back, and
+   tools that are random (uuid) or that change state (upload, image_gen) are
+   simply not in the table and so are never cached at all. */
+function agent_tool_cache_ttl(string $name): int {
+    static $ttl = [
+        'web_search'   => 900,    /* 15 min */
+        'fetch_url'    => 1800,   /* 30 min — a page rarely changes mid-task */
+        'wikipedia'    => 3600,
+        'weather'      => 600,    /* 10 min */
+        'crypto_price' => 120,    /* 2 min — prices move */
+        'currency'     => 1800,
+        'url_shorten'  => 86400,
+        'qr_code'      => 86400,
+        'hash_text'    => 86400,
+    ];
+    return (int)($ttl[$name] ?? 0);   /* 0 = never cache */
+}
+function agent_tool_cache_file(string $name, string $input): string {
+    $key = hash('sha256', $name . "\n" . $input);
+    return data_dir() . '/toolcache/' . substr($key, 0, 2) . '/' . $key . '.json';
+}
+function agent_tool_cache_read(string $name, string $input): ?array {
+    if (agent_tool_cache_ttl($name) <= 0) { return null; }
+    $f = agent_tool_cache_file($name, $input);
+    if (!is_file($f)) { return null; }
+    $j = json_decode((string)@file_get_contents($f), true);
+    if (!is_array($j) || empty($j['ok'])) { return null; }
+    if ((int)($j['at'] ?? 0) + agent_tool_cache_ttl($name) < time()) { @unlink($f); return null; }
+    return ['ok' => true, 'text' => (string)($j['text'] ?? ''), 'cached' => true];
+}
+function agent_tool_cache_write(string $name, string $input, array $res): void {
+    $text = (string)($res['text'] ?? '');
+    if (empty($res['ok']) || $text === '' || strlen($text) > 200000) { return; }
+    if (agent_tool_cache_ttl($name) <= 0) { return; }
+    $f = agent_tool_cache_file($name, $input);
+    $dir = dirname($f);
+    if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+    @file_put_contents($f, json_encode(['at' => time(), 'ok' => 1, 'text' => $text]), LOCK_EX);
+}
+/* Cheap housekeeping: once in a while drop cache files that have gone stale, so
+   the directory cannot grow without bound on a busy install. */
+function agent_tool_cache_sweep(): void {
+    if (mt_rand(1, 40) !== 1) { return; }
+    $base = data_dir() . '/toolcache';
+    if (!is_dir($base)) { return; }
+    $oldest = time() - 86400;
+    foreach (glob($base . '/*/*.json') ?: [] as $f) {
+        if (@filemtime($f) < $oldest) { @unlink($f); }
+    }
+}
+
 function agent_run_tool(array $cfg, string $name, string $input, ?array $sbx = null): array {
+    $hit = agent_tool_cache_read($name, $input);
+    if ($hit !== null) { return $hit; }
+    $res = agent_run_tool_uncached($cfg, $name, $input, $sbx);
+    agent_tool_cache_write($name, $input, $res);
+    agent_tool_cache_sweep();
+    return $res;
+}
+
+function agent_run_tool_uncached(array $cfg, string $name, string $input, ?array $sbx = null): array {
     switch ($name) {
         case 'web_search':
             return agent_tool_web_search($cfg, $input);
