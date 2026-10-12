@@ -41,6 +41,15 @@ function agent_tools(): array {
         'qr_code'    => 'Make a QR code image for text or a URL and save it. INPUT: the text or URL.',
         'image_gen'  => 'Generate an image from a text description (no API key needed). INPUT: first line = the description, optional second line = size like 1024x1024.',
         'url_shorten' => 'Shorten one long URL. INPUT: the full http(s) URL.',
+        'code_lookup' => 'Look up a package on npm or PyPI: latest version, release date, license, description. INPUT: first line = package name, optional second line = "npm" or "pypi".',
+        'geocode'    => 'Turn a place name into coordinates. INPUT: a place name, e.g. "Asansol, West Bengal".',
+        'forecast'   => 'Multi-day weather forecast for coordinates (up to 16 days, no API key). INPUT: latitude on line 1, longitude on line 2, optional days on line 3. Use geocode first if you only have a place name.',
+        'github_repo' => 'Facts about a public GitHub repository: stars, forks, language, license, last push. INPUT: "owner/name" or the repo URL.',
+        'regex_test' => 'Test a regular expression against text, locally and instantly. INPUT: first line = the pattern (optionally /pattern/flags), remaining lines = the text.',
+        'units'      => 'Convert between units. INPUT: like "10 km to miles", "72 f to c", "5 kg to lb".',
+        'stats'      => 'Count characters, words, sentences, lines, unique words and reading time. INPUT: the text to measure.',
+        'b64'        => 'Encode or decode base64. INPUT: first line = "encode" or "decode", remaining lines = the text.',
+        'table'      => 'Turn CSV or tab-separated data into a markdown table. INPUT: header row first, then data rows.',
     ];
     /* the Drive tools are only advertised once the site owner has saved credentials */
     if (drive_configured(agent_cfg_lazy())) {
@@ -643,6 +652,15 @@ function agent_run_tool_uncached(array $cfg, string $name, string $input, ?array
         case 'qr_code':      return plus_qr($input);
         case 'image_gen':    return plus_image_gen($input);
         case 'url_shorten':  return plus_shorten($input);
+        case 'code_lookup':  return plus_code_lookup($input);
+        case 'geocode':      return plus_geocode($input);
+        case 'forecast':     return plus_forecast($input);
+        case 'github_repo':  return plus_github_repo($input);
+        case 'regex_test':   return plus_regex($input);
+        case 'units':        return plus_units($input);
+        case 'stats':        return plus_stats($input);
+        case 'b64':          return plus_b64($input);
+        case 'table':        return plus_table($input);
 
         /* ── Google Drive connector (needs credentials in Admin → Integrations) ── */
         case 'drive_list':   return drive_tool_list($cfg, $input);

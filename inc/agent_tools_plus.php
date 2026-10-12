@@ -325,6 +325,269 @@ function plus_image_gen(string $input): array {
     return ['ok' => true, 'text' => 'Image (open this URL): ' . $url];
 }
 
+/* ── code_lookup: package facts from npm and PyPI (no key) ─────────────────
+   A coding agent constantly needs "what is the current version / when was it
+   released / what does it do". Both registries answer anonymously. */
+function plus_code_lookup(string $input): array {
+    $lines = preg_split('/\r?\n/', trim($input));
+    $name  = trim((string)array_shift($lines));
+    $eco   = strtolower(trim((string)(array_shift($lines) ?? '')));
+    if ($name === '') { return ['ok' => false, 'text' => 'Give me a package name, optionally with "npm" or "pypi" on the second line.']; }
+    if (!preg_match('/^[A-Za-z0-9._@\/@\-]{1,120}$/', $name)) { return ['ok' => false, 'text' => 'That package name has characters I cannot send to a registry.']; }
+    /* guess the ecosystem if it was not given */
+    if (!in_array($eco, ['npm', 'pypi', 'python', 'py'], true)) {
+        $eco = preg_match('/^[A-Z][A-Za-z0-9_]*$|^Flask$|^Django$|^requests$/', $name) ? 'pypi' : 'npm';
+    }
+    if ($eco === 'pypi' || $eco === 'python' || $eco === 'py') {
+        $r = plus_http_json('https://pypi.org/pypi/' . rawurlencode($name) . '/json', 12);
+        if (empty($r['ok']) || !is_array($r['json'])) { return ['ok' => false, 'text' => 'PyPI has no package called "' . $name . '" (or it did not answer).']; }
+        $i = $r['json']['info'] ?? [];
+        $v = (string)($i['version'] ?? '?');
+        $rel = (string)($r['json']['urls'][0]['upload_time'] ?? '');
+        $out = 'PyPI — ' . (string)($i['name'] ?? $name) . "\n"
+             . 'Latest version: ' . $v . "\n"
+             . ($rel ? 'Released: ' . substr($rel, 0, 10) . "\n" : '')
+             . 'Summary: ' . mb_substr(trim((string)($i['summary'] ?? '')), 0, 300) . "\n"
+             . 'License: ' . ((string)($i['license'] ?? '') !== '' ? (string)$i['license'] : 'not stated') . "\n"
+             . 'Requires Python: ' . ((string)($i['requires_python'] ?? '') !== '' ? (string)$i['requires_python'] : 'not stated') . "\n"
+             . 'Home page: ' . (string)($i['home_page'] ?? $i['project_url'] ?? '—');
+        return ['ok' => true, 'text' => $out];
+    }
+    $r = plus_http_json('https://registry.npmjs.org/' . rawurlencode($name) . '/latest', 12);
+    if (empty($r['ok']) || !is_array($r['json'])) { return ['ok' => false, 'text' => 'npm has no package called "' . $name . '" (or it did not answer).']; }
+    $j = $r['json'];
+    $out = 'npm — ' . (string)($j['name'] ?? $name) . "\n"
+         . 'Latest version: ' . (string)($j['version'] ?? '?') . "\n"
+         . 'Description: ' . mb_substr(trim((string)($j['description'] ?? '')), 0, 300) . "\n"
+         . 'License: ' . (string)($j['license'] ?? 'not stated') . "\n"
+         . 'Unpacked size: ' . (isset($j['dist']['unpackedSize']) ? round(((int)$j['dist']['unpackedSize']) / 1024) . ' KB' : '—') . "\n"
+         . 'Homepage: ' . (string)($j['homepage'] ?? '—');
+    return ['ok' => true, 'text' => $out];
+}
+
+/* ── geocode: place → coordinates (OpenStreetMap Nominatim, no key) ─────── */
+function plus_geocode(string $input): array {
+    $place = trim($input);
+    if ($place === '') { return ['ok' => false, 'text' => 'Give me a place name to look up.']; }
+    $r = plus_http_json('https://nominatim.openstreetmap.org/search?' . http_build_query([
+        'q' => $place, 'format' => 'json', 'limit' => 3, 'addressdetails' => 1,
+    ]), 15);
+    $j = (array)($r['json'] ?? []);
+    if (empty($r['ok']) || !$j) { return ['ok' => false, 'text' => 'No place found for "' . $place . '".']; }
+    $out = [];
+    foreach (array_slice($j, 0, 3) as $x) {
+        $x = (array)$x;
+        $a = (array)($x['address'] ?? []);
+        $out[] = (string)($x['display_name'] ?? '')
+               . '  →  ' . (string)($x['lat'] ?? '') . ', ' . (string)($x['lon'] ?? '')
+               . (isset($a['country']) ? '  (' . $a['country'] . ')' : '');
+    }
+    return ['ok' => true, 'text' => "Places matching \"{$place}\":\n" . implode("\n", $out)];
+}
+
+/* ── forecast: multi-day weather (Open-Meteo, no key) ─────────────────────
+   wttr.in (the weather tool) gives today and tomorrow; this gives a real
+   multi-day forecast for anywhere, as long as we know the coordinates. */
+function plus_forecast(string $input): array {
+    $lines = preg_split('/\r?\n/', trim($input));
+    $lat = trim((string)array_shift($lines));
+    $lon = trim((string)(array_shift($lines) ?? ''));
+    if ($lat === '' || $lon === '' || !is_numeric($lat) || !is_numeric($lon)) {
+        return ['ok' => false, 'text' => 'Give me latitude on the first line and longitude on the second. Use the geocode tool first if you only have a place name.'];
+    }
+    $days = max(1, min(16, (int)trim((string)(array_shift($lines) ?? '7')) ?: 7));
+    $r = plus_http_json('https://api.open-meteo.com/v1/forecast?' . http_build_query([
+        'latitude' => $lat, 'longitude' => $lon, 'forecast_days' => $days, 'timezone' => 'auto',
+        'daily' => 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+    ]), 15);
+    $d = (array)($r['json']['daily'] ?? []);
+    if (empty($r['ok']) || empty($d['time'])) { return ['ok' => false, 'text' => 'Open-Meteo did not return a forecast for those coordinates.']; }
+    $codes = [0 => 'Clear', 1 => 'Mainly clear', 2 => 'Partly cloudy', 3 => 'Overcast', 45 => 'Fog', 48 => 'Freezing fog',
+        51 => 'Light drizzle', 53 => 'Drizzle', 55 => 'Heavy drizzle', 61 => 'Light rain', 63 => 'Rain', 65 => 'Heavy rain',
+        71 => 'Light snow', 73 => 'Snow', 75 => 'Heavy snow', 80 => 'Rain showers', 81 => 'Rain showers', 82 => 'Violent showers',
+        95 => 'Thunderstorm', 96 => 'Thunderstorm with hail', 99 => 'Thunderstorm with hail'];
+    $out = [];
+    foreach ((array)$d['time'] as $i => $day) {
+        $c = (int)($d['weather_code'][$i] ?? -1);
+        $out[] = $day . ': ' . ($codes[$c] ?? 'code ' . $c)
+               . ', ' . (string)($d['temperature_2m_min'][$i] ?? '?') . '–' . (string)($d['temperature_2m_max'][$i] ?? '?') . '°C'
+               . ', rain ' . (string)($d['precipitation_probability_max'][$i] ?? '?') . '%';
+    }
+    return ['ok' => true, 'text' => "Forecast for {$lat},{$lon}:\n" . implode("\n", $out)];
+}
+
+/* ── github_repo: public repository facts (no key, 60 req/hour per IP) ───── */
+function plus_github_repo(string $input): array {
+    $repo = trim($input);
+    $repo = preg_replace('#^https?://(www\.)?github\.com/#i', '', $repo);
+    $repo = trim((string)$repo, '/');
+    if (!preg_match('#^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$#', $repo)) {
+        return ['ok' => false, 'text' => 'Give me a repository as "owner/name" or its GitHub URL.'];
+    }
+    $r = plus_http_json('https://api.github.com/repos/' . $repo, 15);
+    if (empty($r['ok']) || !is_array($r['json']) || isset($r['json']['message'])) {
+        return ['ok' => false, 'text' => 'GitHub did not return that repository (' . (string)($r['json']['message'] ?? 'request failed') . ').'];
+    }
+    $j = $r['json'];
+    $kb = (int)($j['size'] ?? 0);
+    return ['ok' => true, 'text' => 'GitHub — ' . (string)($j['full_name'] ?? $repo) . "\n"
+        . 'Description: ' . mb_substr((string)($j['description'] ?? '—'), 0, 300) . "\n"
+        . 'Stars: ' . (int)($j['stargazers_count'] ?? 0) . ' · Forks: ' . (int)($j['forks_count'] ?? 0)
+        . ' · Open issues: ' . (int)($j['open_issues_count'] ?? 0) . "\n"
+        . 'Language: ' . (string)($j['language'] ?? '—') . ' · License: ' . (string)((is_array($j['license'] ?? null) ? ($j['license']['spdx_id'] ?? '—') : '—')) . "\n"
+        . 'Size: ' . ($kb ? round($kb / 1024) . ' MB' : '—') . "\n"
+        . 'Default branch: ' . (string)($j['default_branch'] ?? '—') . "\n"
+        . 'Created: ' . substr((string)($j['created_at'] ?? ''), 0, 10) . ' · Last push: ' . substr((string)($j['pushed_at'] ?? ''), 0, 10) . "\n"
+        . 'Homepage: ' . ((string)($j['homepage'] ?? '') !== '' ? (string)$j['homepage'] : '—')];
+}
+
+/* ═══════════ local tools — no network, instant ═══════════ */
+
+/* ── regex_test: try a pattern against text (no network) ───────────────── */
+function plus_regex(string $input): array {
+    $lines = preg_split('/\r?\n/', (string)$input);
+    $pattern = trim((string)array_shift($lines));
+    if ($pattern === '') { return ['ok' => false, 'text' => 'First line: the regex pattern. Following lines: the text to match it against.']; }
+    $text = implode("\n", $lines);
+    if (trim($text) === '') { return ['ok' => false, 'text' => 'Give me the pattern on the first line and the text to test it on after that.']; }
+    $delim = $pattern[0] ?? '/';
+    $body  = $pattern;
+    $flags = '';
+    if (preg_match('#^([\~/\#%|!,@;:])(.*)\1([a-zA-Z]*)$#s', $pattern, $m)) {
+        $delim = $m[1]; $body = $m[2]; $flags = $m[3];
+    }
+    $final = $delim . $body . $delim . $flags;
+    set_error_handler(static function () { return true; });
+    $ok  = @preg_match($final, $text, $m1);
+    $all = $ok !== false ? @preg_match_all($final, $text, $m2) : false;
+    $err = preg_last_error();
+    restore_error_handler();
+    if ($ok === false) {
+        $msg = $err === PREG_BACKTRACK_LIMIT_ERROR ? 'backtrack limit exceeded (the pattern is too greedy)'
+             : ($err === PREG_RECURSION_LIMIT_ERROR ? 'recursion limit exceeded'
+             : 'the pattern is not valid');
+        return ['ok' => false, 'text' => 'Regex error: ' . $msg . '. Send it as /pattern/flags if it needs different delimiters.'];
+    }
+    $out = 'Pattern: ' . $final . "\nMatches: " . (int)$all;
+    if ($all > 0) {
+        $show = array_slice((array)$m2[0], 0, 10);
+        $out .= "\nFirst " . count($show) . ": " . implode(' | ', array_map(static function ($s) {
+            return mb_strlen((string)$s) > 80 ? mb_substr((string)$s, 0, 77) . '…' : (string)$s;
+        }, $show));
+        if (isset($m1[1]) && $m1[1] !== '') { $out .= "\nGroup 1: " . $m1[1]; }
+    } else {
+        $out .= "\nNo match found.";
+    }
+    return ['ok' => true, 'text' => $out];
+}
+
+/* ── units: convert between common units (no network) ──────────────────── */
+function plus_units(string $input): array {
+    if (!preg_match('/^\s*(-?[\d.,eE+]+)\s*([a-zA-Z°µ\/^*\s]+?)\s*(?:to|in|->|→|as)\s*([a-zA-Z°µ\/^*\s]+?)\s*$/u', trim($input), $m)) {
+        return ['ok' => false, 'text' => 'Write it as "10 km to miles" or "72 f to c".'];
+    }
+    $val   = (float)str_replace(',', '', $m[1]);
+    $from  = strtolower(preg_replace('/\s+/', '', $m[2]));
+    $to    = strtolower(preg_replace('/\s+/', '', $m[3]));
+    $alias = [
+        'c' => 'celsius', 'f' => 'fahrenheit', 'k' => 'kelvin', 'kelvins' => 'kelvin',
+        'm' => 'metre', 'meter' => 'metre', 'meters' => 'metre', 'metres' => 'metre',
+        'km' => 'kilometre', 'kilometers' => 'kilometre', 'kilometres' => 'kilometre',
+        'mi' => 'mile', 'miles' => 'mile', 'ft' => 'foot', 'feet' => 'foot', 'foot' => 'foot',
+        'in' => 'inch', 'inch' => 'inch', 'inches' => 'inch', 'cm' => 'centimetre', 'centimeters' => 'centimetre',
+        'mm' => 'millimetre', 'millimeters' => 'millimetre', 'yd' => 'yard', 'yards' => 'yard',
+        'kg' => 'kilogram', 'kilograms' => 'kilogram', 'g' => 'gram', 'grams' => 'gram',
+        'lb' => 'pound', 'lbs' => 'pound', 'pounds' => 'pound', 'oz' => 'ounce', 'ounces' => 'ounce',
+        'l' => 'litre', 'liter' => 'litre', 'liters' => 'litre', 'litres' => 'litre',
+        'ml' => 'millilitre', 'milliliters' => 'millilitre', 'gal' => 'gallon', 'gallons' => 'gallon',
+        's' => 'second', 'sec' => 'second', 'seconds' => 'second', 'min' => 'minute', 'minutes' => 'minute',
+        'h' => 'hour', 'hr' => 'hour', 'hours' => 'hour', 'd' => 'day', 'days' => 'day',
+        'kmh' => 'kmh', 'kph' => 'kmh', 'mph' => 'mph',
+        'sqm' => 'sqm', 'm2' => 'sqm', 'sqft' => 'sqft', 'ft2' => 'sqft',
+    ];
+    $from = $alias[$from] ?? $from;
+    $to   = $alias[$to] ?? $to;
+    $base = [
+        /* all three temperatures share the group 'temp' — the branch below
+           handles their offset conversion, so they must not be split apart */
+        'celsius' => ['temp', 0], 'fahrenheit' => ['temp', 0], 'kelvin' => ['temp', 0],
+        'metre' => ['len', 1], 'kilometre' => ['len', 1000], 'centimetre' => ['len', 0.01], 'millimetre' => ['len', 0.001],
+        'mile' => ['len', 1609.344], 'foot' => ['len', 0.3048], 'inch' => ['len', 0.0254], 'yard' => ['len', 0.9144],
+        'kilogram' => ['mass', 1], 'gram' => ['mass', 0.001], 'pound' => ['mass', 0.45359237], 'ounce' => ['mass', 0.028349523125],
+        'litre' => ['vol', 1], 'millilitre' => ['vol', 0.001], 'gallon' => ['vol', 3.785411784],
+        'second' => ['time', 1], 'minute' => ['time', 60], 'hour' => ['time', 3600], 'day' => ['time', 86400],
+        'kmh' => ['speed', 1], 'mph' => ['speed', 1.609344],
+        'sqm' => ['area', 1], 'sqft' => ['area', 0.09290304],
+    ];
+    if (!isset($base[$from], $base[$to])) {
+        return ['ok' => false, 'text' => 'I do not know one of those units. Known: c/f/k, m/km/cm/mm/mi/ft/in/yd, kg/g/lb/oz, l/ml/gal, s/min/h/d, kmh/mph, sqm/sqft.'];
+    }
+    $f = $base[$from]; $t = $base[$to];
+    if ($f[0] !== $t[0]) { return ['ok' => false, 'text' => 'Cannot convert ' . $from . ' to ' . $to . ' — different kinds of unit.']; }
+    if ($f[0] === 'temp') {
+        $out = $val;
+        if ($from === 'fahrenheit') { $out = ($val - 32) * 5 / 9; }
+        elseif ($from === 'kelvin') { $out = $val - 273.15; }
+        if ($to === 'fahrenheit') { $out = $out * 9 / 5 + 32; }
+        elseif ($to === 'kelvin') { $out = $out + 273.15; }
+    } else {
+        $out = $val * $f[1] / $t[1];
+    }
+    $out = round($out, 6);
+    if (abs($out) >= 10000) { $out = round($out, 2); }
+    return ['ok' => true, 'text' => $m[1] . ' ' . $m[2] . ' = ' . rtrim(rtrim(number_format((float)$out, 6, '.', ''), '0'), '.') . ' ' . $m[3]];
+}
+
+/* ── stats: word/character counts and reading time (no network) ─────────── */
+function plus_stats(string $input): array {
+    $t = trim($input);
+    if ($t === '') { return ['ok' => false, 'text' => 'Give me some text to measure.']; }
+    $chars  = mb_strlen($t);
+    $words  = preg_split('/\s+/u', $t) ?: [];
+    $words  = count(array_filter($words, static function ($w) { return $w !== ''; }));
+    $sent   = preg_match_all('/[.!?]+(?:\s|$)/u', $t) ?: 0;
+    $lines  = count(preg_split('/\r\n|\r|\n/', $t) ?: []);
+    $bytes  = strlen($t);
+    $read   = max(1, (int)ceil($words / 200));
+    $uniq   = count(array_unique(array_map('mb_strtolower', preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($t), -1, PREG_SPLIT_NO_EMPTY) ?: [])));
+    return ['ok' => true, 'text' => "Characters: {$chars}\nWords: {$words}\nSentences: {$sent}\nLines: {$lines}\n"
+        . "Unique words: {$uniq}\nBytes (UTF-8): {$bytes}\nReading time: ~{$read} min at 200 wpm"];
+}
+
+/* ── b64: encode or decode base64 (no network) ──────────────────────────── */
+function plus_b64(string $input): array {
+    $lines = preg_split('/\r?\n/', trim($input));
+    $mode  = strtolower(trim((string)array_shift($lines)));
+    $body  = implode("\n", $lines);
+    if ($body === '') { return ['ok' => false, 'text' => 'First line: "encode" or "decode". Remaining lines: the text.']; }
+    if (strpos($mode, 'dec') === 0) {
+        $out = base64_decode(preg_replace('/\s+/', '', $body), true);
+        if ($out === false) { return ['ok' => false, 'text' => 'That is not valid base64.']; }
+        return ['ok' => true, 'text' => $out];
+    }
+    return ['ok' => true, 'text' => base64_encode($body)];
+}
+
+/* ── table: turn CSV/TSV into a markdown table (no network) ─────────────── */
+function plus_table(string $input): array {
+    $lines = preg_split('/\r\n|\r|\n/', trim($input));
+    $lines = array_values(array_filter($lines, static function ($l) { return trim($l) !== ''; }));
+    if (count($lines) < 2) { return ['ok' => false, 'text' => 'Give me at least two lines: a header row and one data row.']; }
+    $sep = (substr_count($lines[0], "\t") > 0) ? "\t" : ',';
+    $parse = static function (string $l) use ($sep): array {
+        return $sep === "\t" ? explode("\t", $l) : str_getcsv($l);
+    };
+    $rows = array_map($parse, $lines);
+    $n    = max(array_map('count', $rows));
+    foreach ($rows as $i => $r) { $rows[$i] = array_pad(array_slice((array)$r, 0, $n), $n, ''); }
+    $esc  = static function ($c) { return str_replace('|', '\\|', trim((string)$c)); };
+    $head = array_shift($rows);
+    $out  = '| ' . implode(' | ', array_map($esc, $head)) . " |\n";
+    $out .= '| ' . implode(' | ', array_fill(0, $n, '---')) . " |\n";
+    foreach ($rows as $r) { $out .= '| ' . implode(' | ', array_map($esc, $r)) . " |\n"; }
+    return ['ok' => true, 'text' => "Markdown table ({$n} columns, " . count($rows) . " data rows):\n\n" . rtrim($out)];
+}
+
 /* ── url_shorten: is.gd (no key) ───────────────────────────────────────── */
 function plus_shorten(string $input): array {
     $url = trim($input);
