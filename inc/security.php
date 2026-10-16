@@ -189,6 +189,40 @@ function devil_sec_proxy_vpn_reason(string $ip, bool $trustedDeveloperApi): stri
     if (!$fromCloudflareWorker && devil_sec_datacenter_like($ip, true)) { return 'datacenter network'; }
     return '';
 }
+/* Read the developer API key from wherever the web server left it.
+   lives here rather than in api.php because the security layer boots first,
+   before api.php's own helpers exist. Several setups rewrite or drop the
+   Authorization header (FastCGI, some proxies, nginx php-fpm behind Apache),
+   so every spelling is tried before giving up — a lost header otherwise looks
+   exactly like "invalid API key" to the caller. */
+function devil_sec_bearer_token(): string {
+    $candidates = [];
+    foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION', 'HTTP_X_AUTHORIZATION', 'HTTP_X_DEVIL_API_KEY'] as $k) {
+        if (!empty($_SERVER[$k])) { $candidates[] = trim((string)$_SERVER[$k]); }
+    }
+    if (function_exists('getallheaders')) {
+        $hdrs = @getallheaders();
+        if (is_array($hdrs)) {
+            foreach ($hdrs as $name => $value) {
+                $n = strtolower((string)$name);
+                if ($n === 'authorization' || $n === 'x-devil-api-key' || $n === 'x-authorization') {
+                    $candidates[] = trim((string)$value);
+                }
+            }
+        }
+    }
+    foreach ($candidates as $raw) {
+        if ($raw === '') { continue; }
+        if (preg_match('/^Bearer\s+(.+)$/i', $raw, $m)) { return trim($m[1]); }
+        if (preg_match('/^(?:devil_blazenxt_|dv_live_)/i', $raw)) { return $raw; }
+    }
+    foreach (['key', 'api_key', 'apikey'] as $k) {
+        $v = trim((string)($_GET[$k] ?? ''));
+        if ($v !== '') { return $v; }
+    }
+    return '';
+}
+
 function devil_security_boot(): void {
     if (PHP_SAPI === 'cli' || headers_sent()) { return; }
     header('X-Content-Type-Options: nosniff');
@@ -218,14 +252,24 @@ function devil_security_boot(): void {
         devil_sec_block('Security probe blocked.', 403);
     }
 
-    $limit = $isApi ? 180 : 240;
-    if (!devil_sec_rate('all', $ip, $limit, 60)) {
+    $apiToken = devil_sec_bearer_token();
+    $hasApiKey = $apiToken !== '';
+
+    /* Rate limit: by IP for normal traffic, but by API key once a key is shown.
+       Server-to-server callers — CI, backends, scripts on a VPS or a datacenter
+       host — often share one outbound address, and an IP-wide ceiling meant one
+       busy customer throttled everyone else behind that address. */
+    $limit  = $isApi ? 180 : 240;
+    $rateKey = $ip;
+    if ($isApi && $hasApiKey) {
+        $limit   = 1200;
+        $rateKey = 'key:' . substr(hash('sha256', $apiToken), 0, 32);
+    }
+    if (!devil_sec_rate('all', $rateKey, $limit, 60)) {
         /* this request only — no IP ban: on mobile networks (CGNAT) one IP is shared by many people */
         devil_sec_block('Too many requests. Please wait a moment and try again.', 429);
     }
 
-    $hasApiKey = preg_match('/Bearer\s+(?:devil_blazenxt_|dv_live_)/i', (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ''))
-        || !empty($_SERVER['HTTP_X_DEVIL_API_KEY']) || !empty($_GET['key']) || !empty($_GET['api_key']) || !empty($_GET['apikey']);
     $trustedDeveloperApi = (str_contains($uri, '/v1/') || preg_match('#/v1$#', $uri) === 1) && $hasApiKey;
     /* VPN / proxy / datacenter screening now happens at Cloudflare's edge as a Managed Challenge
        (a real person passes it in a second, bots do not). The old IP-reputation hard block here

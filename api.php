@@ -630,6 +630,11 @@ function dev_clean_key_name(string $name): string {
 }
 
 function dev_bearer_token(): string {
+    /* One shared reader: the security layer already needs the key before this
+       file is even parsed, so the resilient version lives there and is reused
+       here. Trying every spelling of the header matters because a header the
+       web server dropped looks to the caller exactly like a bad key. */
+    if (function_exists('devil_sec_bearer_token')) { return devil_sec_bearer_token(); }
     $h = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''));
     if (preg_match('/^Bearer\s+(.+)$/i', trim($h), $m)) { return trim($m[1]); }
     $x = trim((string)($_SERVER['HTTP_X_DEVIL_API_KEY'] ?? ''));
